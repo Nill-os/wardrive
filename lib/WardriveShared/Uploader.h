@@ -45,7 +45,17 @@ public:
 	// Cheap pre-checks, so the caller can skip the expensive setup around an
 	// upload (dropping the phone's BLE link, the progress overlay) when
 	// there's nothing to send or the dock-mode cooldown hasn't passed.
-	bool hasPending(const String &dirPath);
+	bool hasPending(const String &dirPath) { return pendingCount(dirPath) > 0; }
+	uint16_t pendingCount(const String &dirPath);
+
+	// Deletes header-only session files - runs a power cut ended before their
+	// first row (a clean stop deletes these itself). Only call while no
+	// session file is open, i.e. at boot.
+	void removeEmptySessions(const String &dirPath);
+
+	// Unix time of the last upload that sent at least one file (0 = never,
+	// or never with a GPS clock).
+	uint32_t lastUploadEpoch();
 	bool autoUploadDue(uint32_t nowEpoch);
 	bool configValid() const { return _cfg.valid; }
 
@@ -68,6 +78,5 @@ private:
 	bool alreadyUploaded(const String &filePath);
 	void markUploaded(const String &filePath, uint32_t nowEpoch);
 
-	uint32_t lastUploadEpoch();
 	void setLastUploadEpoch(uint32_t epoch);
 };

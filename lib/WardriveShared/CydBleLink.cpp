@@ -132,25 +132,96 @@ static NimBLECharacteristic *pRxChar = nullptr;
 // explicit bool updated directly from the connect/disconnect events isn't
 // vulnerable to whatever internal NimBLE bookkeeping produced that mismatch.
 //
-// A count rather than a bool: with a bool, a second central connecting and
-// leaving would mark the link down while the phone was still connected.
-// Advertising stops while a phone is connected (NimBLE's default), so a
-// second central can only slip in during the moment of a reconnect.
-static volatile int serverConnections = 0;
+// ---- Pairing ----
+// Only a phone that has bonded with this rig (entered the 6-digit code shown
+// on its screen during a PAIR PHONE window) gets to talk to it. Any other
+// central - someone else's phone running the same app, a BLE scanner app -
+// can connect at the radio level, but can't read or write anything (the
+// characteristics need an encrypted, authenticated link) and is dropped
+// after SECURE_DEADLINE_MS. That's what stops two rigs and two phones in the
+// same car park from grabbing each other.
+//
+// Connections are tracked per handle rather than as a bool/count, so "a
+// phone is connected" only ever means a secured one.
+struct Conn {
+	uint16_t handle = 0xFFFF; // 0xFFFF = unused slot
+	uint32_t since = 0;
+	bool secure = false;
+};
+static const size_t MAX_CONNS = 4;
+static Conn conns[MAX_CONNS];
+static portMUX_TYPE connsMux = portMUX_INITIALIZER_UNLOCKED;
+
+static const uint32_t SECURE_DEADLINE_MS = 10000;			// a bonded phone encrypts within a second or two
+static const uint32_t PAIRING_SECURE_DEADLINE_MS = 60000; // time to read the code and type it in
+static volatile uint32_t pairingUntilMs = 0;
+static volatile bool pairedDuringWindow = false;
+static uint32_t passkey = 0;
+
+static Conn *findConn(uint16_t handle) {
+	for (auto &c : conns) {
+		if (c.handle == handle) return &c;
+	}
+	return nullptr;
+}
+
+static void updateAdvertising();
 
 class LinkServerCallbacks : public NimBLEServerCallbacks {
 	void onConnect(NimBLEServer *server, ble_gap_conn_desc *desc) override {
-		serverConnections++;
+		portENTER_CRITICAL(&connsMux);
+		for (auto &c : conns) {
+			if (c.handle == 0xFFFF) {
+				c.handle = desc->conn_handle;
+				c.since = millis();
+				c.secure = false;
+				break;
+			}
+		}
+		portEXIT_CRITICAL(&connsMux);
+		// NimBLE stops advertising on a connection; keep it going while a
+		// pairing window is open so a second (new) phone can still find us.
+		if (pairingOpen()) NimBLEDevice::startAdvertising();
 	}
 	void onDisconnect(NimBLEServer *server, ble_gap_conn_desc *desc) override {
-		if (serverConnections > 0) serverConnections--;
+		portENTER_CRITICAL(&connsMux);
+		Conn *c = findConn(desc->conn_handle);
+		if (c) c->handle = 0xFFFF;
+		portEXIT_CRITICAL(&connsMux);
 		clearAssembly(desc->conn_handle);
 		NimBLEDevice::startAdvertising(); // connectable again straight away, so the phone can come back
+	}
+	void onAuthenticationComplete(ble_gap_conn_desc *desc) override {
+		// Authenticated = the passkey was entered correctly, now or when this
+		// phone first bonded. Outside a pairing window the code is random and
+		// never shown, so a stranger would have to guess 1 in 900,000 per try.
+		bool ok = desc->sec_state.encrypted && desc->sec_state.authenticated;
+		if (!ok) {
+			Serial.println("[ble] link not secured - dropping");
+			NimBLEDevice::getServer()->disconnect(desc->conn_handle);
+			return;
+		}
+		portENTER_CRITICAL(&connsMux);
+		Conn *c = findConn(desc->conn_handle);
+		if (c) c->secure = true;
+		portEXIT_CRITICAL(&connsMux);
+		if (pairingOpen()) {
+			// One phone per window - close it as soon as one bonds.
+			pairedDuringWindow = true;
+			closePairing();
+		}
+		Serial.println("[ble] phone secured");
+	}
+	uint32_t onPassKeyRequest() override {
+		return passkey;
 	}
 };
 
 class LinkRxCallbacks : public NimBLECharacteristicCallbacks {
 	void onWrite(NimBLECharacteristic *characteristic, ble_gap_conn_desc *desc) override {
+		// WRITE_ENC|WRITE_AUTHEN already makes the stack refuse this from an
+		// unsecured link - checked again here so a config slip can't open it.
+		if (!desc->sec_state.encrypted || !desc->sec_state.authenticated) return;
 		NimBLEAttValue v = characteristic->getValue();
 		feedIncomingBytes(desc->conn_handle, v.data(), v.length());
 	}
@@ -162,18 +233,28 @@ static void startServerStack() {
 	NimBLEDevice::init(serverAdvertisedName.c_str());
 	NimBLEDevice::setMTU(256); // best-effort - correctness doesn't depend on this succeeding, see header comment
 
+	// Bonded, MITM-protected (passkey) LE Secure Connections. The rig has a
+	// screen but no keyboard, so it displays the code and the phone types it.
+	NimBLEDevice::setSecurityAuth(true, true, true);
+	NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
+	NimBLEDevice::setSecurityPasskey(passkey);
+
 	pServer = NimBLEDevice::createServer();
 	pServer->setCallbacks(new LinkServerCallbacks());
 
 	NimBLEService *service = pServer->createService(SERVICE_UUID);
-	pTxChar = service->createCharacteristic(TX_CHAR_UUID, NIMBLE_PROPERTY::NOTIFY);
-	pRxChar = service->createCharacteristic(RX_CHAR_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+	// READ_ENC|READ_AUTHEN on TX makes notify() skip any subscriber whose link
+	// isn't secured, so an unpaired central never sees a byte.
+	pTxChar = service->createCharacteristic(TX_CHAR_UUID, NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN);
+	pRxChar = service->createCharacteristic(RX_CHAR_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR |
+															  NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
 	pRxChar->setCallbacks(new LinkRxCallbacks());
 	service->start();
 
 	NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
 	advertising->addServiceUUID(SERVICE_UUID);
 	advertising->setScanResponse(true);
+	updateAdvertising();
 
 	// advertising->start() right after a fresh NimBLEDevice::init() (as
 	// resumeServer() does, straight after suspendServer()'s full deinit())
@@ -192,8 +273,82 @@ static void startServerStack() {
 	}
 }
 
+// Manufacturer data in the advertisement: company ID 0xFFFF (reserved for
+// testing/unassigned use), "WD", then 1 while a pairing window is open. The
+// app only offers to pair with a rig that says 1, so it never tries a rig
+// whose owner didn't just tap PAIR PHONE.
+static void updateAdvertising() {
+	NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
+	std::string mfg = {(char)0xFF, (char)0xFF, 'W', 'D', (char)(pairingOpen() ? 1 : 0)};
+	advertising->setManufacturerData(mfg);
+}
+
+static uint32_t newPasskey() {
+	// 100000-999999, and never NimBLE's 123456 default (which would make it
+	// fall back to onPassKeyRequest() - same value, but no surprises).
+	uint32_t k;
+	do {
+		k = 100000 + esp_random() % 900000;
+	} while (k == 123456);
+	return k;
+}
+
+void openPairing(uint32_t durationMs) {
+	passkey = newPasskey();
+	pairedDuringWindow = false;
+	if (pServer) NimBLEDevice::setSecurityPasskey(passkey);
+	pairingUntilMs = millis() + durationMs;
+	if (pairingUntilMs == 0) pairingUntilMs = 1;
+	if (pServer) {
+		NimBLEDevice::stopAdvertising();
+		updateAdvertising();
+		NimBLEDevice::startAdvertising();
+	}
+}
+
+void closePairing() {
+	pairingUntilMs = 0;
+	passkey = newPasskey(); // the shown code stops working the moment the window closes
+	if (pServer) {
+		NimBLEDevice::setSecurityPasskey(passkey);
+		NimBLEDevice::stopAdvertising();
+		updateAdvertising();
+		NimBLEDevice::startAdvertising();
+	}
+}
+
+bool pairingOpen() {
+	uint32_t until = pairingUntilMs;
+	return until != 0 && (int32_t)(until - millis()) > 0;
+}
+
+uint32_t pairingSecondsLeft() {
+	return pairingOpen() ? (pairingUntilMs - millis() + 999) / 1000 : 0;
+}
+
+uint32_t pairingCode() {
+	return passkey;
+}
+
+bool pairedInLastWindow() {
+	return pairedDuringWindow;
+}
+
+int pairedPhoneCount() {
+	return pServer ? NimBLEDevice::getNumBonds() : 0;
+}
+
+void forgetAllPhones() {
+	if (!pServer) return;
+	for (auto &c : conns) {
+		if (c.handle != 0xFFFF) pServer->disconnect(c.handle);
+	}
+	NimBLEDevice::deleteAllBonds();
+}
+
 void beginServer(const char *advertisedName) {
 	lineMutex = xSemaphoreCreateMutex();
+	passkey = newPasskey();
 	serverAdvertisedName = advertisedName;
 	startServerStack();
 }
@@ -220,7 +375,7 @@ void suspendServer() {
 	pServer = nullptr;
 	pTxChar = nullptr;
 	pRxChar = nullptr;
-	serverConnections = 0;
+	for (auto &c : conns) c.handle = 0xFFFF;
 	for (auto &a : rxAssemblies) {
 		a.connHandle = 0xFFFF;
 		a.buf = "";
@@ -236,12 +391,28 @@ void resumeServer() {
 // ---- Shared entry points ----
 
 void poll() {
-	// The real work happens in BLE callbacks - nothing to do here today. Kept
-	// as a real call so future housekeeping has an obvious place to live.
+	NimBLEServer *server = pServer;
+	if (!server) return;
+	// A window that times out on its own still needs its advertisement flag
+	// and code retired.
+	if (pairingUntilMs != 0 && !pairingOpen()) closePairing();
+	// Drop anything that hasn't secured its link in time - see "Pairing".
+	uint32_t deadline = pairingOpen() ? PAIRING_SECURE_DEADLINE_MS : SECURE_DEADLINE_MS;
+	for (auto &c : conns) {
+		if (c.handle != 0xFFFF && !c.secure && millis() - c.since > deadline) {
+			Serial.println("[ble] unpaired central timed out - dropping");
+			c.since = millis(); // don't hammer disconnect() every loop while it goes
+			server->disconnect(c.handle);
+		}
+	}
 }
 
 bool isConnected() {
-	return pServer != nullptr && serverConnections > 0;
+	if (!pServer) return false;
+	for (auto &c : conns) {
+		if (c.handle != 0xFFFF && c.secure) return true;
+	}
+	return false;
 }
 
 void send(const String &line) {
@@ -253,8 +424,8 @@ void send(const String &line) {
 	// makes each send() call internally consistent instead.
 	NimBLECharacteristic *txChar = pTxChar;
 	NimBLEServer *server = pServer;
-	if (txChar) { // notify() reaches the connected central (the phone)
-		if (!server || serverConnections <= 0) return;
+	if (txChar) { // notify() reaches secured subscribers only (READ_ENC/READ_AUTHEN on TX)
+		if (!server || !isConnected()) return;
 		// Chunk to whatever MTU the central actually negotiated (a phone
 		// typically asks for ~247) instead of always the 23-byte floor - a
 		// ~130-byte WD:AP line is one notification instead of eight. Still

@@ -297,20 +297,40 @@ bool Uploader::autoUploadDue(uint32_t nowEpoch) {
 	return !(last != 0 && nowEpoch > last && (nowEpoch - last) < _cfg.minUploadIntervalSec);
 }
 
-bool Uploader::hasPending(const String &dirPath) {
+uint16_t Uploader::pendingCount(const String &dirPath) {
 	File dir = SD.open(dirPath);
-	if (!dir) return false;
-	bool found = false;
+	if (!dir) return 0;
+	uint16_t count = 0;
 	File entry = dir.openNextFile();
-	while (entry && !found) {
+	while (entry) {
 		String name = String(entry.name());
 		size_t size = entry.size();
 		entry.close();
-		if (name.endsWith(".csv") && size > HEADER_ONLY_MAX_BYTES && !alreadyUploaded(dirPath + "/" + name)) found = true;
-		else entry = dir.openNextFile();
+		if (name.endsWith(".csv") && size > HEADER_ONLY_MAX_BYTES && !alreadyUploaded(dirPath + "/" + name)) count++;
+		entry = dir.openNextFile();
 	}
 	dir.close();
-	return found;
+	return count;
+}
+
+void Uploader::removeEmptySessions(const String &dirPath) {
+	// Names first, deletes after - never delete while iterating the folder.
+	std::vector<String> empty;
+	File dir = SD.open(dirPath);
+	if (!dir) return;
+	File entry = dir.openNextFile();
+	while (entry) {
+		String name = String(entry.name());
+		if (name.endsWith(".csv") && entry.size() <= HEADER_ONLY_MAX_BYTES) empty.push_back(dirPath + "/" + name);
+		entry.close();
+		entry = dir.openNextFile();
+	}
+	dir.close();
+	for (auto &path : empty) {
+		SD.remove(path);
+		SD.remove(path + ".uploaded");
+	}
+	if (!empty.empty()) Serial.printf("[boot] removed %u empty session files\n", (unsigned)empty.size());
 }
 
 void Uploader::cleanupOldFiles(const String &dirPath, uint32_t nowEpoch) {

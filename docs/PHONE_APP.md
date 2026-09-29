@@ -32,11 +32,13 @@ You need JDK 17 and the Android SDK. Android Studio installs both; `local.proper
    - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is dropped completely.
    - **Blacklists:** any MACs or SSIDs you never want logged, such as your own devices.
    - Tap **SAVE**.
-3. Tap **START** on the main screen. The app finds the rig over Bluetooth by itself: it looks for the `WardriveCYD` advertisement, so there is no pairing step.
+3. **Pair with your rig (once).** On the rig, open the **4.CFG** tab and tap **PAIR PHONE**. A 6-digit code appears for 60 seconds. With the app open, Android asks you to pair with *WardriveCYD*: type the code and tap OK. The dashboard shows `CYD: PAIR` until this is done.
+
+From then on the phone connects to **that rig only**, and the rig only accepts phones it has paired with. Two rigs and two phones in the same car park never cross over. To move the phone to a different rig, use **Settings → FORGET THIS RIG**. To remove every phone from a rig, use **FORGET PHONES** on its CFG tab.
 
 The dashboard shows two link lines:
 
-- `CYD: BLE` / `CYD: USB` / `CYD: DOWN`: the phone-to-CYD link.
+- `CYD: BLE` / `CYD: USB` / `CYD: DOWN`: the phone-to-CYD link. `CYD: PAIR` means no rig has been paired yet.
 - `RIG: UP` / `RIG: WAIT` / `RIG: DOWN`: the CYD's wired link to the scanner boards, as the CYD reports it.
 
 ### USB fallback
@@ -86,7 +88,7 @@ Sideloaded apps are hidden from Android Auto by default. To show them:
 
 The CYD speaks a line-based text protocol over BLE, and over USB serial at 115200 baud.
 
-- **BLE:** the device is named `WardriveCYD`, with service `5b60de00-0000-4a6c-9b1a-6364796477b1`.
+- **BLE:** the device is named `WardriveCYD`, with service `5b60de00-0000-4a6c-9b1a-6364796477b1`. Both characteristics need an encrypted, authenticated (bonded) link. The advertisement carries manufacturer data `FF FF 57 44 <1|0>` (company ID 0xFFFF, "WD", then 1 while a pairing window is open).
   - **Write** lines to characteristic `5b60de00-0001-4a6c-9b1a-6364796477b1`.
   - **Subscribe** to notifications on `5b60de00-0002-4a6c-9b1a-6364796477b1`.
   - Request a large MTU (the app uses 247). Lines are split to fit it.
@@ -98,4 +100,4 @@ The CYD speaks a line-based text protocol over BLE, and over USB serial at 11520
 
 `tools/test_ble_link.sh` drives the BLE link from a Linux PC with BlueZ, which is handy for testing without a phone.
 
-> **Security note:** the BLE link is open. While your phone isn't connected, anyone within Bluetooth range can connect and start or stop scanning. They can't read your config, delete logs or inject sightings: the `test:` developer commands only work over USB.
+> **Security:** the BLE link is paired and encrypted (LE Secure Connections with a passkey). A phone that hasn't paired can connect at the radio level, but it can't read or write anything, and the rig drops it after 10 seconds. The code is only shown during a PAIR PHONE window. The `test:` developer commands only work over USB.

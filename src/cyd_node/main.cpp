@@ -410,8 +410,8 @@ static Tab currentTab = Tab::Main;
 static const char *TAB_LABELS[TAB_COUNT] = {"1.MAIN", "2.TGTS", "3.LOGS", "4.CFG"};
 TouchButton tabRects[TAB_COUNT];
 // Reused per-tab (only one tab's buttons are ever visible/tappable at
-// once) rather than named per-tab - up to 3 action buttons per tab.
-TouchButton actionRects[3];
+// once) rather than named per-tab - up to 4 action buttons per tab.
+TouchButton actionRects[4];
 uint8_t actionRectCount = 0;
 
 void onSingleClickHandler(); // forward-declared - defined below, called by the touch dispatch in loop()
@@ -498,7 +498,15 @@ static void logEvent(const String &text, uint16_t color) {
 // is cheap enough at this refresh rate not to matter.
 static const uint32_t DISPLAY_REFRESH_MS = 500;
 uint32_t lastDisplayRefreshMs = 0;
+// MAIN's upload line: how many finished runs are waiting to go, plus either
+// the last problem or how long ago the last good upload was. Refreshed by
+// refreshUploadStatus() - never computed per frame, since counting pending
+// files means walking the SD folder.
+uint16_t pendingUploadFiles = 0;
+uint32_t lastUploadOkEpoch = 0; // cached from the uploader's NVS copy - read at boot and after each upload
+String lastUploadProblem = ""; // set by a failed upload, cleared by a good one
 String lastUploadStatusText = "";
+static void refreshUploadStatus();
 
 // Set after drawUploadingOverlay() has painted over the dashboard, so the
 // next drawStatus() call knows to repaint everything - its own dirty-
@@ -766,7 +774,6 @@ static void drawTabMain(bool redrawAll) {
 		tft.setTextSize(1);
 		tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
 		tft.drawString("-> Nill DECK v2.2", artX, sysY + 2);
-		tft.drawString("-> OPERATOR: Nill", artX, sysY + 12);
 	}
 
 	LinkState linkState = currentLinkState();
@@ -795,6 +802,7 @@ static void drawTabMain(bool redrawAll) {
 
 	const int16_t opsY = sysY + 64;
 	if (redrawAll) drawPanelTitle(sysX, opsY, w - HDR_GAP * 2, "OPERATIONS", COLOR_PURPLE);
+	refreshUploadStatus();
 	if (redrawAll || lastUploadStatusText != lastUploadTextDrawn) {
 		tft.fillRect(sysX, opsY + 17, w - HDR_GAP * 2, 10, COLOR_BG);
 		tft.setTextSize(1);
@@ -802,7 +810,7 @@ static void drawTabMain(bool redrawAll) {
 		tft.setCursor(sysX, opsY + 17);
 		tft.print("Upload: ");
 		tft.setTextColor(COLOR_ORANGE, COLOR_BG);
-		tft.print(lastUploadStatusText.length() > 0 ? lastUploadStatusText : "NEVER");
+		tft.print(lastUploadStatusText);
 		lastUploadTextDrawn = lastUploadStatusText;
 	}
 
@@ -1000,7 +1008,10 @@ static void drawTabCfg(bool redrawAll) {
 	static uint64_t lastUsed = UINT64_MAX;
 	static int16_t lastSats = -2;
 	static bool lastSdOkDrawn = false;
-	if (!redrawAll && lastUsed == sdUsedBytesCached && lastSats == lastKnownSatCount && lastSdOkDrawn == sdOk) return;
+	static int lastPaired = -1;
+	int paired = CydBleLink::pairedPhoneCount();
+	if (!redrawAll && lastUsed == sdUsedBytesCached && lastSats == lastKnownSatCount && lastSdOkDrawn == sdOk && lastPaired == paired) return;
+	lastPaired = paired;
 	lastUsed = sdUsedBytesCached;
 	lastSats = lastKnownSatCount;
 	lastSdOkDrawn = sdOk;
@@ -1023,18 +1034,66 @@ static void drawTabCfg(bool redrawAll) {
 	if (lastKnownSatCount >= 0) tft.printf("SATS: %d visible (via wifi_node)", lastKnownSatCount);
 	else tft.print("SATS: -- (no fix yet)");
 	tft.setCursor(HDR_GAP, rowY + 42);
-	tft.print("PWR: Hardwired 5V (stable)");
+	tft.printf("PHONES PAIRED: %d", paired);
 	tft.setCursor(HDR_GAP, rowY + 56);
 	tft.print("OPERATOR: Nill");
 	tft.setCursor(HDR_GAP, rowY + 70);
 	tft.print("FIRMWARE: Nill DECK v2.2");
 
 	const int16_t btnY = CONTENT_BOTTOM - 26, btnW = (w - HDR_GAP * 3) / 2;
+	const int16_t pairY = btnY - 28;
 	setActionButton(0, HDR_GAP, btnY, btnW, 22);
 	setActionButton(1, HDR_GAP * 2 + btnW, btnY, btnW, 22);
-	actionRectCount = 2;
+	setActionButton(2, HDR_GAP, pairY, btnW, 22);
+	setActionButton(3, HDR_GAP * 2 + btnW, pairY, btnW, 22);
+	actionRectCount = 4;
 	drawButton(actionRects[0], "> WIPE LOGS", COLOR_ORANGE, 1);
 	drawButton(actionRects[1], "> REBOOT", COLOR_RED);
+	drawButton(actionRects[2], "> PAIR PHONE", COLOR_CYAN, 1);
+	drawButton(actionRects[3], "> FORGET PHONES", COLOR_TEXT_DIM, 1);
+}
+
+// ---- Phone pairing (see CydBleLink's "Pairing") ----
+static const uint32_t PAIRING_WINDOW_MS = 60000;
+
+void onPairPhoneHandler() {
+	CydBleLink::openPairing(PAIRING_WINDOW_MS);
+	flashLed(false, false, true, LED_FLICKER_MS, true);
+	logEvent("pairing open 60s", COLOR_CYAN);
+	if (WARDRIVE_DEBUG) Serial.printf("[pair] window open, code %06lu\n", (unsigned long)CydBleLink::pairingCode());
+}
+
+void onForgetPhonesHandler() {
+	CydBleLink::forgetAllPhones();
+	flashLed(true, true, false, LED_RESULT_MS, true);
+	logEvent("all paired phones forgotten", COLOR_ORANGE);
+	if (WARDRIVE_DEBUG) Serial.println("[pair] all bonds deleted");
+}
+
+// Drawn over whatever tab is showing while a pairing window is open, so the
+// code is readable from wherever you tapped PAIR PHONE.
+static void drawPairingBox(bool force) {
+	static uint32_t lastSecs = 0;
+	uint32_t secs = CydBleLink::pairingSecondsLeft();
+	if (secs == lastSecs && !force) return;
+	lastSecs = secs;
+	const int16_t w = tft.width();
+	const int16_t boxX = 12, boxY = 90, boxW = w - 24, boxH = 110;
+	tft.fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_PANEL);
+	tft.drawRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_CYAN);
+	tft.setTextDatum(MC_DATUM);
+	tft.setTextSize(1);
+	tft.setTextColor(COLOR_TEXT, COLOR_PANEL);
+	tft.drawString("PAIR PHONE - enter this code", w / 2, boxY + 16);
+	tft.setTextSize(3);
+	tft.setTextColor(COLOR_CYAN, COLOR_PANEL);
+	char code[8];
+	snprintf(code, sizeof(code), "%06lu", (unsigned long)CydBleLink::pairingCode());
+	tft.drawString(code, w / 2, boxY + 50);
+	tft.setTextSize(1);
+	tft.setTextColor(COLOR_TEXT_DIM, COLOR_PANEL);
+	tft.drawString(String("in Wardrive Bridge - ") + secs + "s left", w / 2, boxY + 88);
+	tft.setTextDatum(TL_DATUM);
 }
 
 static void drawStatus() {
@@ -1061,6 +1120,21 @@ static void drawStatus() {
 		case Tab::Cfg: drawTabCfg(redrawAll); break;
 	}
 
+	static bool pairingWasOpen = false;
+	bool pairingNow = CydBleLink::pairingOpen();
+	if (pairingNow) drawPairingBox(redrawAll || !pairingWasOpen);
+	else if (pairingWasOpen) {
+		// Window closed (paired, or timed out) - repaint what the box covered.
+		forceFullRedraw = true;
+		if (CydBleLink::pairedInLastWindow()) {
+			flashLed(false, true, false, LED_RESULT_MS, true);
+			logEvent("phone paired", COLOR_GREEN);
+		} else {
+			logEvent("pairing timed out", COLOR_TEXT_DIM);
+		}
+	}
+	pairingWasOpen = pairingNow;
+
 	lastDrawnContentTab = currentTab;
 	firstDraw = false;
 }
@@ -1074,6 +1148,29 @@ static const char *uploadResultStr(UploadResult r) {
 	}
 }
 
+static String ageText(uint32_t seconds) {
+	if (seconds < 3600) return String(seconds / 60) + "m";
+	if (seconds < 86400) return String(seconds / 3600) + "h";
+	return String(seconds / 86400) + "d";
+}
+
+// Builds MAIN's upload line from state kept up to date elsewhere - cheap
+// enough to call every frame.
+static void refreshUploadStatus() {
+	String text;
+	if (!configOk) {
+		text = "no config.cfg";
+	} else {
+		// Kept under ~30 characters - that's all the width MAIN has.
+		text = pendingUploadFiles == 0 ? String("all sent") : String(pendingUploadFiles) + " waiting";
+		uint32_t last = lastUploadOkEpoch;
+		if (lastUploadProblem.length() > 0) text += " - " + lastUploadProblem;
+		else if (last != 0 && lastKnownEpoch > last) text += " - OK " + ageText(lastKnownEpoch - last) + " ago";
+		else if (last == 0 && pendingUploadFiles == 0) text = "nothing to send yet";
+	}
+	lastUploadStatusText = text;
+}
+
 static void checkStorage() {
 	if (!sdOk) return;
 	// Cached for the CFG tab - usedBytes() can mean a slow walk of the FAT on
@@ -1081,6 +1178,7 @@ static void checkStorage() {
 	sdTotalBytesCached = SD.totalBytes();
 	sdUsedBytesCached = SD.usedBytes();
 	uint64_t freeBytes = sdTotalBytesCached - sdUsedBytesCached;
+	if (uploader && !scanningActive) pendingUploadFiles = uploader->pendingCount(sessionDir());
 	static const uint64_t LOW_STORAGE_THRESHOLD_BYTES = 100UL * 1024 * 1024; // 100MB
 	if (freeBytes < LOW_STORAGE_THRESHOLD_BYTES) {
 		flashLed(true, true, true, LED_FLICKER_MS, true);
@@ -1469,7 +1567,6 @@ static UploadResult doUpload(bool force) {
 	if ((!pendingNow && !pendingAfterStop) || (!force && !uploader->autoUploadDue(lastKnownEpoch))) {
 		if (force) {
 			const char *why = !uploader->configValid() ? "no config.cfg / keys" : "nothing new";
-			lastUploadStatusText = why;
 			logEvent(String("upload: ") + why, COLOR_TEXT_DIM);
 			flashLed(false, true, false, LED_RESULT_MS, true);
 		}
@@ -1502,7 +1599,11 @@ static UploadResult doUpload(bool force) {
 		Serial.printf("[upload] force=%d nowEpoch=%lu result=%s\n",
 					  force, (unsigned long)lastKnownEpoch, uploadResultStr(result));
 	}
-	lastUploadStatusText = uploadResultStr(result);
+	if (result == UploadResult::Ok) lastUploadProblem = "";
+	else if (result == UploadResult::WifiFailed) lastUploadProblem = "WiFi failed";
+	else if (result == UploadResult::UploadFailed) lastUploadProblem = "server failed";
+	lastUploadOkEpoch = uploader->lastUploadEpoch();
+	pendingUploadFiles = uploader->pendingCount(sessionDir());
 	logEvent(String("upload: ") + uploadResultStr(result),
 			 result == UploadResult::Ok ? COLOR_GREEN : result == UploadResult::Skipped ? COLOR_TEXT_DIM : COLOR_RED);
 
@@ -1909,6 +2010,10 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 				Serial.printf("[test] wrote %d rows to %s\n", rows, big.currentFilePath().c_str());
 			}
 		}
+	} else if (line == "test:pair") {
+		onPairPhoneHandler();
+	} else if (line == "test:forget") {
+		onForgetPhonesHandler();
 	} else if (line == "test:status") {
 		Serial.printf("[test] scanning=%d tab=%d fakegps=%d dir=%s pending=%d phone=%s rig=%d heap=%u maxblock=%u\n",
 					  scanningActive, (int)currentTab, testFakeGps, sessionDir(),
@@ -2333,6 +2438,8 @@ void loop() {
 				case Tab::Cfg:
 					if (i == 0) onWipeLogsHandler();
 					else if (i == 1) onRebootHandler();
+					else if (i == 2) onPairPhoneHandler();
+					else if (i == 3) onForgetPhonesHandler();
 					break;
 			}
 		}
@@ -2355,6 +2462,8 @@ void loop() {
 			Serial.printf("[boot] sdOk=%d configOk=%d\n", sdOk, configOk);
 		}
 		logEvent(!sdOk ? "SD card missing" : configOk ? "SD ok, config loaded" : "SD ok, no config.cfg", sdOk && configOk ? COLOR_GREEN : COLOR_RED);
+		if (sdOk && uploader) uploader->removeEmptySessions(SESSION_DIR); // nothing's open yet this early
+		if (uploader) lastUploadOkEpoch = uploader->lastUploadEpoch();
 		checkStorage();
 		if (resumeScanningIntent) {
 			// Just sets the flag - the scanningActive != wasScanning edge
@@ -2488,6 +2597,7 @@ void loop() {
 		} else {
 			stopScanning();
 			logEvent(String("scan stopped - wifi ") + wifiCountThisRun + " ble " + bleCountThisRun, COLOR_GREEN);
+			if (uploader) pendingUploadFiles = uploader->pendingCount(sessionDir());
 		}
 	}
 

@@ -23,6 +23,10 @@ Always start with the serial monitor: `pio device monitor -p <port> -b 115200`. 
 - ble_node's heartbeat `sent=` should climb, and wifi_node should flicker purple for WiFi. If ble_node sends but nothing arrives, check the 8↔8 and 3↔3 wires and the GND.
 - ble_node only logs each device once per run, so in a quiet place the count levels off quickly.
 
+## The phone app shows CYD: PAIR
+
+The phone isn't paired with a rig yet. On the rig's **4.CFG** tab, tap **PAIR PHONE**, then keep the app open until Android asks for the code. If the rig was reset with **FORGET PHONES**, the app notices after a few failed connections and goes back to `CYD: PAIR` on its own. If it doesn't, use **Settings → FORGET THIS RIG** in the app, and remove *WardriveCYD* from Android's Bluetooth settings.
+
 ## The phone app shows CYD: DOWN
 
 - Make sure Bluetooth and Location are on, and that the app has the **Nearby devices** permission.

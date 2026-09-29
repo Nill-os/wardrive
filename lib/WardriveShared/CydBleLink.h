@@ -26,9 +26,22 @@ void beginServer(const char *advertisedName);
 void suspendServer();
 void resumeServer();
 
-// Call every loop() iteration. Cheap - the real work happens in BLE callbacks.
+// Pairing (see "Pairing" in the .cpp): only bonded phones can use the link.
+// openPairing() lets one new phone bond during the next durationMs, using
+// the 6-digit pairingCode() - show it on screen while pairingOpen().
+void openPairing(uint32_t durationMs);
+void closePairing();
+bool pairingOpen();
+uint32_t pairingSecondsLeft();
+uint32_t pairingCode();
+bool pairedInLastWindow();
+int pairedPhoneCount();
+void forgetAllPhones();
+
+// Call every loop() iteration - drops centrals that never secure their link.
 void poll();
 
+// True while a paired (bonded, encrypted) phone is connected.
 bool isConnected();
 
 // Queues a line to send (a trailing '\n' is added automatically - don't

@@ -26,16 +26,17 @@ There are four tabs, which you tap along the bottom:
 
 | Tab | What's on it | Buttons |
 |---|---|---|
-| **1.MAIN** | WiFi and BLE counts for this run, SD and config health, the last upload result, and the latest device seen | **START/STOP**, **UPLOAD**, **RE-LINK ALL** |
+| **1.MAIN** | WiFi and BLE counts for this run, SD and config health, and an upload line: how many finished runs are waiting to upload, then either the last problem (`WiFi failed`, `server failed`) or how long ago the last good upload was (`OK 3h ago`) | **START/STOP**, **UPLOAD**, **RE-LINK ALL** |
 | **2.TGTS** | The last 8 WiFi networks heard while scanning, with signal and security. Without a GPS fix they still show, dimmed and marked `no fix - not logged`. | **CLEAR** (clears the screen list only, not the logs) |
 | **3.LOGS** | A live event terminal: every logged sighting, plus system events (scan start/stop, GPS fix gained/lost, rig and phone links, uploads, SD status) | **PAUSE/RESUME LOG**, **FLUSH TO SD** |
-| **4.CFG** | SD usage, GPS satellites, firmware info | **WIPE LOGS**, **REBOOT** |
+| **4.CFG** | SD usage, GPS satellites, paired phones, firmware info | **PAIR PHONE**, **FORGET PHONES**, **WIPE LOGS**, **REBOOT** |
 
 What the buttons do:
 
 - **START/STOP** starts or stops scanning and logging on all three boards. The rig remembers this through power cuts (see below).
 - **UPLOAD** uploads every session file that hasn't been uploaded yet, straight away. The phone's BLE link drops during the upload to free memory, and reconnects by itself afterwards. If there's nothing new, it says so and flashes green.
 - **RE-LINK ALL** re-sends the rig state to wifi_node, restarts the CYD's Bluetooth so the phone reconnects fresh, and re-announces itself to the phone. Try this first whenever a link looks stuck.
+- **PAIR PHONE** opens a 60-second window with a 6-digit code on screen, for pairing the Wardrive Bridge app (see [Phone app](PHONE_APP.md#first-run)). **FORGET PHONES** removes every paired phone.
 - **WIPE LOGS** ⚠ deletes **every** session file on the card, including ones not yet uploaded. There is no confirmation. It only works while scanning is stopped.
 
 ## Status LEDs

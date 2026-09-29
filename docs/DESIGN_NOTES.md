@@ -60,6 +60,7 @@ Only a deliberate START or STOP is persisted. The temporary stop and restart aro
 cyd_node runs a NimBLE GATT server named `WardriveCYD`, and mirrors the same lines to USB serial. See [Phone app → Protocol](PHONE_APP.md#protocol-for-writing-your-own-client).
 
 - Outgoing notifications are chunked to the peer's negotiated MTU (capped at 240 bytes).
+- **Pairing:** LE Secure Connections with bonding and MITM protection. The rig is `DISPLAY_ONLY`, so it shows a 6-digit passkey that the phone types in. The passkey is random, only shown during a PAIR PHONE window, and changed when the window closes. Both characteristics need an encrypted, authenticated link (`READ_ENC|READ_AUTHEN` on TX, `WRITE_ENC|WRITE_AUTHEN` on RX), and any connection that hasn't secured itself within 10 s (60 s during a window) is dropped. The app saves the paired rig's address and scans by address from then on.
 - During uploads the BLE stack is suspended to free heap, because WiGLE's TLS handshake needs a big contiguous block.
 
 `WD:MESHLINK` is the wdstream field name kept for compatibility. It carries the rig (wired) link state.
@@ -95,7 +96,6 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 ## Known limitations
 
 - **2.4 GHz only.** The ESP32-S3 can't receive 5 GHz. An ESP32-C5 could.
-- **Open BLE link.** Anyone in range can connect when no phone is connected, and start or stop scanning. The `test:` developer commands are USB-only. Pairing or bonding would close this completely.
 - **Uploads don't verify TLS certificates.** The firmware has no root CA bundle configured, so on an untrusted network (a public hotspot) a man-in-the-middle could read your upload keys. Upload over your own WiFi.
 - **wdgwars upload format.** The request format (`X-Api-Key` header, `file` field) follows common convention and has worked in practice, but it hasn't been checked against wdgwars' logged-in API docs.
 - **WiGLE TLS memory.** WiGLE uploads used to fail with a TLS out-of-memory error while BLE was running. BLE is now suspended during uploads; watch the `[upload] free heap` line if it comes back.

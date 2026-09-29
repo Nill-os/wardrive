@@ -112,8 +112,15 @@ static uint32_t channelHopMs = 150;
 // dwell would carry. Together the two boards still cover the complete
 // 1-11 range at every instant, same as the phase-offset approach did,
 // but with real revisit-rate gains on top now.
-static const uint8_t CHANNEL_MIN = 1;
-static const uint8_t CHANNEL_MAX = 6; // cyd_node picks up 6-11 - see comment above
+// This board has the external antenna, so it dwells on the three
+// non-overlapping channels that carry the large majority of real 2.4GHz
+// APs (1, 6, 11). With only three to cover it revisits each about every
+// 3*channelHopMs (~450ms at the default), fast enough to catch an AP on a
+// single drive-by. cyd_node's own sniffer sweeps the full 1-11 range, so the
+// less-common channels (2-5, 7-10) are still covered - just by the board
+// without the good antenna, where they belong.
+static const uint8_t WIFI_CHANNELS[] = {1, 6, 11};
+static const uint8_t WIFI_CHANNEL_COUNT = sizeof(WIFI_CHANNELS) / sizeof(WIFI_CHANNELS[0]);
 
 // Both board-to-board links. 460800 (not 115200) because every forwarded
 // sighting is a ~120-byte line: at 115200 that's ~10ms of blocking per line,
@@ -212,7 +219,8 @@ double idleAnchorLat = 0.0, idleAnchorLon = 0.0;
 bool idleAnchorSet = false;
 uint32_t idleAnchorSetMs = 0;
 uint32_t lastHeartbeatMs = 0;
-uint8_t currentChannel = CHANNEL_MIN;
+uint8_t channelIndex = 0;
+uint8_t currentChannel = WIFI_CHANNELS[0];
 
 // cyd_node is the only board left with SD/upload logic, so wifi_node now
 // gates its own scanning start on cyd_node's storage health, exactly the
@@ -615,7 +623,8 @@ static void startScanning() {
 	apDedupState.clear(); // fresh run, fresh dedup - duplicates across separate runs are fine, never within one
 	apSeenThisRunForLed.clear();
 	esp_wifi_set_promiscuous(true);
-	currentChannel = CHANNEL_MIN;
+	channelIndex = 0;
+	currentChannel = WIFI_CHANNELS[0];
 	esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
 	lastChannelHopMs = millis();
 }
@@ -860,8 +869,8 @@ void loop() {
 	if (scanningActive) {
 		if (millis() - lastChannelHopMs > channelHopMs) {
 			lastChannelHopMs = millis();
-			currentChannel++;
-			if (currentChannel > CHANNEL_MAX) currentChannel = CHANNEL_MIN;
+			channelIndex = (channelIndex + 1) % WIFI_CHANNEL_COUNT;
+			currentChannel = WIFI_CHANNELS[channelIndex];
 			esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
 		}
 

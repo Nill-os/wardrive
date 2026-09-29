@@ -105,8 +105,10 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
     }
 
     private fun frequencyToChannel(freqMHz: Int): Int = when {
-        freqMHz in 2412..2484 -> if (freqMHz == 2484) 14 else (freqMHz - 2407) / 5
-        freqMHz in 5000..5900 -> (freqMHz - 5000) / 5
+        freqMHz == 2484 -> 14
+        freqMHz in 2412..2472 -> (freqMHz - 2407) / 5           // 2.4 GHz, channels 1-13
+        freqMHz in 5000..5895 -> (freqMHz - 5000) / 5           // 5 GHz
+        freqMHz in 5925..7125 -> (freqMHz - 5950) / 5           // 6 GHz (WiFi 6E)
         else -> 0
     }
 

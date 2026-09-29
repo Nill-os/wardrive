@@ -38,7 +38,7 @@ Both board-to-board links run at 460800 8N1 with 4–8 KB UART buffers, one `\n`
 ## Capture speed
 
 - **Repeat filter in the sniffer callback:** a 512-slot cache drops a BSSID heard in the last 500 ms before it's queued, so repeated beacons can't crowd new APs out of the 128-slot queue. `frames`, `queued` and `qdrop` in wifi_node's heartbeat (and `qdrop` on the CYD) show how it's doing.
-- **Channel split:** wifi_node hops 1–6 and the CYD hops 6–11, both at `channel_hop_ms` (150 ms, just over one beacon interval).
+- **Channel plan:** wifi_node (which has the external antenna) hops the three non-overlapping, most-used channels **1, 6, 11**, so it revisits each about every 450 ms and catches the bulk of APs on a single pass. The CYD's own sniffer sweeps the full **1–11**, covering the less-common channels. Both hop at `channel_hop_ms` (150 ms, just over one beacon interval).
 - **GPS at 5 Hz:** wifi_node sends u-blox UBX commands at boot to set 5 fixes a second and turn off the NMEA sentences it doesn't use. `gga=` in the heartbeat climbs about 5 per second once that has taken. This needs the GPS RX wire; without it the module stays at 1 Hz.
 - **Positions to the CYD every 250 ms**, so the CYD's own catches are tagged with a fresh position.
 - **No sightings lost before the first fix:** ble_node only sends (and marks as seen) while wifi_node reports a fix (`GPSFIX:1`), and the BLE controller's duplicate filter is off. Before this, every BLE device heard before the first fix of a run was never logged.
@@ -104,12 +104,11 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 
 ## Known limitations
 
-- **2.4 GHz only.** The ESP32-S3 can't receive 5 GHz. An ESP32-C5 could.
+- **The rig is 2.4 GHz only.** The ESP32-S3 can't receive 5 GHz (an ESP32-C5 could). The phone app scans the phone's own radio, which covers 2.4, 5 and 6 GHz, so with a phone connected the combined logs cover every band.
 - **Uploads don't verify TLS certificates.** The firmware has no root CA bundle configured, so on an untrusted network (a public hotspot) a man-in-the-middle could read your upload keys. Upload over your own WiFi.
 - **wdgwars upload format.** The request format (`X-Api-Key` header, `file` field) follows common convention and has worked in practice, but it hasn't been checked against wdgwars' logged-in API docs.
 - **WiGLE TLS memory.** WiGLE uploads used to fail with a TLS out-of-memory error while BLE was running. BLE is now suspended during uploads; watch the `[upload] free heap` line if it comes back.
-- **The SD card is the single point of failure.** If it fails or is missing, sightings are dropped rather than buffered.
-- **The SD card is only checked when scanning starts.** A card pulled mid-run fails silently until the next START.
-- **Security type is a heuristic.** It works from the RSN tag, the WPA vendor tag and the privacy bit, so WPA3 shows as WPA2.
+- **The SD card is the single point of failure.** If it fails or is missing, sightings are dropped rather than buffered. A card that fails mid-run is now detected within 30 s (red flash, SD:FAIL) rather than failing silently, but the rows during that window are still lost.
+- **Security type is parsed from the RSN information element** (AKM suites), so WPA2, WPA3-SAE, WPA3-Enterprise, OWE and WPA2/WPA3 transitional are each identified in the CSV. Only the phone's live `wdstream` mirror collapses WPA3 to `WPA2`, for GhostESP compatibility; the logged data keeps the real type.
 - **No raw pcap capture** in the three-board layout.
 - **Touch calibration** was measured on one unit; other panels may need `TOUCH_RAW_*` adjusted.

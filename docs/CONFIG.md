@@ -30,7 +30,7 @@ channel_hop_ms=150
 | `home_lat` / `home_lon` / `home_radius_m` | no | The home geofence for automatic "dock mode" uploads. When you arrive inside this circle with scanning stopped, the rig uploads once per arrival. Set `home_radius_m=0` or leave the keys out to disable it. |
 | `exclude_radius_m` | no | Drop any sighting within this many metres of `home_lat`/`home_lon` before logging or uploading it — the rig's home exclusion zone. Default 0 (off). |
 | `retention_days` | no | Delete **already-uploaded** session files older than this many days. The default, 0, keeps everything forever, which is the recommended setting. |
-| `channel_hop_ms` | no | How long wifi_node listens on each 2.4 GHz channel before moving on. Default 150. Lower values catch more APs at speed; higher values catch more quiet devices. |
+| `channel_hop_ms` | no | How long each board dwells on a channel before hopping. Default 150 (just over one beacon interval). wifi_node hops 1/6/11; the CYD sweeps 1–11. |
 
 ## Keep it private
 

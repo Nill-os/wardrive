@@ -1243,6 +1243,18 @@ static bool isNoMapSsid(const String &ssid) {
 	return lower.endsWith("_nomap") || lower.endsWith("_optout");
 }
 
+// Confirms the card still accepts writes. usedBytes()/cardType() can keep
+// returning cached values after a card is pulled mid-run, so this actually
+// writes a tiny probe file - the only reliable "is it still there" check.
+static bool sdStillWritable() {
+	File f = SD.open("/.wrprobe", FILE_WRITE);
+	if (!f) return false;
+	bool ok = f.print("1") == 1;
+	f.close();
+	SD.remove("/.wrprobe");
+	return ok;
+}
+
 static bool tryRecoverSd() {
 	SD.end();
 	bool ok = SD.begin(PIN_SD_CS, sdSPI);
@@ -1303,7 +1315,10 @@ static QueueHandle_t cydObsQueue;
 // often either one revisits any given one of its own channels - the
 // actual lever for catching briefly-in-range APs faster. Together the two
 // boards still cover the complete 1-11 range at every instant.
-static const uint8_t CYD_CHANNEL_MIN = 6;
+// Full 1-11 sweep: wifi_node (with the external antenna) covers the popular
+// 1/6/11 fast, so this board's own sniffer covers everything, catching the
+// less-common channels wifi_node no longer visits.
+static const uint8_t CYD_CHANNEL_MIN = 1;
 static const uint8_t CYD_CHANNEL_MAX = 11;
 uint8_t cydCurrentChannel = CYD_CHANNEL_MIN;
 uint32_t cydLastChannelHopMs = 0;
@@ -2582,6 +2597,14 @@ void loop() {
 		if (!sdOk) {
 			sdOk = tryRecoverSd();
 			if (sdOk && !configOk) configOk = loadWardriveConfig("/config.cfg", config);
+		} else if (scanningActive && !sdStillWritable()) {
+			// Card pulled or failed mid-run - make it visible (red flash, SD:FAIL,
+			// LED relayed to the other boards) instead of writes silently no-oping.
+			sdOk = false;
+			startSdErrorBlink();
+			wifiLinkSend("SDOK:0");
+			logEvent("SD card failed mid-run - check the card", COLOR_RED);
+			if (WARDRIVE_DEBUG) Serial.println("[storage] SD no longer writable mid-run");
 		} else {
 			checkStorage();
 		}

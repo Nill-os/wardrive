@@ -449,20 +449,39 @@ void onFlushSdHandler();
 // SD (already written for every observation regardless of whether this
 // buffer has room). This just lets the touchscreen show something without
 // re-reading the CSV back off SD every redraw.
+//
+// Newest-first, one row per BSSID. This board's own sniffer feeds it even
+// without a GPS fix (logged=false, drawn dimmed) - otherwise the tab stays
+// empty indoors, where nothing can be logged. A repeat sighting updates its
+// row in place rather than taking a new slot, since the sniffer hears the
+// same AP's beacons many times a second.
 struct ApSighting {
 	String bssid, ssid, auth;
 	int rssi;
+	bool logged;
 };
 static const uint8_t MAX_AP_SIGHTINGS = 8;
-ApSighting apSightings[MAX_AP_SIGHTINGS];
+ApSighting apSightings[MAX_AP_SIGHTINGS]; // [0] is the newest
 uint8_t apSightingCount = 0;
-uint8_t apSightingHead = 0;
-uint32_t apSightingVersion = 0; // bumped on every push/clear - lets the TARGETS tab skip redrawing when nothing changed
+uint32_t apSightingVersion = 0; // bumped on every visible change - lets the TARGETS tab skip redrawing when nothing changed
 
-static void pushApSighting(const String &bssid, const String &ssid, const String &auth, int rssi) {
-	apSightings[apSightingHead] = {bssid, ssid, auth, rssi};
-	apSightingHead = (apSightingHead + 1) % MAX_AP_SIGHTINGS;
+static void pushApSighting(const String &bssid, const String &ssid, const String &auth, int rssi, bool logged) {
+	for (uint8_t i = 0; i < apSightingCount; i++) {
+		ApSighting &s = apSightings[i];
+		if (s.bssid != bssid) continue;
+		// Only redraw for a change worth seeing - RSSI jitters by a dB or two
+		// on every beacon.
+		if (abs(s.rssi - rssi) >= 3 || (logged && !s.logged) || (s.ssid.length() == 0 && ssid.length() > 0)) {
+			s.rssi = rssi;
+			s.logged = s.logged || logged;
+			if (ssid.length() > 0) s.ssid = ssid;
+			apSightingVersion++;
+		}
+		return;
+	}
 	if (apSightingCount < MAX_AP_SIGHTINGS) apSightingCount++;
+	for (uint8_t i = apSightingCount - 1; i > 0; i--) apSightings[i] = apSightings[i - 1];
+	apSightings[0] = {bssid, ssid, auth, rssi, logged};
 	apSightingVersion++;
 }
 
@@ -485,6 +504,12 @@ static void pushLogLine(const String &text, uint16_t color) {
 	logLineHead = (logLineHead + 1) % MAX_LOG_LINES;
 	if (logLineCount < MAX_LOG_LINES) logLineCount++;
 	logLineVersion++;
+}
+
+// System events (as opposed to sightings) - these are what fill the LOGS tab
+// when there's no GPS fix, since without one no sighting is ever logged.
+static void logEvent(const String &text, uint16_t color) {
+	pushLogLine(String("> ") + text, color);
 }
 
 // ---- Display ----
@@ -677,6 +702,10 @@ static void drawHeader(bool firstDraw) {
 								 : linkState == LinkState::Connecting ? "CONNECTING"
 																	   : "DISCONNECTED";
 		Serial.printf("[link] state -> %s\n", stateName);
+	}
+	if (!firstDraw && linkState != lastLinkState) {
+		logEvent(linkState == LinkState::Connected ? "RIG link up" : linkState == LinkState::Connecting ? "RIG link waiting" : "RIG link down",
+				 linkState == LinkState::Connected ? COLOR_GREEN : linkState == LinkState::Connecting ? COLOR_ORANGE : COLOR_RED);
 	}
 	if (firstDraw || linkState != lastLinkState) {
 		tft.fillRect(0, 1 + HDR_ROW_H + 2, w / 2, HDR_ROW_H, COLOR_BG);
@@ -915,8 +944,10 @@ static void drawTabTargets(bool redrawAll) {
 	if (redrawAll) {
 		drawPanelTitle(HDR_GAP, CONTENT_Y, w - HDR_GAP * 2, "DETECTED NETWORKS", COLOR_CYAN);
 	}
-	if (!redrawAll && apSightingVersion == lastDrawnVersion) return; // nothing new since last paint
+	static bool lastDrawnScanning = false;
+	if (!redrawAll && apSightingVersion == lastDrawnVersion && scanningActive == lastDrawnScanning) return; // nothing new since last paint
 	lastDrawnVersion = apSightingVersion;
+	lastDrawnScanning = scanningActive;
 
 	const int16_t listY = CONTENT_Y + 18;
 	const int16_t rowH = 20;
@@ -924,20 +955,19 @@ static void drawTabTargets(bool redrawAll) {
 	tft.setTextSize(1);
 	if (apSightingCount == 0) {
 		tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
-		tft.drawString("(no networks seen yet)", HDR_GAP, listY + 4);
+		tft.drawString(scanningActive ? "(no networks seen yet)" : "(tap START to see networks)", HDR_GAP, listY + 4);
 	} else {
 		for (uint8_t i = 0; i < apSightingCount; i++) {
-			// Newest first: apSightingHead points at the next WRITE slot,
-			// so the most recent entry is one behind it.
-			uint8_t idx = (apSightingHead + MAX_AP_SIGHTINGS - 1 - i) % MAX_AP_SIGHTINGS;
-			const ApSighting &s = apSightings[idx];
+			const ApSighting &s = apSightings[i];
 			int16_t y = listY + i * rowH;
 			String name = s.ssid.length() > 0 ? s.ssid : s.bssid;
 			if (name.length() > 16) name = name.substring(0, 16);
-			tft.setTextColor(COLOR_TEXT, COLOR_BG);
+			tft.setTextColor(s.logged ? COLOR_TEXT : COLOR_TEXT_DIM, COLOR_BG);
 			tft.drawString(name, HDR_GAP, y);
+			String auth = s.auth.length() > 12 ? s.auth.substring(0, 12) : s.auth;
+			if (!s.logged) auth += "  no fix - not logged";
 			tft.setTextColor(s.auth.indexOf("OPEN") >= 0 || s.auth == "[ESS]" ? COLOR_ORANGE : COLOR_TEXT_DIM, COLOR_BG);
-			tft.drawString(s.auth.length() > 12 ? s.auth.substring(0, 12) : s.auth, HDR_GAP, y + 9);
+			tft.drawString(auth, HDR_GAP, y + 9);
 			tft.setTextColor(COLOR_CYAN, COLOR_BG);
 			tft.setTextDatum(TR_DATUM);
 			tft.drawString(String(s.rssi) + "dB", w - HDR_GAP, y + 4);
@@ -1438,6 +1468,7 @@ static void stopScanning() {
 static UploadResult doUpload(bool force) {
 	if (!uploader) {
 		if (WARDRIVE_DEBUG) Serial.println("[upload] skipped - SD/config not ready yet");
+		logEvent("upload skipped - SD/config not ready", COLOR_RED);
 		if (force) {
 			flashLed(true, false, false, LED_RESULT_MS, true);
 			wifiLinkSend("FAIL");
@@ -1472,6 +1503,8 @@ static UploadResult doUpload(bool force) {
 					  force, (unsigned long)lastKnownEpoch, uploadResultStr(result));
 	}
 	lastUploadStatusText = uploadResultStr(result);
+	logEvent(String("upload: ") + uploadResultStr(result),
+			 result == UploadResult::Ok ? COLOR_GREEN : result == UploadResult::Skipped ? COLOR_TEXT_DIM : COLOR_RED);
 
 	if (force) {
 		stopUploadBlink();
@@ -1543,6 +1576,7 @@ extern uint32_t lastScanStateBroadcastMs;
 void onReconnectHandler() {
 	flashLed(true, false, true, LED_FLICKER_MS, true); // purple - distinct from the other two actions' colors
 	if (WARDRIVE_DEBUG) Serial.println("[touch] link reconnect requested (wifi_node + phone)");
+	logEvent("RE-LINK ALL", COLOR_PURPLE);
 	if (currentLinkState() != LinkState::Connected) linkReconnecting = true;
 	lastSdHealthBroadcastMs = 0;
 	lastCfgBroadcastMs = 0;
@@ -1556,7 +1590,7 @@ void onReconnectHandler() {
 // buffer, never touches the permanent WigleWifi CSV already on SD.
 void onClearTargetsHandler() {
 	apSightingCount = 0;
-	apSightingHead = 0;
+	apSightingVersion++;
 	forceFullRedraw = true;
 	if (WARDRIVE_DEBUG) Serial.println("[touch] targets list cleared");
 }
@@ -1672,6 +1706,7 @@ static void notePhoneCommandReceived() {
 	phoneLinkUp = true;
 	flashLed(true, true, false, LED_RESULT_MS, true);
 	if (WARDRIVE_DEBUG) Serial.println("[phone-link] connected");
+	logEvent(CydBleLink::isConnected() ? "phone connected (BLE)" : "phone connected (USB)", COLOR_GREEN);
 }
 
 static void checkPhoneLinkTimeout() {
@@ -1686,6 +1721,7 @@ static void checkPhoneLinkTimeout() {
 	if (millis() - lastPhoneCommandMs <= PHONE_LINK_TIMEOUT_MS) return;
 	phoneLinkUp = false;
 	if (WARDRIVE_DEBUG) Serial.println("[phone-link] disconnected (no commands in 12s)");
+	logEvent("phone disconnected", COLOR_ORANGE);
 }
 
 static String hexEncode(const uint8_t *data, size_t len) {
@@ -1853,6 +1889,7 @@ static void handleIncomingLine(const String &line) {
 			flashLed(false, true, false, LED_FLICKER_MS, true);
 			phonePrintf("WD:SCANSTATE:%d", scanningActive ? 1 : 0); // phone app mirror
 			if (WARDRIVE_DEBUG) Serial.printf("[link] resynced to scanning=%d from wifi_node\n", scanningActive);
+			logEvent(scanningActive ? "wifi_node says: scanning" : "wifi_node says: stopped", COLOR_TEXT_DIM);
 		}
 		return;
 	}
@@ -1865,7 +1902,9 @@ static void handleIncomingLine(const String &line) {
 		int c1 = rest.indexOf(',');
 		int c2 = rest.indexOf(',', c1 + 1);
 		if (c1 < 0 || c2 < 0) return;
+		bool hadFix = gpsFixKnown;
 		gpsFixKnown = rest.substring(0, c1).toInt() != 0;
+		if (gpsFixKnown != hadFix) logEvent(gpsFixKnown ? "GPS fix acquired" : "GPS fix lost - not logging", gpsFixKnown ? COLOR_GREEN : COLOR_ORANGE);
 		if (gpsFixKnown) {
 			lastKnownLat = rest.substring(c1 + 1, c2).toDouble();
 			lastKnownLon = rest.substring(c2 + 1).toDouble();
@@ -1918,7 +1957,7 @@ static void handleIncomingLine(const String &line) {
 
 		wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
 		wifiCountThisRun++;
-		pushApSighting(bssid, ssid, authMode, rssi);
+		pushApSighting(bssid, ssid, authMode, rssi, true);
 		pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(rssi) + "dB", COLOR_CYAN);
 
 		if (wdstreamActive) {
@@ -2253,6 +2292,7 @@ void loop() {
 		if (WARDRIVE_DEBUG) {
 			Serial.printf("[boot] sdOk=%d configOk=%d wifi_ssid=%s\n", sdOk, configOk, config.wifiSsid.c_str());
 		}
+		logEvent(!sdOk ? "SD card missing" : configOk ? "SD ok, config loaded" : "SD ok, no config.cfg", sdOk && configOk ? COLOR_GREEN : COLOR_RED);
 		if (resumeScanningIntent) {
 			// Just sets the flag - the scanningActive != wasScanning edge
 			// detector later in this same loop() iteration is what actually
@@ -2264,6 +2304,7 @@ void loop() {
 			// glance.
 			scanningActive = true;
 			if (WARDRIVE_DEBUG) Serial.println("[boot] resuming scan from before power loss");
+			logEvent("resuming scan after power loss", COLOR_TEXT_DIM);
 		}
 	}
 
@@ -2376,9 +2417,13 @@ void loop() {
 				sdOk = false;
 				startSdErrorBlink();
 				if (WARDRIVE_DEBUG) Serial.println("[start] SD can't save data - check card, aborting start");
+				logEvent("START failed - SD can't save", COLOR_RED);
+			} else {
+				logEvent(gpsFixKnown ? "scan started" : "scan started (no GPS fix yet)", COLOR_GREEN);
 			}
 		} else {
 			stopScanning();
+			logEvent(String("scan stopped - wifi ") + wifiCountThisRun + " ble " + bleCountThisRun, COLOR_GREEN);
 		}
 	}
 
@@ -2398,20 +2443,30 @@ void loop() {
 			// so a new AP found by THIS board's own sniffer only shows up
 			// in the ticker/TARGETS/LOGS views, not a distinct blink.
 
-			if (!gpsFixKnown) continue; // no usable position - see file header on staleness
-			if (!cydShouldLogAp(obs.bssid, lastKnownLat, lastKnownLon)) continue;
-
 			String ssid(obs.ssid);
 			ssid.replace(",", " ");
 			ssid.replace("\n", " ");
 			ssid.replace("\r", " ");
 			String bssid = cydMacToString(obs.bssid);
 			String authMode = cydAuthModeStr(obs.authMode, obs.pmfCapable, obs.pmfRequired);
+
+			if (!gpsFixKnown) {
+				// No usable position (see file header on staleness), so no CSV
+				// row - but still show it on TARGETS, so the tab proves the
+				// sniffer works even indoors.
+				pushApSighting(bssid, ssid, authMode, obs.rssi, false);
+				continue;
+			}
+			if (!cydShouldLogAp(obs.bssid, lastKnownLat, lastKnownLon)) {
+				pushApSighting(bssid, ssid, authMode, obs.rssi, true); // already logged at this spot - just refresh its row
+				continue;
+			}
+
 			String iso = cydIsoTimestampFromEpoch(lastKnownEpoch);
 			wigleWifi.logWifi(bssid, ssid, authMode, iso, obs.channel, cydChannelToFreqMHz(obs.channel),
 							  obs.rssi, lastKnownLat, lastKnownLon, 0.0, 30.0);
 			wifiCountThisRun++;
-			pushApSighting(bssid, ssid, authMode, obs.rssi);
+			pushApSighting(bssid, ssid, authMode, obs.rssi, true);
 			pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(obs.rssi) + "dB (cyd)", COLOR_CYAN);
 		}
 	}

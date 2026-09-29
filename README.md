@@ -62,3 +62,7 @@ docs/                                           guides and diagrams
 tools/                                          BLE link tester, SD-card CSV organizer
 config.cfg.example                              template for the SD card
 ```
+
+## License
+
+[MIT](LICENSE)

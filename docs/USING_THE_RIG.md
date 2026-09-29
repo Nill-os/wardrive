@@ -27,9 +27,9 @@ There are five tabs, which you tap along the bottom:
 | Tab | What's on it | Buttons |
 |---|---|---|
 | **1.MAIN** | WiFi and BLE counts for this run, SD and config health, the last upload result, and the latest device seen | **START/STOP**, **UPLOAD**, **RE-LINK ALL** |
-| **2.TGTS** | The last 8 WiFi networks seen, with signal and security | **CLEAR** (clears the screen list only, not the logs) |
+| **2.TGTS** | The last 8 WiFi networks heard while scanning, with signal and security. Without a GPS fix they still show, dimmed and marked `no fix - not logged`. | **CLEAR** (clears the screen list only, not the logs) |
 | **3.LINKS** | Details for the rig link and the phone link | **RE-LINK ALL** |
-| **4.LOGS** | A live event terminal | **PAUSE/RESUME LOG**, **FLUSH TO SD** |
+| **4.LOGS** | A live event terminal: every logged sighting, plus system events (scan start/stop, GPS fix gained/lost, rig and phone links, uploads, SD status) | **PAUSE/RESUME LOG**, **FLUSH TO SD** |
 | **5.CFG** | SD usage, GPS satellites, firmware info | **WIPE LOGS**, **REBOOT** |
 
 What the buttons do:

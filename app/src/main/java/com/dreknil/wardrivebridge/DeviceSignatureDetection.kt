@@ -80,12 +80,6 @@ object DeviceSignatureDetection {
     fun isMeshRadio(serviceUuids: List<String>): Boolean =
         serviceUuids.any { it.equals(MESHTASTIC_SERVICE_UUID, ignoreCase = true) }
 
-    // Lovense's own device-naming convention (LVS- prefix), the dominant
-    // vendor in this space - well documented by their public BLE SDK. Only
-    // covers Lovense, not other brands (WeVibe, Kiiroo, etc. use different
-    // conventions this doesn't catch).
-    fun isAdultToy(name: String): Boolean = name.startsWith("LVS-", ignoreCase = true)
-
     // Weak, low-confidence name-based heuristic (unlike the UUID/company-ID
     // signals above) - Ray-Ban Meta smart glasses at their default
     // advertised name. Expect false negatives if the wearer renamed the

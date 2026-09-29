@@ -811,10 +811,6 @@
                 layout="@layout/item_menu_row" />
 
             <include
-                android:id="@+id/menuAdultToy"
-                layout="@layout/item_menu_row" />
-
-            <include
                 android:id="@+id/menuGlasses"
                 layout="@layout/item_menu_row" />
 

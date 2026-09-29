@@ -562,7 +562,6 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         // doesn't carry (see Observation.isDrone's own comment) - name-based
         // signatures only here, same set PhoneBleScanner can also derive from
         // just a name.
-        val adultToy = DeviceSignatureDetection.isAdultToy(name)
         val glasses = DeviceSignatureDetection.isGlasses(name)
         val actionCam = DeviceSignatureDetection.isActionCam(name)
         val policeCam = DeviceSignatureDetection.isPoliceCam(name)
@@ -583,7 +582,6 @@ class RigLinkManager(private val context: Context, private val listener: Listene
                 isFlipperZero = flipper,
                 isFlockCamera = flock,
                 isSkimmer = skimmer,
-                isAdultToy = adultToy,
                 isGlasses = glasses,
                 isActionCam = actionCam,
                 isPoliceCam = policeCam,

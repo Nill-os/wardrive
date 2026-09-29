@@ -342,9 +342,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         setupMenuRow(binding.menuMeshRadio, "Mesh Radio Detection", "Find nearby Meshtastic devices") {
             openFeedDetail("Mesh Radio Detection", bleSources) { it.isMeshRadio }
         }
-        setupMenuRow(binding.menuAdultToy, "Adult Toy Detection", "Find nearby Lovense-style BLE devices") {
-            openFeedDetail("Adult Toy Detection", bleSources) { it.isAdultToy }
-        }
         setupMenuRow(binding.menuGlasses, "Smart Glasses Detection", "Find nearby Ray-Ban Meta glasses") {
             openFeedDetail("Smart Glasses Detection", bleSources) { it.isGlasses }
         }
@@ -1399,7 +1396,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             "Skimmers" to mutableListOf(),
             "Drones" to mutableListOf(),
             "Mesh Radios" to mutableListOf(),
-            "Adult Toys" to mutableListOf(),
             "Glasses" to mutableListOf(),
             "Action Cams" to mutableListOf(),
             "Police Cams" to mutableListOf(),
@@ -1417,7 +1413,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (p.isSkimmer) buckets.getValue("Skimmers").add(p)
             if (p.isDrone) buckets.getValue("Drones").add(p)
             if (p.isMeshRadio) buckets.getValue("Mesh Radios").add(p)
-            if (p.isAdultToy) buckets.getValue("Adult Toys").add(p)
             if (p.isGlasses) buckets.getValue("Glasses").add(p)
             if (p.isActionCam) buckets.getValue("Action Cams").add(p)
             if (p.isPoliceCam) buckets.getValue("Police Cams").add(p)

@@ -72,7 +72,6 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         }
         val drone = DeviceSignatureDetection.isDrone(uuids)
         val meshRadio = DeviceSignatureDetection.isMeshRadio(uuids)
-        val adultToy = DeviceSignatureDetection.isAdultToy(name)
         val glasses = DeviceSignatureDetection.isGlasses(name)
         val actionCam = DeviceSignatureDetection.isActionCam(name)
         val policeCam = DeviceSignatureDetection.isPoliceCam(name)
@@ -94,7 +93,6 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
                 isSkimmer = skimmer,
                 isDrone = drone,
                 isMeshRadio = meshRadio,
-                isAdultToy = adultToy,
                 isGlasses = glasses,
                 isActionCam = actionCam,
                 isPoliceCam = policeCam,

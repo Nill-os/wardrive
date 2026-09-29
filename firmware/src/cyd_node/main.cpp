@@ -1937,6 +1937,10 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			lastWdstreamStatusMs = millis();
 		}
 		phonePrintf("WD:BEGIN type=wifi_ble interval=2000 channel=auto");
+		// Snapshot of the scan state for a phone that just connected, so an idle phone can join a
+		// run the rig is already in. Separate from WD:SCANSTATE (a change) on purpose: a snapshot
+		// of "stopped" must never stop a phone that's mid-run - that phone sends "scan start".
+		phonePrintf("WD:RIGSTATE:%d", scanningActive ? 1 : 0);
 		// Snapshot of this board's own mesh link to wifi_node, for the phone app's "is the rig
 		// actually linked together" indicator - see drawHeader()'s matching mirror for why a
 		// snapshot here too (not just on-change there) matters: a phone that just (re)connected

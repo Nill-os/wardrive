@@ -40,6 +40,9 @@ class RigLinkManager(private val context: Context, private val listener: Listene
          * idle auto-stop, or in response to our own sendScanStart/Stop().
          * Not called from the main thread - route through runOnUiThread. */
         fun onRigScanStateChanged(active: Boolean)
+
+        /** The rig's scan state as of the moment the phone (re)connected - see cyd_node's WD:RIGSTATE. */
+        fun onRigStateSnapshot(active: Boolean)
         /** cyd_node's own mesh link to wifi_node changed - this is a THIRD link, distinct from
          * both onRigConnected/Disconnected (this phone's USB link to cyd_node) and
          * onRigScanStateChanged (whether the rig is actively scanning). The phone being
@@ -505,6 +508,8 @@ class RigLinkManager(private val context: Context, private val listener: Listene
             line.startsWith("WD:BLE ") -> parseBleLine(line)
             line.startsWith("WD:SCANSTATE:") ->
                 listener.onRigScanStateChanged(line.substring("WD:SCANSTATE:".length).trim() == "1")
+            line.startsWith("WD:RIGSTATE:") ->
+                listener.onRigStateSnapshot(line.substring("WD:RIGSTATE:".length).trim() == "1")
             line.startsWith("WD:MESHLINK:") -> {
                 val ordinal = line.substring("WD:MESHLINK:".length).trim().toIntOrNull()
                 val state = ordinal?.let { MeshLinkState.entries.getOrNull(it) }

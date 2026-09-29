@@ -238,6 +238,19 @@ class ScanService : Service(), RigLinkManager.Listener {
         }
     }
 
+    private fun showJoinPrompt() {
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0)
+        val tap = PendingIntent.getActivity(this, 2, startRunIntent(this), flags)
+        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("The rig is scanning")
+            .setContentText("Tap to join its run")
+            .setSmallIcon(R.drawable.ic_radar)
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .build()
+        (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager).notify(JOIN_NOTIF_ID, n)
+    }
+
     /** Tells the rig to upload its SD-card runs now. False if no rig is connected. */
     fun requestRigUpload(): Boolean {
         if (!rigConnected) return false
@@ -298,6 +311,17 @@ class ScanService : Service(), RigLinkManager.Listener {
     // something it already knows would just be redundant traffic.
     fun startRun(notifyRig: Boolean, reason: String = "app") {
         if (running) return
+        // Android 14+ refuses to start a location foreground service while the app is in the
+        // background (pocket, screen off). Try it first; if refused, ask the user to tap in
+        // rather than crashing - the tap opens the app, which starts the run.
+        try {
+            startForeground(NOTIF_ID, buildNotification())
+        } catch (e: Exception) {
+            logRunEvent("couldn't start in the background ($reason) - asking to tap in")
+            showJoinPrompt()
+            return
+        }
+        (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(JOIN_NOTIF_ID)
         logRunEvent("run started ($reason)")
         running = true
         paused = false
@@ -631,6 +655,15 @@ class ScanService : Service(), RigLinkManager.Listener {
         }
     }
 
+    override fun onRigStateSnapshot(active: Boolean) {
+        mainHandler.post {
+            // Join a run the rig is already in (it resumed when the car started, say). Only ever
+            // starts: if the phone is mid-run and the rig isn't, onRigConnected() already told the
+            // rig to join the phone instead.
+            if (active && !running) startRun(notifyRig = false, reason = "joined the rig's run")
+        }
+    }
+
     override fun onRigScanStateChanged(active: Boolean) {
         mainHandler.post {
             // Mirror whatever the rig just reported - a physical button
@@ -647,6 +680,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     companion object {
         private const val CHANNEL_ID = "wardrive_scan"
         private const val NOTIF_ID = 1
+        private const val JOIN_NOTIF_ID = 2
         // How far the current sighting has to be from where a flagged
         // tracker was last logged before it's treated as "traveling with
         // you" rather than "same spot as last time" - GPS/RSSI-position

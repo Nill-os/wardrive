@@ -460,7 +460,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (!startRunRequested) return
         startRunRequested = false
         if (!s.running) {
-            s.startRun(notifyRig = true, reason = "tile/widget START")
+            s.startRun(notifyRig = true, reason = "tile/widget/notification START")
             binding.startStopButton.text = "> STOP"
             binding.pauseResumeButton.visibility = View.VISIBLE
         }

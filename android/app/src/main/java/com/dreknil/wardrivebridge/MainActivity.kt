@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         binding.startStopButton.setOnClickListener {
             val service = scanService ?: return@setOnClickListener
-            if (service.running) service.stopRun(notifyRig = true) else service.startRun(notifyRig = true)
+            if (service.running) service.stopRun(notifyRig = true, reason = "phone STOP button") else service.startRun(notifyRig = true, reason = "phone START button")
         }
 
         binding.pauseResumeButton.setOnClickListener {
@@ -460,7 +460,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (!startRunRequested) return
         startRunRequested = false
         if (!s.running) {
-            s.startRun(notifyRig = true)
+            s.startRun(notifyRig = true, reason = "tile/widget START")
             binding.startStopButton.text = "> STOP"
             binding.pauseResumeButton.visibility = View.VISIBLE
         }
@@ -1018,7 +1018,9 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 val gps = if (health.gpsFix) "GPS FIX" + (if (health.sats >= 0) " ${health.sats} SATS" else "") else "GPS: NO FIX"
                 val sd = if (health.sdOk) "SD OK" else "SD FAIL"
                 val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD (TAP)" else ""
-                binding.rigHealthText.text = "RIG · $gps · $sd$pend"
+                // The CYD screen's own counts, so the two can be compared directly.
+                val cyd = if (health.rigWifi != null) " · CYD ${health.rigWifi} WIFI / ${health.rigBle} BT" else ""
+                binding.rigHealthText.text = "RIG · $gps · $sd$cyd$pend"
                 binding.rigHealthText.setTextColor(ContextCompat.getColor(this,
                     if (health.gpsFix && health.sdOk) R.color.cyan_500 else R.color.red_error))
             }

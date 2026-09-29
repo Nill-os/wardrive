@@ -1900,10 +1900,12 @@ static void wdstreamEmitStatus() {
 	uint32_t uptimeS = (millis() - wdstreamStartMs) / 1000;
 	// gps/sats/sd/pend are extra fields for the Wardrive Bridge app's rig-health line;
 	// wdstream clients that don't know them just ignore them.
-	phonePrintf("WD:STATUS aps=%lu bles=%lu ch=%u uptime=%lum%02lus gps=%d sats=%d sd=%d pend=%u scan=%d",
+	// rw/rb are this screen's own WIGLE/BT counts, so the phone can show the same numbers.
+	phonePrintf("WD:STATUS aps=%lu bles=%lu ch=%u uptime=%lum%02lus gps=%d sats=%d sd=%d pend=%u scan=%d rw=%lu rb=%lu",
 				  (unsigned long)wdstreamApCount, (unsigned long)wdstreamBleCount,
 				  (unsigned)lastKnownChannel, (unsigned long)(uptimeS / 60), (unsigned long)(uptimeS % 60),
-				  gpsFixKnown ? 1 : 0, (int)lastKnownSatCount, sdOk ? 1 : 0, (unsigned)pendingUploadFiles, scanningActive ? 1 : 0);
+				  gpsFixKnown ? 1 : 0, (int)lastKnownSatCount, sdOk ? 1 : 0, (unsigned)pendingUploadFiles, scanningActive ? 1 : 0,
+				  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun);
 }
 
 // fromUsb: the "test:" commands below can wipe logs and redirect uploads, so
@@ -2701,6 +2703,17 @@ void loop() {
 			wifiCountThisRun++;
 			pushApSighting(bssid, ssid, authMode, obs.rssi, true);
 			pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(obs.rssi) + "dB (cyd)", COLOR_CYAN);
+			// Mirror this board's own catches to the phone too, same as wifi_node's relayed
+			// ones - without this the phone never saw channels 6-11 and its rig count ran
+			// far below this screen's.
+			if (wdstreamActive) {
+				phonePrintf("WD:AP ts=%lu bssid=%s ssid_hex=%s rssi=%d ch=%u auth=%s hidden=%u",
+							  (unsigned long)millis(), bssid.c_str(),
+							  hexEncode((const uint8_t *)ssid.c_str(), ssid.length()).c_str(),
+							  (int)obs.rssi, (unsigned)obs.channel, wdstreamAuthToken(authMode),
+							  ssid.length() == 0 ? 1U : 0U);
+				wdstreamApCount++;
+			}
 		}
 	}
 

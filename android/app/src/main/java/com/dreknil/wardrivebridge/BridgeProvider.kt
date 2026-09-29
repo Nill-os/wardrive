@@ -51,8 +51,8 @@ class BridgeProvider : ContentProvider() {
         val ok = onMain {
             val s = ScanService.instance ?: return@onMain false
             when (method) {
-                "start" -> if (!s.running) s.startRun(notifyRig = true)
-                "stop" -> if (s.running) s.stopRun(notifyRig = true)
+                "start" -> if (!s.running) s.startRun(notifyRig = true, reason = "Organic Maps / car record button")
+                "stop" -> if (s.running) s.stopRun(notifyRig = true, reason = "Organic Maps / car record button")
                 else -> return@onMain false
             }
             true

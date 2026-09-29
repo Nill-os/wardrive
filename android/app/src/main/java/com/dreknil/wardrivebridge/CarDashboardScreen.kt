@@ -126,7 +126,7 @@ class CarDashboardScreen(carContext: CarContext) : Screen(carContext) {
                 Action.Builder()
                     .setTitle("Start")
                     .setOnClickListener {
-                        scanService?.startRun(notifyRig = true)
+                        scanService?.startRun(notifyRig = true, reason = "Android Auto Start")
                         invalidate()
                     }
                     .build()
@@ -146,7 +146,7 @@ class CarDashboardScreen(carContext: CarContext) : Screen(carContext) {
                 Action.Builder()
                     .setTitle("Stop")
                     .setOnClickListener {
-                        scanService?.stopRun(notifyRig = true)
+                        scanService?.stopRun(notifyRig = true, reason = "Android Auto Stop")
                         invalidate()
                     }
                     .build()

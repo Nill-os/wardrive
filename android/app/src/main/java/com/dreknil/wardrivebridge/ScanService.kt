@@ -107,7 +107,11 @@ class ScanService : Service(), RigLinkManager.Listener {
     var lastRigChannel = 0; private set
 
     /** The rig's own health, from the extra fields in its WD:STATUS line (newer firmware). */
-    data class RigHealth(val gpsFix: Boolean, val sats: Int, val sdOk: Boolean, val pendingUploads: Int, val atMs: Long)
+    data class RigHealth(
+        val gpsFix: Boolean, val sats: Int, val sdOk: Boolean, val pendingUploads: Int, val atMs: Long,
+        /** The CYD screen's own WIGLE / BT numbers for its current run (null on older firmware). */
+        val rigWifi: Int? = null, val rigBle: Int? = null,
+    )
     var rigHealth: RigHealth? = null; private set
     var runStartMs = 0L; private set
     var totalDistanceMeters = 0.0; private set
@@ -216,9 +220,22 @@ class ScanService : Service(), RigLinkManager.Listener {
     // The notification's STOP button reaches the service through this action.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> if (running) stopRun(notifyRig = true)
+            ACTION_STOP -> if (running) stopRun(notifyRig = true, reason = "notification STOP")
         }
         return START_STICKY
+    }
+
+    /** Why each run started and stopped, with a timestamp - in the Terminal tab and in
+     *  files/run_events.log (last ~500 lines), so a run that splits mid-drive can be traced. */
+    private fun logRunEvent(event: String) {
+        val line = "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())} $event"
+        listener?.onRigLogLine("[run] $event")
+        try {
+            val f = java.io.File(filesDir, "run_events.log")
+            val kept = if (f.exists()) f.readLines().takeLast(499) else emptyList()
+            f.writeText((kept + line).joinToString("\n", postfix = "\n"))
+        } catch (_: Exception) {
+        }
     }
 
     /** Tells the rig to upload its SD-card runs now. False if no rig is connected. */
@@ -250,7 +267,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     override fun onDestroy() {
         instance = null
         spoken.shutdown()
-        stopRun(notifyRig = false)
+        stopRun(notifyRig = false, reason = "app closed")
         rigLink.stop()
         super.onDestroy()
     }
@@ -279,8 +296,9 @@ class ScanService : Service(), RigLinkManager.Listener {
     // start"/"scan stop" so the rig follows along. false when reacting to a
     // state change the rig already reported - echoing a command back for
     // something it already knows would just be redundant traffic.
-    fun startRun(notifyRig: Boolean) {
+    fun startRun(notifyRig: Boolean, reason: String = "app") {
         if (running) return
+        logRunEvent("run started ($reason)")
         running = true
         paused = false
         runStartMs = System.currentTimeMillis()
@@ -315,8 +333,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         spoken.onRunStarted()
     }
 
-    fun stopRun(notifyRig: Boolean) {
+    fun stopRun(notifyRig: Boolean, reason: String = "app") {
         if (!running) return
+        logRunEvent("run stopped ($reason)")
         running = false
         paused = false
         locationTracker.stop()
@@ -594,7 +613,8 @@ class ScanService : Service(), RigLinkManager.Listener {
             fun field(name: String) = Regex("""\b$name=(-?\d+)""").find(rawLine)?.groupValues?.get(1)?.toIntOrNull()
             val gps = field("gps")
             if (gps != null) {
-                val health = RigHealth(gps == 1, field("sats") ?: -1, field("sd") == 1, field("pend") ?: 0, System.currentTimeMillis())
+                val health = RigHealth(gps == 1, field("sats") ?: -1, field("sd") == 1, field("pend") ?: 0, System.currentTimeMillis(),
+                    field("rw"), field("rb"))
                 mainHandler.post { rigHealth = health }
             }
         }
@@ -619,8 +639,8 @@ class ScanService : Service(), RigLinkManager.Listener {
             // itself, so it works correctly even while the phone's screen
             // is locked and no Activity is bound - notifyRig=false since
             // the rig already knows its own state.
-            if (active && !running) startRun(notifyRig = false)
-            else if (!active && running) stopRun(notifyRig = false)
+            if (active && !running) startRun(notifyRig = false, reason = "rig reported scanning")
+            else if (!active && running) stopRun(notifyRig = false, reason = "rig reported stopped")
         }
     }
 
@@ -650,7 +670,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         fun stopRunIfRunning(): Boolean {
             val s = instance ?: return false
             if (!s.running) return false
-            s.stopRun(notifyRig = true)
+            s.stopRun(notifyRig = true, reason = "tile/widget STOP")
             return true
         }
 

@@ -49,3 +49,7 @@ The full guide is in the rig repo: [Phone app](https://github.com/Nill-os/wardri
 ## Privacy
 
 Everything stays on the phone until you upload it. Exported CSV and GPX files contain the GPS track of every run, so treat them as location history.
+
+## License
+
+[MIT](LICENSE)

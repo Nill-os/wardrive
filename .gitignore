@@ -1,0 +1,10 @@
+# PlatformIO build output and downloaded libraries
+.pio/
+.vscode/
+
+# Python tooling
+tools/venv/
+__pycache__/
+
+# Real config holds WiFi passwords and upload keys - only the .example is tracked
+config.cfg

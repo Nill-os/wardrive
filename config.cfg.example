@@ -1,0 +1,12 @@
+wifi_ssid=YourHomeWifi
+wifi_pass=yourpassword
+backup_wifi_ssid=YourPhoneHotspot
+backup_wifi_pass=yourhotspotpassword
+wigle_api_token=BASE64_ENCODED_APINAME_COLON_APITOKEN
+wdgwars_api_key=YOUR_64_HEX_CHARACTER_WDGWARS_KEY
+min_upload_interval_sec=21600
+home_lat=37.774900
+home_lon=-122.419400
+home_radius_m=150
+retention_days=0
+channel_hop_ms=150

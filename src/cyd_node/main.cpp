@@ -1955,6 +1955,11 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 	} else if (line == "scan stop") {
 		setScanning(false);
 		if (WARDRIVE_DEBUG) Serial.println("[wdstream] remote stop requested");
+	} else if (line == "rig upload") {
+		// The Wardrive Bridge app's "upload the rig's runs now" - same as tapping UPLOAD.
+		// Safe to accept over BLE: only a paired phone can send commands (see CydBleLink).
+		onDoubleClickHandler();
+		if (WARDRIVE_DEBUG) Serial.println("[wdstream] remote upload requested");
 	} else if (line == "test:upload") {
 		// Dev/test hook - exercises the exact same path a real UPLOAD tap
 		// does, so the whole button can be tested over USB Serial without

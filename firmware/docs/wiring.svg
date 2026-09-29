@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-label="Wiring diagram for the three-board wardriving rig">
+  <style>
+    .mono { font-family: ui-monospace, 'SFMono-Regular', 'DejaVu Sans Mono', Menlo, Consolas, monospace; }
+    .title { font-size: 22px; font-weight: 700; }
+    .sub { font-size: 13px; fill: #4A607A; }
+    .pin { font-size: 15px; fill: #E2E8F0; }
+    .note { font-size: 13px; fill: #94A3B8; }
+  </style>
+  <rect width="1200" height="760" fill="#000000"/>
+  <rect x="1.5" y="1.5" width="1197" height="757" fill="none" stroke="#1E293B" stroke-width="3"/>
+
+  <g class="mono">
+    <text x="40" y="44" font-size="20" fill="#00F0FF">&gt; WIRING &lt;</text>
+    <text x="40" y="68" class="note">Pin names are as printed on each board. Board links are 460800 baud 8N1, GPS is 9600. TX on one end always goes to RX on the other.</text>
+
+    <!-- GPS -->
+    <rect x="40" y="110" width="250" height="200" fill="#080C10" stroke="#FFB000" stroke-width="2"/>
+    <text x="165" y="142" class="title" fill="#FFB000" text-anchor="middle">GPS module</text>
+    <text x="165" y="162" class="sub" text-anchor="middle">GY-GPS6MV2 (NEO-6M)</text>
+    <text x="276" y="200" class="pin" text-anchor="end">VCC</text>
+    <text x="276" y="230" class="pin" text-anchor="end">TX</text>
+    <text x="276" y="260" class="pin" text-anchor="end">RX</text>
+    <text x="276" y="290" class="pin" text-anchor="end">GND</text>
+
+    <!-- wifi_node -->
+    <rect x="460" y="110" width="280" height="420" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="600" y="142" class="title" fill="#00F0FF" text-anchor="middle">wifi_node</text>
+    <text x="600" y="162" class="sub" text-anchor="middle">ESP32-S3 DevKitC · WiFi + GPS</text>
+    <text x="474" y="200" class="pin">3V3</text>
+    <text x="474" y="230" class="pin">GPIO18 (RX)</text>
+    <text x="474" y="260" class="pin">GPIO17 (TX)</text>
+    <text x="474" y="290" class="pin">GND</text>
+    <text x="726" y="200" class="pin" text-anchor="end">GPIO13 (TX)</text>
+    <text x="726" y="230" class="pin" text-anchor="end">GPIO14 (RX)</text>
+    <text x="726" y="260" class="pin" text-anchor="end">GND</text>
+    <text x="474" y="420" class="pin">GPIO8 (RX)</text>
+    <text x="474" y="450" class="pin">GPIO3 (TX)</text>
+    <text x="474" y="480" class="pin">GND</text>
+    <text x="600" y="514" class="sub" text-anchor="middle">USB-C: power (+ flashing)</text>
+
+    <!-- cyd_node -->
+    <rect x="910" y="110" width="250" height="260" fill="#080C10" stroke="#9D00FF" stroke-width="2"/>
+    <text x="1035" y="142" class="title" fill="#9D00FF" text-anchor="middle">cyd_node</text>
+    <text x="1035" y="162" class="sub" text-anchor="middle">CYD ESP32-2432S028 (2-USB)</text>
+    <text x="1035" y="180" class="sub" text-anchor="middle">4-pin header "CN1"</text>
+    <text x="924" y="200" class="pin">IO27 (RX)</text>
+    <text x="924" y="230" class="pin">IO22 (TX)</text>
+    <text x="924" y="260" class="pin">GND</text>
+    <text x="924" y="290" class="pin" fill="#4A607A">3.3V - leave empty</text>
+    <text x="1035" y="330" class="sub" text-anchor="middle">microSD: config.cfg + logs</text>
+    <text x="1035" y="350" class="sub" text-anchor="middle">USB: power (+ phone fallback)</text>
+
+    <!-- ble_node -->
+    <rect x="40" y="380" width="250" height="150" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="165" y="406" class="title" fill="#00F0FF" text-anchor="middle">ble_node</text>
+    <text x="165" y="424" class="sub" text-anchor="middle">ESP32-S3 DevKitC · BLE scan</text>
+    <text x="276" y="450" class="pin" text-anchor="end">GPIO8 (TX)</text>
+    <text x="276" y="480" class="pin" text-anchor="end">GPIO3 (RX)</text>
+    <text x="276" y="510" class="pin" text-anchor="end">GND</text>
+
+    <!-- GPS wires -->
+    <line x1="290" y1="195" x2="460" y2="195" stroke="#EF4444" stroke-width="3"/>
+    <line x1="290" y1="225" x2="460" y2="225" stroke="#FFB000" stroke-width="3"/>
+    <line x1="290" y1="255" x2="460" y2="255" stroke="#FFB000" stroke-width="3" stroke-dasharray="8 6"/>
+    <line x1="290" y1="285" x2="460" y2="285" stroke="#64748B" stroke-width="3"/>
+
+    <!-- cyd wires -->
+    <line x1="740" y1="195" x2="910" y2="195" stroke="#EAB308" stroke-width="3"/>
+    <line x1="740" y1="225" x2="910" y2="225" stroke="#3B82F6" stroke-width="3"/>
+    <line x1="740" y1="255" x2="910" y2="255" stroke="#64748B" stroke-width="3"/>
+
+    <!-- ble_node wires: ble GPIO8(TX) -> wifi GPIO8(RX); wifi GPIO3(TX) -> ble GPIO3(RX) -->
+    <line x1="290" y1="445" x2="460" y2="415" stroke="#00F0FF" stroke-width="3"/>
+    <line x1="290" y1="475" x2="460" y2="445" stroke="#9D00FF" stroke-width="3"/>
+    <line x1="290" y1="505" x2="460" y2="475" stroke="#64748B" stroke-width="3"/>
+
+    <!-- legend -->
+    <g transform="translate(40,580)">
+      <text x="0" y="0" font-size="16" fill="#00F0FF">&gt; CONNECTIONS &lt;</text>
+      <text x="0" y="30" class="note">GPS TX -&gt; wifi_node GPIO18 · GPS RX &lt;- wifi_node GPIO17 (for 5 Hz) · VCC -&gt; 3V3 · GND -&gt; GND</text>
+      <text x="0" y="55" class="note">ble_node GPIO8 (TX) -&gt; wifi_node GPIO8 (RX) · wifi_node GPIO3 (TX) -&gt; ble_node GPIO3 (RX) · GND -&gt; GND</text>
+      <text x="0" y="80" class="note">wifi_node GPIO13 (TX) -&gt; CYD CN1 IO27 (RX) · CYD CN1 IO22 (TX) -&gt; wifi_node GPIO14 (RX) · GND -&gt; GND</text>
+      <text x="0" y="105" class="note">Power each board from USB (5V). All grounds must be common - run the GND wires even if everything shares one USB hub.</text>
+      <text x="0" y="130" class="note">Phone: Bluetooth to cyd_node (no wires). USB-OTG to cyd_node's USB port works as a fallback.</text>
+    </g>
+  </g>
+</svg>

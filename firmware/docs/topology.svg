@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Rig diagram: ble_node and wifi_node wired to the CYD, the CYD linked to the phone over BLE, the phone feeding Organic Maps and Android Auto">
+  <style>
+    .mono { font-family: ui-monospace, 'SFMono-Regular', 'DejaVu Sans Mono', Menlo, Consolas, monospace; }
+    .flow { stroke-dasharray: 6 8; animation: dash 1.2s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -14; } }
+  </style>
+  <rect width="1200" height="300" fill="#000000"/>
+  <rect x="1.5" y="1.5" width="1197" height="297" fill="none" stroke="#1E293B" stroke-width="3"/>
+
+  <g class="mono">
+    <!-- boxes -->
+    <rect x="40" y="50" width="220" height="80" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="150" y="84" font-size="18" fill="#00F0FF" text-anchor="middle">wifi_node</text>
+    <text x="150" y="110" font-size="13" fill="#4A607A" text-anchor="middle">ESP32-S3 · WiFi + GPS</text>
+
+    <rect x="40" y="180" width="220" height="80" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="150" y="214" font-size="18" fill="#00F0FF" text-anchor="middle">ble_node</text>
+    <text x="150" y="240" font-size="13" fill="#4A607A" text-anchor="middle">ESP32-S3 · BLE scan</text>
+
+    <rect x="370" y="100" width="220" height="100" fill="#080C10" stroke="#9D00FF" stroke-width="2"/>
+    <text x="480" y="140" font-size="20" fill="#9D00FF" text-anchor="middle">CYD</text>
+    <text x="480" y="166" font-size="13" fill="#4A607A" text-anchor="middle">screen · SD · uploads</text>
+
+    <rect x="700" y="100" width="220" height="100" fill="#080C10" stroke="#22C55E" stroke-width="2"/>
+    <text x="810" y="140" font-size="18" fill="#22C55E" text-anchor="middle">Wardrive Bridge</text>
+    <text x="810" y="166" font-size="13" fill="#4A607A" text-anchor="middle">android · logs · WiGLE</text>
+
+    <rect x="1010" y="50" width="160" height="70" fill="#080C10" stroke="#1E293B" stroke-width="2"/>
+    <text x="1090" y="80" font-size="15" fill="#00F0FF" text-anchor="middle">map overlay</text>
+    <text x="1090" y="102" font-size="12" fill="#4A607A" text-anchor="middle">organic maps</text>
+
+    <rect x="1010" y="180" width="160" height="70" fill="#080C10" stroke="#1E293B" stroke-width="2"/>
+    <text x="1090" y="210" font-size="15" fill="#00F0FF" text-anchor="middle">android auto</text>
+    <text x="1090" y="232" font-size="12" fill="#4A607A" text-anchor="middle">status + start/stop</text>
+
+    <!-- links -->
+    <line x1="150" y1="130" x2="150" y2="180" stroke="#00F0FF" stroke-width="2" class="flow"/>
+    <text x="162" y="160" font-size="12" fill="#4A607A">UART</text>
+    <line x1="260" y1="90" x2="370" y2="140" stroke="#00F0FF" stroke-width="2" class="flow"/>
+    <text x="290" y="100" font-size="12" fill="#4A607A">UART</text>
+    <line x1="590" y1="150" x2="700" y2="150" stroke="#9D00FF" stroke-width="2" class="flow"/>
+    <text x="620" y="140" font-size="12" fill="#4A607A">BLE / USB</text>
+    <line x1="920" y1="130" x2="1010" y2="90" stroke="#22C55E" stroke-width="2" class="flow"/>
+    <line x1="920" y1="170" x2="1010" y2="210" stroke="#22C55E" stroke-width="2" class="flow"/>
+
+    <text x="40" y="34" font-size="15" fill="#4A607A">&gt; RIG_TOPOLOGY &lt;</text>
+  </g>
+</svg>

@@ -19,12 +19,33 @@ It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth an
 
 ## Organic Maps overlay
 
-A [fork of Organic Maps](https://github.com/Nill-os) can show this app's live status as an overlay on its map and in Android Auto, with a start/stop button in the car. It reads status from this app's `BridgeProvider` and never scans or talks to the rig itself, so the two apps don't compete for the rig. Only the Organic Maps build is allowed to read the provider; it's checked by package name and signing certificate.
+A lightly patched Organic Maps build (not published yet) can show this app's live status as an overlay on its map and in Android Auto, with a start/stop button in the car. It reads status from this app's `BridgeProvider` and never scans or talks to the rig itself, so the two apps don't compete for the rig. Only the Organic Maps build is allowed to read the provider; it's checked by package name and signing certificate.
 
-## Build
+To allow your own Organic Maps build, put its package name and the SHA-256 of its signing certificate in `ALLOWED` in `BridgeProvider.kt`.
+
+## Build and install
 
 ```
+git clone https://github.com/Nill-os/wardrive-bridge.git
+cd wardrive-bridge
 ./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Needs JDK 17 and the Android SDK (minSdk 26, targetSdk 34). Put your SDK path in `local.properties`.
+Needs JDK 17 and the Android SDK (minSdk 26 / Android 8.0, targetSdk 34). Android Studio installs both and writes `local.properties` for you.
+
+## Setup
+
+1. Grant **Location** ("Allow all the time" if it should keep scanning with the screen off), **Nearby devices** and **Notifications**.
+2. In **Settings**:
+   - Enter your WiGLE "Encoded for use" token and your wdgwars API key.
+   - Set a home exclusion zone (**USE CURRENT GPS FIX AS HOME** plus a radius).
+   - Add any MACs or SSIDs you never want logged.
+3. Tap **START**. The app finds the rig's `WardriveCYD` Bluetooth advertisement by itself, with no pairing needed. If Bluetooth isn't available, plug into the CYD's USB port with an OTG adapter.
+4. **Android Auto:** sideloaded apps are hidden until you enable Android Auto developer settings → **Unknown sources**.
+
+The full guide is in the rig repo: [Phone app](https://github.com/Nill-os/wardrive-esp32/blob/master/docs/PHONE_APP.md).
+
+## Privacy
+
+Everything stays on the phone until you upload it. Exported CSV and GPX files contain the GPS track of every run, so treat them as location history.

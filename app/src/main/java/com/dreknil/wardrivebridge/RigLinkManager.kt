@@ -69,6 +69,11 @@ class RigLinkManager(private val context: Context, private val listener: Listene
     private var transport = Transport.NONE
     private val identified get() = transport != Transport.NONE
 
+    /** No rig paired yet - see RigBleLink's pairing notes. */
+    val needsPairing: Boolean get() = ble.needsPairing
+
+    fun forgetRig() = ble.forgetRig()
+
     /** "BLE" or "USB" while linked to cyd_node, null when not - for status displays. */
     val connectionType: String?
         get() = when (transport) {

@@ -49,6 +49,12 @@ class AppSettings(context: Context) {
         get() = prefs.getString("max_hdop", "0")?.toDoubleOrNull() ?: 0.0
         set(value) = prefs.edit().putString("max_hdop", value.toString()).apply()
 
+    /** Bluetooth address of the rig this phone is paired with; empty = not paired yet, in which
+     *  case RigBleLink only looks for a rig whose owner has just opened a pairing window. */
+    var pairedRigAddress: String
+        get() = prefs.getString("paired_rig_address", "") ?: ""
+        set(value) = prefs.edit().putString("paired_rig_address", value).apply()
+
     fun macBlacklist(): Set<String> =
         macBlacklistRaw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
 

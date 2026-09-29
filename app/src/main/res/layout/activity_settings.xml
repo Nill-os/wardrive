@@ -22,6 +22,30 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:text="&gt; RIG PAIRING"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/pairedRigText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/forgetRigButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&gt; FORGET THIS RIG"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:text="&gt; UPLOAD CREDENTIALS"
             android:textColor="@color/cyan_500"
             android:textSize="14sp"

@@ -31,8 +31,27 @@ class SettingsActivity : AppCompatActivity() {
         binding.retentionDaysInput.setText(settings.retentionDays.toString())
         if (settings.maxHdop != 0.0) binding.maxHdopInput.setText(settings.maxHdop.toString())
 
+        showPairedRig()
+        binding.forgetRigButton.setOnClickListener {
+            // rigLink is lateinit - only touch it on a service that got far enough to set it.
+            val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+            if (link != null) link.forgetRig() else settings.pairedRigAddress = ""
+            showPairedRig()
+            Toast.makeText(this, "Rig forgotten - pair again from the rig's CFG tab", Toast.LENGTH_LONG).show()
+        }
         binding.useCurrentLocationButton.setOnClickListener { fillCurrentLocation() }
         binding.saveSettingsButton.setOnClickListener { save() }
+    }
+
+    private fun showPairedRig() {
+        val addr = settings.pairedRigAddress
+        binding.pairedRigText.text = if (addr.isEmpty()) {
+            "No rig paired. On the rig, open the CFG tab and tap PAIR PHONE, then start a run here - " +
+                "Android will ask for the 6-digit code shown on the rig's screen."
+        } else {
+            "Paired with rig $addr. This phone only connects to that rig."
+        }
+        binding.forgetRigButton.visibility = if (addr.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
     }
 
     private fun fillCurrentLocation() {

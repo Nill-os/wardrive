@@ -895,7 +895,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         val rigConnected = service?.rigConnected == true
         binding.rigDot.setTextColor(ContextCompat.getColor(this, if (rigConnected) R.color.green_ok else R.color.red_error))
         val linkType = service?.rigLink?.connectionType
-        binding.telemetryLinkText.text = if (rigConnected) " CYD: ${linkType ?: "UP"}" else " CYD: DOWN"
+        binding.telemetryLinkText.text = when {
+            rigConnected -> " CYD: ${linkType ?: "UP"}"
+            AppSettings(this).pairedRigAddress.isEmpty() -> " CYD: PAIR"
+            else -> " CYD: DOWN"
+        }
         binding.telemetryLinkText.setTextColor(ContextCompat.getColor(this, if (rigConnected) R.color.cyan_500 else R.color.text_secondary))
 
         // Only meaningful once the phone's own USB link to cyd_node is up - with no link at all

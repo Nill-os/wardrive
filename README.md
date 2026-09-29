@@ -6,7 +6,7 @@ It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth an
 
 ## What it does
 
-- **Rig link:** connects to the CYD board over BLE (primary), with USB-OTG serial as a fallback. Reconnects on its own after a drop.
+- **Rig link:** connects to the CYD board over BLE (primary, paired and encrypted), with USB-OTG serial as a fallback. Reconnects on its own after a drop, and only ever to the rig it's paired with.
 - **Live dashboard:** WIGLE / WDGW / BT / CELL counts, run state, and the status of both links:
   - **CYD** (phone to CYD, shown as BLE or USB)
   - **RIG** (the CYD's wired link to the other boards)
@@ -41,8 +41,9 @@ Needs JDK 17 and the Android SDK (minSdk 26 / Android 8.0, targetSdk 34). Androi
    - Enter your WiGLE "Encoded for use" token and your wdgwars API key.
    - Set a home exclusion zone (**USE CURRENT GPS FIX AS HOME** plus a radius).
    - Add any MACs or SSIDs you never want logged.
-3. Tap **START**. The app finds the rig's `WardriveCYD` Bluetooth advertisement by itself, with no pairing needed. If Bluetooth isn't available, plug into the CYD's USB port with an OTG adapter.
-4. **Android Auto:** sideloaded apps are hidden until you enable Android Auto developer settings → **Unknown sources**.
+3. **Pair with your rig (once):** on the rig's CFG tab tap **PAIR PHONE**, then type the 6-digit code it shows when Android asks. After that the app only ever connects to that rig, and the rig only accepts paired phones. If Bluetooth isn't available, plug into the CYD's USB port with an OTG adapter.
+4. Tap **START**.
+5. **Android Auto:** sideloaded apps are hidden until you enable Android Auto developer settings → **Unknown sources**.
 
 The full guide is in the rig repo: [Phone app](https://github.com/Nill-os/wardrive-esp32/blob/master/docs/PHONE_APP.md).
 

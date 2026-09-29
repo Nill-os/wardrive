@@ -7,13 +7,11 @@ phone:
   and owns the GY-GPS6MV2 GPS module. No SD card or upload logic of its own,
   and no physical button (removed rig-wide - see "Control surface" below) -
   forwards its own WiFi observations, plus every BLE observation ble_node
-  relays through it, to cyd_node over a **wireless Bluetooth Low Energy
-  link** (see "Bluetooth link" below - no wire between this board and
-  cyd_node at all), already timestamped/geotagged from its own GPS fix
-  exactly as before. Only the final "write it somewhere" step moved.
+  relays through it, to cyd_node over a **wired UART link** (see
+  "wifi_node ↔ cyd_node link" below), already timestamped/geotagged from its
+  own GPS fix. This board runs no Bluetooth at all - its radio is WiFi-only.
 - **ble_node** (ESP32-S3) — scans BLE advertisements and streams each
-  observation to wifi_node over a wired UART link (unchanged - only the
-  wifi_node↔cyd_node hop went wireless). No GPS, no SD card, no upload
+  observation to wifi_node over a wired UART link. No GPS, no SD card, no upload
   logic, no physical button — wifi_node timestamps it and forwards it on
   cyd_node's behalf.
 - **cyd_node** (a CYD / ESP32-2432S028 Dual USB "CYD2USB", ST7789 display -
@@ -26,11 +24,9 @@ phone:
 
 cyd_node logs all three boards' captures to its microSD card in
 WigleWifi-1.6 CSV format and uploads directly to **wdgwars.pl** and
-**WiGLE** over WiFi — no phone involved. Your phone running WardriveGo keeps
-doing its own separate thing in parallel, connected to **cyd_node's** USB
-port (it has a real USB-UART bridge chip, a better fit for a phone-side
-serial app than wifi_node's/ble_node's native-USB ESP32-S3s - see "Phone
-link" below); the two systems don't need to talk to each other for the rig
+**WiGLE** over WiFi — no phone involved. Your phone running [Wardrive Bridge](https://github.com/Nill-os/wardrive-bridge) (or WardriveGo)
+connects to **cyd_node** over Bluetooth, with cyd_node's USB port as a
+fallback - see "Phone link" below; the two systems don't need to talk to each other for the rig
 itself to work, which is what makes this rig work identically whether the
 phone is in the car or not.
 
@@ -63,12 +59,12 @@ touchscreen is now the only control surface**, via two on-screen buttons:
   touch-button-dependent and still works exactly as before, just from
   cyd_node's USB port now instead of wifi_node's (see "Phone link" below).
 
-Touching START/STOP on cyd_node broadcasts the new state over the BLE link
+Touching START/STOP on cyd_node broadcasts the new state over the wired link
 immediately (not just on the next periodic tick); wifi_node adopts it and
 relays it onward to ble_node over its own wired link, the same as it always
 relayed status. cyd_node is now the rig's authoritative source of scanning
 state, having taken over that role from wifi_node now that wifi_node has no
-input of its own to originate a change from - see "Bluetooth link" below.
+input of its own to originate a change from - see "wifi_node ↔ cyd_node link" below.
 
 ## Car power / sudden power loss
 
@@ -102,7 +98,7 @@ A few things this is specifically designed around:
   double-counted, never lost.
 - **Three boards, self-healing sync**: cyd_node is the authoritative source
   of scanning state now (see "Control surface" above) - it broadcasts its
-  own state over the BLE link both immediately on every touch and every 2
+  own state over the wired link both immediately on every touch and every 2
   seconds regardless, and wifi_node adopts whatever it says and relays it
   onward to ble_node over the wired link, the instant either disagrees -
   regardless of which board booted first, how long another was down, or why
@@ -153,10 +149,10 @@ cyd_node's screen shows a dark-themed, landscape dashboard, live-updated
 flicker):
 
 - **Status bar**: GPS fix + current WiFi channel (top-left), scanning state
-  (top-right), BLE link health to wifi_node (bottom-left - cyan "LINK:SYNC"
-  while actively receiving data, purple "LINK:UP" when connected but idle,
-  red "LINK:DOWN" when not connected), and a static power indicator
-  (bottom-right - this rig is always wired, never battery powered).
+  (top-right), the wired link to wifi_node (bottom-left - "RIG:UP" while
+  wifi_node's periodic broadcasts keep arriving, "RIG:DOWN" after 6s of
+  silence) and the phone link (bottom-right - "PHONE:BLE", "PHONE:USB" or
+  "PHONE:DOWN").
 - **WiFi/BLE stat cards**: this-run counts, purple-accented for WiFi, cyan
   for BLE.
 - **SD/config health dots**, and the last upload result when there's been one.
@@ -164,19 +160,11 @@ flicker):
   for WiFi (from wifi_node directly) or purple for BLE (relayed one hop
   further, from ble_node through wifi_node) - a quick "who just saw what"
   glance.
-- **Three on-screen touch buttons** (START/STOP, UPLOAD, LINK) - the only
-  control surface on the rig, now that the physical button is gone. LINK's
-  color mirrors the status bar's own link-health indicator (cyan =
-  actively syncing, purple = connected but idle, red = down); tapping it
-  forces a fresh BLE reconnect attempt regardless of current state - since
-  cyd_node is the BLE peripheral, not the one that initiates connections,
-  there's no "connect" action for it to take the way a phone app's own
-  "Connect Rig" button retries a USB connection, so this instead tears down
-  and restarts cyd_node's own BLE stack (`CydBleLink::suspendServer()` +
-  `resumeServer()`, the same mechanism used around uploads - see below),
-  which drops any stuck-but-not-obviously-disconnected connection state and
-  forces wifi_node's client task to notice and reconnect fresh. A genuine
-  manual "kick it" troubleshooting action, not just a status readout.
+- **On-screen touch buttons** (START/STOP, UPLOAD, RE-LINK ALL) - the only
+  control surface on the rig. RE-LINK ALL re-sends cyd_node's state to
+  wifi_node right away, restarts cyd_node's BLE stack so the phone reconnects
+  fresh, and re-announces the phone handshake. The LINKS tab shows both
+  links in more detail.
 
 ## Capture behavior
 
@@ -261,7 +249,8 @@ Every pin, not bundled:
 | GPS — GND | GND | — | — | joins the common ground bus |
 | BLE observation link | GPIO8 (RX, in) | GPIO8 (TX, out) | — | ble_node streams `MAC,RSSI,NAME,MFG_HEX` lines to wifi_node here, 115200 baud |
 | BLE status link | GPIO3 (TX, out) | GPIO3 (RX, in) | — | wifi_node streams `START`/`OK`/`FAIL`/`STOP`/`LOWSTORAGE`/`SDOK`/`BLINKPHASE` lines to ble_node here, so its LED and scanning state stay in step, 115200 baud |
-| wifi_node↔cyd_node link | none - wireless | — | none - wireless | now a Bluetooth Low Energy link (see "Bluetooth link" below) instead of a wire - GPIO13/11 (wifi_node) and GPIO22/27 (cyd_node), previously used for this, are free/unused now |
+| cyd_node link — data to cyd_node | GPIO13 (TX, out) | — | CN1 IO27 (RX, in) | 115200 baud, see "wifi_node ↔ cyd_node link" below |
+| cyd_node link — data to wifi_node | GPIO14 (RX, in) | — | CN1 IO22 (TX, out) | leave CN1's 3.3V pin unconnected |
 | SD, touch, TFT | — | — | on-board, fixed | the CYD's SD slot (GPIO5/23/19/18), touch controller (XPT2046: IRQ 36, MISO 39, MOSI 32, CLK 25, CS 33), and 2.8" ST7789 display are all wired on the PCB itself - see `platformio.ini`'s `[env:cyd_node]` build_flags for the exact display pin map. Verify against your specific board's silkscreen/seller listing; sub-revisions can still wire things slightly differently. |
 
 There's no physical button anymore - GPIO4 (wifi_node/ble_node) and GPIO35
@@ -271,95 +260,27 @@ control surface (see "Control surface" above).
 All three boards need a common ground (share the car's 5V/USB power rail's
 GND) for the observation-link wiring to work.
 
-## Bluetooth link (wifi_node ↔ cyd_node)
+## wifi_node ↔ cyd_node link
 
-This is the one inter-board hop that's wireless instead of wired - ble_node's
-own link into wifi_node is still a wire (see the wiring table above).
+A wired UART at 115200 baud: wifi_node's GPIO13/GPIO14 to cyd_node's CN1
+header (IO27/IO22) plus a common ground - see the wiring table above. It
+used to be Bluetooth, but wifi_node's radio is busy hopping WiFi channels
+the whole time it scans, and sharing it with a BLE link made the link drop
+every 10-20 seconds mid-run. A wire has no such cost.
 
-- **cyd_node is the BLE peripheral**: it advertises as `WardriveCYD` and
-  accepts one connection at a time. It's meant to sit in the dash mount and
-  just always be there/advertising.
-- **wifi_node is the BLE central**: it scans for `WardriveCYD` and connects.
-  All of the scanning/connecting/reconnecting logic runs on its own
-  dedicated background task (`CydBleLink.cpp`), never inline in wifi_node's
-  main loop - a BLE connect attempt can block for a couple of seconds, and
-  stalling the time-sensitive WiFi channel-hop loop for that long every time
-  cyd_node is briefly out of range would cost more sniff quality than it's
-  worth.
-- **Same line protocol as before, different transport**: both sides still
-  speak the exact `W,...`/`B,...`/`SCANSTATE`/`EPOCH`/`GPSPOS`/`CFG`/`CH`/
-  `SDOK`/`START`/`OK`/`FAIL`/`BLINKPHASE`/`LOWSTORAGE` lines the wired link
-  always used, plus one addition: `CH:<channel>` (wifi_node's current WiFi
-  channel, broadcast every 2s) so cyd_node's status bar can show it - only
-  how the bytes travel changed otherwise.
-- **`SCANSTATE` now flows both ways**, since the physical button that used
-  to make wifi_node the sole originator of scanning-state changes is gone
-  (see "Control surface" above). cyd_node broadcasts it on every touch
-  (immediately) and every 2s regardless (self-heal); wifi_node adopts
-  whatever it says and relays it onward to ble_node over its own wired
-  link. wifi_node's idle-auto-stop is the one thing that can still originate
-  a change from that end - it broadcasts back to cyd_node the same way, and
-  cyd_node's own resync logic adopts it just as readily, since it doesn't
-  care which direction a disagreement came from.
-- **Dropped lines while disconnected**: if the two boards are out of BLE
-  range (or cyd_node is off/rebooting), lines queued to send are just
-  dropped, the same as bytes sent into an unplugged wire would be. The
-  periodic broadcasts (`SCANSTATE`/`EPOCH`/`GPSPOS`/`CFG`/`CH`/`SDOK`)
-  self-heal on their own next tick once reconnected; a one-shot observation
-  line (`W,`/`B,`) sent during a gap is genuinely lost - an accepted
-  trade-off of going wireless, not a bug to chase.
-- **cyd_node's server side is validated against real BLE hardware**, not
-  just "builds clean": using a laptop's own Bluetooth adapter as a stand-in
-  central (`bluetoothctl`/`gatttool`, since a real `wifi_node` wasn't
-  available on the bench at the time), the advertisement, GATT service/
-  characteristic structure, notify path, and both write-with-response and
-  write-without-response paths were all confirmed working end-to-end -
-  including a synthetic `SCANSTATE:0`/`SCANSTATE:1` toggle correctly
-  resyncing `scanningActive` and a synthetic `W,...` line correctly
-  incrementing the WiFi count. This is exactly the same transport
-  `wifi_node`'s own `CydBleLink` client code drives, just via a different
-  central - a strong signal the link itself is sound, though `wifi_node`'s
-  own scan/connect logic (`clientTaskFn()` in `CydBleLink.cpp`) still hasn't
-  been runtime-tested on real `wifi_node` hardware specifically.
-- **A real bug was caught this way**: the `SCANSTATE` handler used to gate
-  the `scanningActive` resync behind whether `wifiNodeScanning`'s cached
-  value changed, not behind whether `scanningActive` actually disagreed with
-  the incoming value - if the first `SCANSTATE` line ever received happened
-  to match `wifiNodeScanning`'s default (`false`) while `scanningActive` was
-  already `true` (e.g. resumed from a power-loss save), the resync silently
-  never ran. Fixed in `cyd_node/main.cpp`'s `handleWifiLinkLine()`.
-- **A second bug was caught via code re-review** (not hardware feedback):
-  `drawStatus()`'s dirty-tracking checked `lastKnownChannel != lastDrawnChannel`
-  and `linkState != lastLinkState` to decide whether to repaint the status
-  bar's GPS/channel and link-health rows, but never actually updated either
-  `lastDrawnChannel` or `lastLinkState` afterward - so those two rows would
-  have silently redrawn on every single `DISPLAY_REFRESH_MS` tick forever,
-  the exact flicker bug this dirty-tracking scheme exists to prevent, just
-  not yet visually reported. Fixed by adding the missing assignments at the
-  end of `drawStatus()`.
-- **Radio coexistence trade-off, accepted on purpose**: wifi_node's WiFi and
-  BLE radios share one antenna and time-slice (standard ESP32-S3 WiFi/BT
-  coexistence). This can add a little jitter to channel-hop timing and cost
-  a small percentage of sniff dwell time compared to the old wired link -
-  judged worth it to avoid physically wiring the two boards together.
-- **Range**: BLE's range is shorter than a wire, obviously - if wifi_node and
-  cyd_node end up mounted far apart in the vehicle, verify the link actually
-  stays connected at that distance (watch `WARDRIVE_DEBUG` serial output on
-  either board) before relying on it.
-
-**cyd_node power/programming note**: this board's USB-C port has no CC
-resistors, so a USB-C-to-USB-C cable will not power or program it - use a
-USB-A-to-USB-C cable, or the Micro-USB port, instead.
-
-Mount the GY-GPS6MV2's ceramic antenna facing up toward the sky (e.g. on the
-dashboard or under the rear window) for a reliable fix while driving.
-
-### Parts
-
-- 2x ESP32-S3 dev board (any generic DevKitC-1 style board with native USB) - wifi_node, ble_node
-- 1x CYD (ESP32-2432S028 Dual USB "CYD2USB", 2.8" resistive touch, ST7789) - cyd_node
-- 1x GY-GPS6MV2 GPS module (already have)
-- 1x microSD card, on cyd_node's built-in slot (already have)
+- **Line protocol**: `W,...`/`B,...` sightings, `SCANSTATE`, `EPOCH`,
+  `GPSPOS`, `SATS` and `CH` from wifi_node; `SDOK`, `CFG`, `SCANSTATE`,
+  `START`/`OK`/`FAIL`, `BLINKPHASE` and `LOWSTORAGE` from cyd_node. One
+  `\n`-terminated line per message.
+- **Link health**: a wire has no connection handshake, so cyd_node treats
+  the link as up while wifi_node's broadcasts (every ~2s) keep arriving,
+  and down after 6s of silence.
+- **`SCANSTATE` flows both ways**: cyd_node broadcasts it on every touch or
+  phone command and every 2s regardless; wifi_node adopts it and relays it
+  to ble_node. wifi_node's idle-auto-stop can also originate a change.
+- **No GPS fix, no sightings**: wifi_node only forwards a sighting once it
+  has a position (a live fix, or one less than 15s old), so indoors with no
+  fix the counts stay at 0 even while scanning.
 
 ## Firmware config
 
@@ -433,12 +354,13 @@ pio run -e ble_node  -t upload -t monitor
 pio run -e cyd_node  -t upload -t monitor
 ```
 
-### Testing the BLE link without a second board
+### Testing the BLE link without a phone
 
 `tools/test_ble_link.sh` drives cyd_node's BLE link from this machine's own
-Bluetooth adapter (via `bluetoothctl`/`gatttool`), standing in for wifi_node -
-useful for sanity-checking a `CydBleLink.cpp`/cyd_node change without needing
-wifi_node on the bench:
+Bluetooth adapter (via `bluetoothctl`/`gatttool`), standing in for the phone -
+useful for sanity-checking a `CydBleLink.cpp`/cyd_node change. It was written
+when this link served wifi_node, so its example lines may need updating to
+phone commands (`wdstream start`, `scan start`):
 
 ```
 tools/test_ble_link.sh scan              # confirm WardriveCYD is advertising
@@ -480,9 +402,12 @@ none of this applies there.
 
 ## Phone link (wdstream)
 
-WardriveGo's "Cerberus" mode (custom rigs) talks to **cyd_node's USB port**
-over a plain-text line protocol (reverse-engineered from GhostESP's own
-firmware source) - not wifi_node's or ble_node's. cyd_node is a plain ESP32
+The phone talks to **cyd_node** over a plain-text line protocol
+(reverse-engineered from GhostESP's own firmware source, and understood by
+WardriveGo's "Cerberus" mode). **BLE is the primary transport**: cyd_node
+advertises as `WardriveCYD` with a NUS-style RX/TX characteristic pair
+(`5b60de00-...`, see `CydBleLink.cpp`). **Its USB port is the fallback** -
+every phone-bound line goes out over both. cyd_node is a plain ESP32
 with a real USB-UART bridge chip, a better fit for a phone-side serial app
 than wifi_node's/ble_node's native-USB ESP32-S3s (see "Building and
 flashing" above for why those two need `ARDUINO_USB_MODE`/
@@ -491,10 +416,9 @@ CSV/upload pipeline, never replacing it.
 
 Commands the phone can send (one per line):
 
-- `wdstream start` — begin mirroring scan activity as `WD:`-prefixed lines
-  (the phone resends this every 5s as a keep-alive; any line at all counts
-  as evidence the phone is present, which drives the yellow "phone
-  connected" LED flash - see the color table above).
+- `wdstream start` — begin mirroring scan activity as `WD:`-prefixed lines.
+  Over BLE the connection itself tells cyd_node a phone is present; over
+  USB the phone sends `wdstream status` every few seconds as a keep-alive.
 - `wdstream stop` — stop the mirror.
 - `wdstream status` — emit one `WD:STATUS` line on demand.
 - `scan start` / `scan stop` — remotely drive the rig's actual scanning,
@@ -529,8 +453,8 @@ output down.
   handshake specifically. **Fix applied**: `doUpload()` now calls
   `CydBleLink::suspendServer()` before `uploadPending()` and
   `resumeServer()` after, freeing that RAM for the exact window that needs
-  it - wifi_node's BLE connection drops during an upload and reconnects on
-  its own afterward, same as any other out-of-range gap, and the upload
+  it - a phone connected over BLE drops during an upload and reconnects on
+  its own afterward (the wired wifi_node link is unaffected), and the upload
   path already blocks the whole main loop for its duration regardless, so
   nothing is actually being served over BLE during that window anyway. A
   `[upload] free heap before POST ...` line was added to
@@ -540,14 +464,12 @@ output down.
   this session didn't have) or the physical/touch UPLOAD button, neither
   available remotely. Watch the free-heap line and the WiGLE POST result on
   the next real upload to confirm.
-- **The wifi_node↔cyd_node BLE link is open and unauthenticated** - anyone
-  within BLE range could connect and write garbage lines, which would be
-  parsed the same as real data (worst case: bogus rows in your own SD card's
-  CSV, easy to notice and not otherwise harmful - the link carries no
-  credentials or control over anything sensitive). Adding pairing/bonding
-  would close this but meaningfully increase NimBLE complexity for a
-  hobby-project threat model that doesn't obviously need it; revisit if that
-  changes.
+- **cyd_node's BLE link to the phone is open and unauthenticated** - anyone
+  within BLE range could connect and send phone commands (`scan start`/
+  `scan stop`, `wdstream ...`), i.e. start or stop your scanning. It can't
+  inject sightings into your logs (those only arrive over the wire from
+  wifi_node) and it carries no credentials. Adding pairing/bonding would
+  close this.
 - **wdgwars.pl auth format is unverified** (see above) — check it against
   your account's docs.
 - **SD card isn't continuously monitored while scanning** — the live
@@ -619,3 +541,7 @@ output down.
   tunnels/parking garages yet) — simplest correct behavior, matching how
   several reference wardriving projects (Hak5 Pineapple Pager's wdgwars
   payload, GhostESP) handle it.
+
+## Related
+
+- [Wardrive Bridge](https://github.com/Nill-os/wardrive-bridge) - the Android companion app (BLE/USB link to cyd_node, phone scanning, logs, uploads).

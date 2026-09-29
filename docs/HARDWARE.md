@@ -6,7 +6,7 @@
 
 | Qty | Part | Notes |
 |---|---|---|
-| 2 | ESP32-S3 dev board (ESP32-S3-DevKitC-1 or a clone) | One becomes `wifi_node`, the other `ble_node`. Any S3 board with the onboard RGB LED on GPIO48 works as-is. Other boards need the pins in `src/*/main.cpp` and the board ID in `platformio.ini` changed. |
+| 2 | ESP32-S3 dev board (ESP32-S3-DevKitC-1 or a clone) | One becomes `wifi_node`, the other `ble_node`. Any S3 board with the onboard RGB LED on GPIO48 works as-is. Other boards need the pins in `firmware/src/*/main.cpp` and the board ID in `firmware/platformio.ini` changed. |
 | 1 | CYD **dual-USB** ESP32-2432S028 ("CYD2USB") | 2.8" **ST7789** screen with resistive touch and a microSD slot. The older single-USB CYD uses an ILI9341 screen and needs different display flags. |
 | 1 | GY-GPS6MV2 (u-blox NEO-6M) GPS module plus its antenna | Any 9600-baud NMEA GPS will do. Put the antenna where it can see the sky. |
 | 1 | microSD card, FAT32 | 4–64 GB. Holds `config.cfg` and every log. |

@@ -9,15 +9,15 @@ The rig works on its own, and **the phone is optional**. With the phone you get:
 
 ## Wardrive Bridge (Android)
 
-Source: [wardrive-bridge](https://github.com/Nill-os/wardrive-bridge). It needs Android 8.0 or newer.
+Source: [`android/`](../android) in this repo. It needs Android 8.0 or newer.
 
 ### Install
 
 Build it yourself (a signed release APK may be added later):
 
 ```
-git clone https://github.com/Nill-os/wardrive-bridge.git
-cd wardrive-bridge
+git clone https://github.com/Nill-os/wardrive.git
+cd wardrive/android
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -53,7 +53,7 @@ If Bluetooth isn't available, plug the phone into the CYD's USB port with a USB-
 
 ## Organic Maps overlay (optional)
 
-A lightly patched Organic Maps build ([wardrive-maps-overlay](https://github.com/Nill-os/wardrive-maps-overlay)) shows a one-line Wardrive Bridge status on the map, for example:
+A lightly patched Organic Maps build ([organic-maps-overlay/](../organic-maps-overlay)) shows a one-line Wardrive Bridge status on the map, for example:
 
 ```
 ON · WIGLE 12 · WDGW 9 · BT 30 · CYD BLE · Rig ✓
@@ -98,6 +98,6 @@ The CYD speaks a line-based text protocol over BLE, and over USB serial at 11520
 - **Output:** lines prefixed with `WD:`, namely `WD:BEGIN`, `WD:AP,…`, `WD:BLE,…`, `WD:STATUS,…`, `WD:SCANSTATE:<0|1>` and `WD:MESHLINK:…` (rig link state). Ignore any other line; it's debug output.
 - **Keep-alive over USB:** send `wdstream status` every 5 s. Over BLE, the connection itself counts as presence.
 
-`tools/test_ble_link.sh` drives the BLE link from a Linux PC with BlueZ, which is handy for testing without a phone.
+`firmware/tools/test_ble_link.sh` drives the BLE link from a Linux PC with BlueZ, which is handy for testing without a phone.
 
 > **Security:** the BLE link is paired and encrypted (LE Secure Connections with a passkey). A phone that hasn't paired can connect at the radio level, but it can't read or write anything, and the rig drops it after 10 seconds. The code is only shown during a PAIR PHONE window. The `test:` developer commands only work over USB.

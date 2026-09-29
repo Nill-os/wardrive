@@ -2,7 +2,7 @@
 
 The rig reads `config.cfg` from the root of **cyd_node's microSD card**. The card must be FAT32. wifi_node and ble_node have no SD card; cyd_node sends them what they need over the wire.
 
-Start from [`config.cfg.example`](../config.cfg.example). Use one `key=value` per line, with no quotes and no spaces around `=`.
+Start from [`firmware/config.cfg.example`](../firmware/config.cfg.example). Use one `key=value` per line, with no quotes and no spaces around `=`.
 
 ```
 wifi_ssid=YourHomeWifi

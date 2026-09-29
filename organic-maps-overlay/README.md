@@ -2,7 +2,7 @@
 
 # wardrive-maps-overlay
 
-A small patch to [Organic Maps](https://github.com/organicmaps/organicmaps) (Android) that shows the live status of the [Wardrive Bridge](https://github.com/Nill-os/wardrive-bridge) app while you navigate:
+A small patch to [Organic Maps](https://github.com/organicmaps/organicmaps) (Android) that shows the live status of the [Wardrive Bridge](../android) app while you navigate:
 
 ```
 ON · WIGLE 12 · WDGW 9 · BT 30 · CYD BLE · Rig ✓
@@ -24,7 +24,7 @@ The patch lives in `patches/` (made with `git format-patch`) and targets upstrea
 
 ## Pair it with Wardrive Bridge
 
-Wardrive Bridge only answers apps it trusts: it checks the caller's package name **and** its signing certificate. Put your Organic Maps build's certificate SHA-256 into `ALLOWED` in Wardrive Bridge's `BridgeProvider.kt`:
+Wardrive Bridge only answers apps it trusts: it checks the caller's package name **and** its signing certificate. Put your Organic Maps build's certificate SHA-256 into `ALLOWED` in [`android/.../BridgeProvider.kt`](../android/app/src/main/java/com/dreknil/wardrivebridge/BridgeProvider.kt):
 
 ```
 keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep SHA256

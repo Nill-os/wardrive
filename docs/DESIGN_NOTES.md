@@ -6,11 +6,11 @@ These notes explain how the rig works inside, for anyone changing the code.
 
 | Board | Radio | Owns | Code |
 |---|---|---|---|
-| wifi_node | WiFi (promiscuous sniffer, channels 1–11) | GPS, geotagging, WiFi de-duplication, idle auto-stop | `src/wifi_node/` |
-| ble_node | BLE (passive scan) | Per-run BLE de-duplication | `src/ble_node/` |
-| cyd_node | BLE server (phone only) | SD card, `config.cfg`, CSV writer, uploader, touchscreen UI, run state | `src/cyd_node/` |
+| wifi_node | WiFi (promiscuous sniffer, channels 1–11) | GPS, geotagging, WiFi de-duplication, idle auto-stop | `firmware/src/wifi_node/` |
+| ble_node | BLE (passive scan) | Per-run BLE de-duplication | `firmware/src/ble_node/` |
+| cyd_node | BLE server (phone only) | SD card, `config.cfg`, CSV writer, uploader, touchscreen UI, run state | `firmware/src/cyd_node/` |
 
-Code used by more than one board lives in `lib/WardriveShared/`:
+Code used by more than one board lives in `firmware/lib/WardriveShared/`:
 
 - `WigleWriter`: the WigleWifi-1.6 CSV writer.
 - `Uploader`: wdgwars and WiGLE uploads.
@@ -79,7 +79,7 @@ cyd_node runs a NimBLE GATT server named `WardriveCYD`, and mirrors the same lin
 These are for the dual-USB CYD with an ST7789 panel:
 
 - TFT_eSPI's ST7789 init table always sends `INVON`, which inverts the colours. The `TFT_INVERSION_OFF` build flag counteracts it inside `tft.init()`.
-- `rotation(0)` is landscape on this panel. `runRotationDebug()` in `src/cyd_node/main.cpp` helps you re-derive it on a different panel.
+- `rotation(0)` is landscape on this panel. `runRotationDebug()` in `firmware/src/cyd_node/main.cpp` helps you re-derive it on a different panel.
 - The XPT2046 touch controller is bit-banged on its own pins (IRQ 36, MISO 39, MOSI 32, CLK 25, CS 33).
 - The display pin map is set entirely by `build_flags` in `[env:cyd_node]` (`USER_SETUP_LOADED`), so updating the library won't overwrite it.
 - The board is built as the generic `esp32dev` target with 4 MB flash and the `huge_app.csv` partition layout, which gives one ~3 MB app partition and no OTA.

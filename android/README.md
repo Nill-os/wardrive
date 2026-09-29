@@ -1,6 +1,6 @@
 # Wardrive Bridge
 
-Android companion app for the [ESP32 wardriving rig](https://github.com/Nill-os/wardrive-esp32).
+Android companion app for the wardriving rig in [`../firmware`](../firmware).
 
 It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth and cell sightings, logs every run, and uploads to WiGLE and wdgwars.
 
@@ -24,15 +24,15 @@ It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth an
 
 ## Organic Maps overlay
 
-A lightly patched Organic Maps build ([wardrive-maps-overlay](https://github.com/Nill-os/wardrive-maps-overlay)) can show this app's live status as an overlay on its map and in Android Auto, with a start/stop button in the car. It reads status from this app's `BridgeProvider` and never scans or talks to the rig itself, so the two apps don't compete for the rig. Only the Organic Maps build is allowed to read the provider; it's checked by package name and signing certificate.
+A lightly patched Organic Maps build ([`../organic-maps-overlay`](../organic-maps-overlay)) can show this app's live status as an overlay on its map and in Android Auto, with a start/stop button in the car. It reads status from this app's `BridgeProvider` and never scans or talks to the rig itself, so the two apps don't compete for the rig. Only the Organic Maps build is allowed to read the provider; it's checked by package name and signing certificate.
 
 To allow your own Organic Maps build, put its package name and the SHA-256 of its signing certificate in `ALLOWED` in `BridgeProvider.kt`.
 
 ## Build and install
 
 ```
-git clone https://github.com/Nill-os/wardrive-bridge.git
-cd wardrive-bridge
+git clone https://github.com/Nill-os/wardrive.git
+cd wardrive/android
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -50,7 +50,7 @@ Needs JDK 17 and the Android SDK (minSdk 26 / Android 8.0, targetSdk 34). Androi
 4. Tap **START**.
 5. **Android Auto:** sideloaded apps are hidden until you enable Android Auto developer settings → **Unknown sources**.
 
-The full guide is in the rig repo: [Phone app](https://github.com/Nill-os/wardrive-esp32/blob/master/docs/PHONE_APP.md).
+The full guide is [docs/PHONE_APP.md](../docs/PHONE_APP.md).
 
 ## Privacy
 
@@ -58,4 +58,4 @@ Everything stays on the phone until you upload it. Exported CSV and GPX files co
 
 ## License
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

@@ -32,7 +32,7 @@ The phone isn't paired with a rig yet. On the rig's **4.CFG** tab, tap **PAIR PH
 - Make sure Bluetooth and Location are on, and that the app has the **Nearby devices** permission.
 - Tap **RE-LINK ALL** on the CYD. That restarts the CYD's Bluetooth.
 - Only one phone can connect at a time. Close any other BLE app (nRF Connect and similar) that might hold the connection.
-- Check that the CYD is advertising, using `tools/test_ble_link.sh scan` from a Linux PC or nRF Connect. Look for `WardriveCYD`.
+- Check that the CYD is advertising, using `firmware/tools/test_ble_link.sh scan` from a Linux PC or nRF Connect. Look for `WardriveCYD`.
 - The link drops during an upload by design, and comes back afterwards.
 
 ## Uploads fail (red flash)
@@ -44,7 +44,7 @@ The phone isn't paired with a rig yet. On the rig's **4.CFG** tab, tap **PAIR PH
 
 ## The touchscreen hits the wrong spot
 
-The touch calibration constants (`TOUCH_RAW_*`, `TOUCH_SWAP_XY` and `TOUCH_INVERT_X/Y` in `src/cyd_node/main.cpp`) were calibrated on the author's unit and should suit most boards of this model. If yours is off, watch the `[touch] raw x=… y=…` serial lines while you tap each corner **briefly and separately**, then adjust the constants.
+The touch calibration constants (`TOUCH_RAW_*`, `TOUCH_SWAP_XY` and `TOUCH_INVERT_X/Y` in `firmware/src/cyd_node/main.cpp`) were calibrated on the author's unit and should suit most boards of this model. If yours is off, watch the `[touch] raw x=… y=…` serial lines while you tap each corner **briefly and separately**, then adjust the constants.
 
 ## The screen is inverted, rotated or blank
 
@@ -59,4 +59,4 @@ See [Design notes → Display quirks](DESIGN_NOTES.md#display-quirks). You proba
 ## The ESP32-S3 won't flash, or shows no serial output
 
 - Hold **BOOT**, tap **RESET**, release **BOOT**, then upload again.
-- Don't remove `ARDUINO_USB_MODE` and `ARDUINO_USB_CDC_ON_BOOT` from `platformio.ini`. Without them, `Serial` prints go nowhere.
+- Don't remove `ARDUINO_USB_MODE` and `ARDUINO_USB_CDC_ON_BOOT` from `firmware/platformio.ini`. Without them, `Serial` prints go nowhere.

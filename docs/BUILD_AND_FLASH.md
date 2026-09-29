@@ -7,7 +7,7 @@ Use either:
 - **VS Code** with the PlatformIO IDE extension, or
 - **the command line**: `pip install platformio`, which gives you the `pio` command.
 
-PlatformIO downloads the ESP32 toolchain and every library the first time you build. The libraries are TinyGPSPlus, NimBLE-Arduino and TFT_eSPI, and they are pinned in `platformio.ini`.
+PlatformIO downloads the ESP32 toolchain and every library the first time you build. The libraries are TinyGPSPlus, NimBLE-Arduino and TFT_eSPI, and they are pinned in `firmware/platformio.ini`.
 
 On Linux, add yourself to the `dialout` group (or your distro's equivalent) so you can open serial ports, then log out and back in:
 
@@ -18,11 +18,13 @@ sudo usermod -aG dialout $USER
 ## 2. Get the code
 
 ```
-git clone https://github.com/Nill-os/wardrive-esp32.git
-cd wardrive-esp32
+git clone https://github.com/Nill-os/wardrive.git
+cd wardrive/firmware
 ```
 
 ## 3. Flash each board
+
+Run these from the `firmware/` folder.
 
 Plug in **one board at a time**, so you know exactly which port is which board.
 
@@ -72,15 +74,16 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 
 ## Building variations
 
-- **A different ESP32-S3 board:** change `board =` in `[env:wifi_node]` and `[env:ble_node]`. If your board has no RGB LED on GPIO48, change the LED pin in `src/wifi_node/main.cpp` and `src/ble_node/main.cpp`.
+- **A different ESP32-S3 board:** change `board =` in `[env:wifi_node]` and `[env:ble_node]`. If your board has no RGB LED on GPIO48, change the LED pin in `firmware/src/wifi_node/main.cpp` and `firmware/src/ble_node/main.cpp`.
 - **A different CYD:** the display pin map is in `[env:cyd_node]` `build_flags`. A single-USB CYD with an **ILI9341** screen needs `ILI9341_DRIVER` in place of `ST7789_DRIVER`, and probably different inversion and rotation settings too (see [Design notes](DESIGN_NOTES.md#display-quirks)).
 - **Quieter serial output:** set `WARDRIVE_DEBUG` to `false` in each `main.cpp` once the rig works.
 
 ## The SD-card organizer (optional)
 
-`tools/organize_wardrive.py` is a small desktop GUI. It merges every session CSV on the SD card into one de-duplicated spreadsheet in `~/Wardrive_Reports`.
+`firmware/tools/organize_wardrive.py` is a small desktop GUI. It merges every session CSV on the SD card into one de-duplicated spreadsheet in `~/Wardrive_Reports`.
 
 ```
+cd firmware
 python3 -m venv tools/venv
 tools/venv/bin/pip install -r tools/requirements.txt
 tools/run.sh

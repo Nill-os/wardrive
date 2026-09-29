@@ -1898,9 +1898,12 @@ static const char *wdstreamAuthToken(const String &authMode) {
 
 static void wdstreamEmitStatus() {
 	uint32_t uptimeS = (millis() - wdstreamStartMs) / 1000;
-	phonePrintf("WD:STATUS aps=%lu bles=%lu ch=%u uptime=%lum%02lus",
+	// gps/sats/sd/pend are extra fields for the Wardrive Bridge app's rig-health line;
+	// wdstream clients that don't know them just ignore them.
+	phonePrintf("WD:STATUS aps=%lu bles=%lu ch=%u uptime=%lum%02lus gps=%d sats=%d sd=%d pend=%u scan=%d",
 				  (unsigned long)wdstreamApCount, (unsigned long)wdstreamBleCount,
-				  (unsigned)lastKnownChannel, (unsigned long)(uptimeS / 60), (unsigned long)(uptimeS % 60));
+				  (unsigned)lastKnownChannel, (unsigned long)(uptimeS / 60), (unsigned long)(uptimeS % 60),
+				  gpsFixKnown ? 1 : 0, (int)lastKnownSatCount, sdOk ? 1 : 0, (unsigned)pendingUploadFiles, scanningActive ? 1 : 0);
 }
 
 // fromUsb: the "test:" commands below can wipe logs and redirect uploads, so

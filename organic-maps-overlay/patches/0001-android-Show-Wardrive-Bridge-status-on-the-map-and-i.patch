@@ -1,0 +1,870 @@
+From f4cb4d00b5f0526a3948297aeacd26d4cc7d4ba4 Mon Sep 17 00:00:00 2001
+From: dreknil <>
+Date: Mon, 28 Sep 2026 21:40:21 -0700
+Subject: [PATCH] [android] Show Wardrive Bridge status on the map and in
+ Android Auto
+
+Adds a status line (run state, WIGLE/WDGW/BT counts, CYD and rig
+links) over the phone map and the Android Auto map, plus a start/stop
+button in the car's navigation action strip. All data comes from the
+standalone Wardrive Bridge app through its content provider; this app
+does no scanning and never talks to the rig itself.
+
+Also drops the debug-only "Simulate Route" action from the car action
+strip, which pushed it past NavigationTemplate's 4-action limit and
+crashed on render.
+
+LLM tools were used to write this change.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Signed-off-by: dreknil <>
+---
+ android/app/build.gradle                      |  1 +
+ .../java/app/organicmaps/MwmActivity.java     | 57 +++++++++++
+ .../main/res/drawable/bg_wardrive_status.xml  | 10 ++
+ .../app/src/main/res/layout/activity_map.xml  | 19 ++++
+ android/libs/car/build.gradle                 |  1 +
+ .../organicmaps/car/CarAppSessionBase.java    | 42 ++++++++
+ .../car/screens/NavigationScreen.java         | 96 ++++++++++++++++++-
+ android/libs/wardrive/build.gradle            | 15 +++
+ .../wardrive/src/main/AndroidManifest.xml     | 11 +++
+ .../wardrive/WardriveBridgeClient.kt          | 71 ++++++++++++++
+ .../wardrive/WardriveStatusFormatter.kt       | 67 +++++++++++++
+ .../sdk/car/renderer/CarPresentation.java     | 28 ++++++
+ .../sdk/car/renderer/Renderer.java            | 12 +++
+ .../sdk/car/renderer/RendererImpl.java        |  6 ++
+ .../sdk/car/renderer/SurfaceCallback.java     |  6 ++
+ .../sdk/car/renderer/SurfaceRenderer.java     |  7 ++
+ .../main/res/drawable/bg_wardrive_status.xml  |  6 ++
+ .../car/src/main/res/layout/car_layout.xml    | 18 ++++
+ android/settings.gradle                       |  1 +
+ 19 files changed, 472 insertions(+), 2 deletions(-)
+ create mode 100644 android/app/src/main/res/drawable/bg_wardrive_status.xml
+ create mode 100644 android/libs/wardrive/build.gradle
+ create mode 100644 android/libs/wardrive/src/main/AndroidManifest.xml
+ create mode 100644 android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt
+ create mode 100644 android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt
+ create mode 100644 android/sdk/car/src/main/res/drawable/bg_wardrive_status.xml
+
+diff --git a/android/app/build.gradle b/android/app/build.gradle
+index ee2c54156b..95961eecfd 100644
+--- a/android/app/build.gradle
++++ b/android/app/build.gradle
+@@ -221,6 +221,7 @@ dependencies {
+   implementation project(':libs:googleassistant')
+   implementation project(':libs:routing')
+   implementation project(':libs:utils')
++  implementation project(':libs:wardrive')
+ 
+   implementation project(':sdk')
+   implementation project(':sdk:car')
+diff --git a/android/app/src/main/java/app/organicmaps/MwmActivity.java b/android/app/src/main/java/app/organicmaps/MwmActivity.java
+index 41c70edea0..238e6304fe 100644
+--- a/android/app/src/main/java/app/organicmaps/MwmActivity.java
++++ b/android/app/src/main/java/app/organicmaps/MwmActivity.java
+@@ -23,11 +23,14 @@ import android.location.Location;
+ import android.net.Uri;
+ import android.os.Build;
+ import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
+ import android.text.TextUtils;
+ import android.text.method.LinkMovementMethod;
+ import android.view.KeyEvent;
+ import android.view.MotionEvent;
+ import android.view.View;
++import android.view.ViewGroup;
+ import android.view.Window;
+ import android.widget.TextView;
+ import android.widget.Toast;
+@@ -121,6 +124,8 @@ import app.organicmaps.util.Utils;
+ import app.organicmaps.util.WindowInsetUtils.BaselinePaddingInsetsListener;
+ import app.organicmaps.util.bottomsheet.MenuBottomSheetFragment;
+ import app.organicmaps.util.bottomsheet.MenuBottomSheetItem;
++import app.organicmaps.wardrive.WardriveBridgeClient;
++import app.organicmaps.wardrive.WardriveStatusFormatterKt;
+ import app.organicmaps.widget.placepage.PlacePageController;
+ import app.organicmaps.widget.placepage.PlacePageViewModel;
+ import com.google.android.material.bottomsheet.BottomSheetBehavior;
+@@ -160,6 +165,32 @@ public class MwmActivity extends BaseMwmFragmentActivity
+   private TextView mPointChooserTitle;
+   private TextView mPointChooserHint;
+ 
++  // Live status line from the standalone Wardrive Bridge app, which owns the rig and all scanning -
++  // this app only displays it. Polled while the map is on screen (onStart()/onStop()); the read is
++  // cross-app IPC, so it runs on a background thread.
++  private TextView mWardriveStatusView;
++  private static final long WARDRIVE_POLL_INTERVAL_MS = 2000L;
++  private final Handler mWardriveHandler = new Handler(Looper.getMainLooper());
++  private final java.util.concurrent.ExecutorService mWardriveExecutor =
++      java.util.concurrent.Executors.newSingleThreadExecutor();
++  private final Runnable mWardrivePollTick = new Runnable() {
++    @Override
++    public void run()
++    {
++      final Context context = getApplicationContext();
++      mWardriveExecutor.execute(() -> {
++        final CharSequence text = WardriveStatusFormatterKt.formatStatusLine(WardriveBridgeClient.INSTANCE.status(context));
++        mWardriveHandler.post(() -> {
++          if (mWardriveStatusView == null)
++            return;
++          mWardriveStatusView.setText(text);
++          mWardriveStatusView.setVisibility(View.VISIBLE);
++        });
++      });
++      mWardriveHandler.postDelayed(this, WARDRIVE_POLL_INTERVAL_MS);
++    }
++  };
++
+   private NavigationController mNavigationController;
+   @Nullable
+   private OnmapDownloader mOnmapDownloader;
+@@ -544,6 +575,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
+     final boolean isLaunchByDeepLink = intent != null && !intent.hasCategory(Intent.CATEGORY_LAUNCHER);
+     initViews(isLaunchByDeepLink);
+     updateViewsInsets();
++    initWardriveOverlay();
+ 
+     if (getIntent().getBooleanExtra(EXTRA_UPDATE_THEME, false))
+       ThemeSwitcher.INSTANCE.synchronizeApplicationTheme();
+@@ -1048,6 +1080,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
+     LocationState.nativeSetListener(this);
+     MwmApplication.from(this).getLocationHelper().addListener(this);
+     Utils.keepScreenOn(Config.isKeepScreenOnEnabled() || RoutingController.get().isNavigating(), getWindow());
++
++    mWardriveHandler.removeCallbacks(mWardrivePollTick);
++    mWardriveHandler.post(mWardrivePollTick);
+   }
+ 
+   @Override
+@@ -1065,11 +1100,33 @@ public class MwmActivity extends BaseMwmFragmentActivity
+     MwmApplication.from(getApplicationContext()).getIsolinesManager().detach();
+     Utils.keepScreenOn(false, getWindow());
+ 
++    mWardriveHandler.removeCallbacks(mWardrivePollTick);
++    mWardriveStatusView.setVisibility(View.GONE);
++
+     final String backUrl = Framework.nativeGetParsedBackUrl();
+     if (!TextUtils.isEmpty(backUrl))
+       Utils.openUri(this, Uri.parse(backUrl), null);
+   }
+ 
++  private void initWardriveOverlay()
++  {
++    mWardriveStatusView = findViewById(R.id.wardrive_status_view);
++    mWardriveStatusView.setOnClickListener(v -> {
++      final Intent bridge = WardriveBridgeClient.INSTANCE.launchIntent(this);
++      if (bridge != null)
++        startActivity(bridge);
++    });
++    final int topMarginBase = getResources().getDimensionPixelSize(R.dimen.margin_base);
++    ViewCompat.setOnApplyWindowInsetsListener(mWardriveStatusView, (v, insets) -> {
++      final int top =
++          insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()).top;
++      final ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
++      params.topMargin = top + topMarginBase;
++      v.setLayoutParams(params);
++      return insets;
++    });
++  }
++
+   @CallSuper
+   @Override
+   protected void onSafeDestroy()
+diff --git a/android/app/src/main/res/drawable/bg_wardrive_status.xml b/android/app/src/main/res/drawable/bg_wardrive_status.xml
+new file mode 100644
+index 0000000000..00575d40db
+--- /dev/null
++++ b/android/app/src/main/res/drawable/bg_wardrive_status.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<ripple xmlns:android="http://schemas.android.com/apk/res/android"
++    android:color="#33FFFFFF">
++  <item>
++    <shape android:shape="rectangle">
++      <solid android:color="#CC1B1B1B" />
++      <corners android:radius="12dp" />
++    </shape>
++  </item>
++</ripple>
+diff --git a/android/app/src/main/res/layout/activity_map.xml b/android/app/src/main/res/layout/activity_map.xml
+index e1c10b81f5..586db6cb2c 100644
+--- a/android/app/src/main/res/layout/activity_map.xml
++++ b/android/app/src/main/res/layout/activity_map.xml
+@@ -36,6 +36,25 @@
+       android:visibility="gone"
+       tools:visibility="visible" />
+ 
++    <TextView
++      android:id="@+id/wardrive_status_view"
++      android:layout_width="wrap_content"
++      android:layout_height="wrap_content"
++      android:layout_alignParentTop="true"
++      android:layout_centerHorizontal="true"
++      android:background="@drawable/bg_wardrive_status"
++      android:clickable="true"
++      android:focusable="true"
++      android:gravity="center"
++      android:paddingHorizontal="12dp"
++      android:paddingVertical="6dp"
++      android:textColor="#FFFFFFFF"
++      android:textSize="13sp"
++      android:textStyle="bold"
++      android:visibility="gone"
++      tools:text="12 WiFi · 4 BLE · Rig ✓"
++      tools:visibility="visible" />
++
+     <androidx.fragment.app.FragmentContainerView
+       android:id="@+id/map_buttons"
+       android:layout_width="match_parent"
+diff --git a/android/libs/car/build.gradle b/android/libs/car/build.gradle
+index 24546ca8b3..df99f783f9 100644
+--- a/android/libs/car/build.gradle
++++ b/android/libs/car/build.gradle
+@@ -20,6 +20,7 @@ dependencies {
+   implementation project(':libs:googleassistant')
+   implementation project(':libs:routing')
+   implementation project(':libs:utils')
++  implementation project(':libs:wardrive')
+ 
+   implementation project(':sdk')
+   implementation project(':sdk:car')
+diff --git a/android/libs/car/src/main/java/app/organicmaps/car/CarAppSessionBase.java b/android/libs/car/src/main/java/app/organicmaps/car/CarAppSessionBase.java
+index 5e0caf4f96..4f4b5fa383 100644
+--- a/android/libs/car/src/main/java/app/organicmaps/car/CarAppSessionBase.java
++++ b/android/libs/car/src/main/java/app/organicmaps/car/CarAppSessionBase.java
+@@ -1,7 +1,10 @@
+ package app.organicmaps.car;
+ 
++import android.content.Context;
+ import android.content.Intent;
+ import android.content.res.Configuration;
++import android.os.Handler;
++import android.os.Looper;
+ import androidx.annotation.CallSuper;
+ import androidx.annotation.NonNull;
+ import androidx.car.app.Screen;
+@@ -30,6 +33,8 @@ import app.organicmaps.sdk.location.LocationUtils;
+ import app.organicmaps.sdk.routing.RoutingController;
+ import app.organicmaps.sdk.util.log.Logger;
+ import app.organicmaps.sdk.widget.placepage.PlacePageData;
++import app.organicmaps.wardrive.WardriveBridgeClient;
++import app.organicmaps.wardrive.WardriveStatusFormatterKt;
+ 
+ public abstract class CarAppSessionBase
+     extends Session implements DefaultLifecycleObserver, LocationState.ModeChangeListener, PlacePageActivationListener
+@@ -55,6 +60,34 @@ public abstract class CarAppSessionBase
+   @NonNull
+   protected CarSensorsManager mSensorsManager;
+ 
++  // Live status line from the standalone Wardrive Bridge app (which owns the rig and all scanning),
++  // drawn onto the car map while this app's Screen is showing. The read is cross-app IPC, so it
++  // runs on a background thread.
++  private static final long WARDRIVE_POLL_INTERVAL_MS = 2000L;
++  private boolean mWardriveVisible;
++  @NonNull
++  private final Handler mWardriveHandler = new Handler(Looper.getMainLooper());
++  @NonNull
++  private final java.util.concurrent.ExecutorService mWardriveExecutor =
++      java.util.concurrent.Executors.newSingleThreadExecutor();
++  @NonNull
++  private final Runnable mWardrivePollTick = new Runnable() {
++    @Override
++    public void run()
++    {
++      final Context context = getCarContext().getApplicationContext();
++      mWardriveExecutor.execute(() -> {
++        final CharSequence text =
++            WardriveStatusFormatterKt.formatStatusLine(WardriveBridgeClient.INSTANCE.status(context));
++        mWardriveHandler.post(() -> {
++          if (mWardriveVisible) // a read that finishes after onStop() mustn't redraw the badge
++            mSurfaceRenderer.setWardriveStatus(text);
++        });
++      });
++      mWardriveHandler.postDelayed(this, WARDRIVE_POLL_INTERVAL_MS);
++    }
++  };
++
+   public CarAppSessionBase(@NonNull OrganicMaps organicMapsContext, @NonNull DisplayManager displayManager,
+                            @NonNull SessionInfo sessionInfo, boolean isDebug)
+   {
+@@ -129,6 +162,10 @@ public abstract class CarAppSessionBase
+       ThemeUtils.update(getCarContext(), mSurfaceRenderer.isRenderingActive());
+       onRestoreRoute();
+     }
++
++    mWardriveVisible = true;
++    mWardriveHandler.removeCallbacks(mWardrivePollTick);
++    mWardriveHandler.post(mWardrivePollTick);
+   }
+ 
+   @CallSuper
+@@ -145,9 +182,14 @@ public abstract class CarAppSessionBase
+       Framework.nativeRemovePlacePageActivationListener(this);
+     }
+ 
++    mWardriveVisible = false;
++    mWardriveHandler.removeCallbacks(mWardrivePollTick);
++    mSurfaceRenderer.hideWardriveStatus();
++
+     mCurrentCountryChangedListener.onStop();
+   }
+ 
++
+   @NonNull
+   protected abstract Screen prepareScreens();
+ 
+diff --git a/android/libs/car/src/main/java/app/organicmaps/car/screens/NavigationScreen.java b/android/libs/car/src/main/java/app/organicmaps/car/screens/NavigationScreen.java
+index 416f918412..b7b23c3f82 100644
+--- a/android/libs/car/src/main/java/app/organicmaps/car/screens/NavigationScreen.java
++++ b/android/libs/car/src/main/java/app/organicmaps/car/screens/NavigationScreen.java
+@@ -1,5 +1,6 @@
+ package app.organicmaps.car.screens;
+ 
++import android.content.Context;
+ import android.location.Location;
+ import androidx.annotation.DrawableRes;
+ import androidx.annotation.NonNull;
+@@ -18,6 +19,7 @@ import androidx.car.app.navigation.model.Step;
+ import androidx.car.app.navigation.model.TravelEstimate;
+ import androidx.car.app.navigation.model.Trip;
+ import androidx.core.graphics.drawable.IconCompat;
++import androidx.lifecycle.DefaultLifecycleObserver;
+ import androidx.lifecycle.LifecycleOwner;
+ import app.organicmaps.car.R;
+ import app.organicmaps.car.screens.settings.DrivingOptionsScreen;
+@@ -38,6 +40,7 @@ import app.organicmaps.sdk.routing.RoutingInfo;
+ import app.organicmaps.sdk.sound.TtsPlayer;
+ import app.organicmaps.sdk.util.StringUtils;
+ import app.organicmaps.sdk.util.log.Logger;
++import app.organicmaps.wardrive.WardriveBridgeClient;
+ import java.util.List;
+ import java.util.Objects;
+ 
+@@ -68,6 +71,24 @@ public class NavigationScreen extends BaseMapScreen implements RoutingController
+   // Used only in debug builds to simulate route following
+   private boolean mRouteSimulationEnabled = false;
+ 
++  // The record button drives the standalone Wardrive Bridge app, which owns the rig and all
++  // scanning. Its state is polled while this Screen is started; reads and start/stop calls are
++  // cross-app IPC, so they run on a background thread. null = Wardrive Bridge isn't running.
++  private static final long WARDRIVE_POLL_INTERVAL_MS = 2000L;
++  @Nullable
++  private volatile WardriveBridgeClient.Status mWardriveStatus;
++  private final android.os.Handler mWardriveHandler = new android.os.Handler(android.os.Looper.getMainLooper());
++  private final java.util.concurrent.ExecutorService mWardriveExecutor =
++      java.util.concurrent.Executors.newSingleThreadExecutor();
++  private final Runnable mWardrivePollTick = new Runnable() {
++    @Override
++    public void run()
++    {
++      refreshWardriveStatus();
++      mWardriveHandler.postDelayed(this, WARDRIVE_POLL_INTERVAL_MS);
++    }
++  };
++
+   private NavigationScreen(@NonNull Builder builder)
+   {
+     super(builder.mCarContext, builder.mOrganicMapsContext, builder.mSurfaceRenderer);
+@@ -75,6 +96,21 @@ public class NavigationScreen extends BaseMapScreen implements RoutingController
+     mRoutingController = RoutingController.get();
+     mNavigationManager = builder.mCarContext.getCarService(NavigationManager.class);
+     setMarker(MARKER);
++
++    getLifecycle().addObserver(new DefaultLifecycleObserver() {
++      @Override
++      public void onStart(@NonNull LifecycleOwner owner)
++      {
++        mWardriveHandler.removeCallbacks(mWardrivePollTick);
++        mWardriveHandler.post(mWardrivePollTick);
++      }
++
++      @Override
++      public void onStop(@NonNull LifecycleOwner owner)
++      {
++        mWardriveHandler.removeCallbacks(mWardrivePollTick);
++      }
++    });
+   }
+ 
+   @NonNull
+@@ -198,15 +234,71 @@ public class NavigationScreen extends BaseMapScreen implements RoutingController
+       mRoutingController.cancel();
+     });
+ 
++    // NavigationTemplate's action strip has a HARD cap of 4 actions, enforced by
++    // ActionsConstraints.validateOrThrow() - not a soft/silent-drop limit the way it first looked
++    // from a DHU screenshot. A debug build adding all 5 of these (wardrive, TTS, settings, stop,
++    // debug-only "Simulate Route") crashed the whole app outright with
++    // "IllegalArgumentException: Action list exceeded max number of 4 actions" the moment
++    // NavigationScreen tried to render - confirmed for real via the DHU (2026-09-28). Debug
++    // builds were already exactly at that 4-action cap with TTS/settings/stop/simulate-route
++    // before wardrive was ever added, so there's no room left for a 5th action strip entry in
++    // debug builds at all. "Simulate Route" - a developer-only testing convenience, with adb and
++    // the phone's own screen as other ways to trigger it - is the one dropped from the strip;
++    // createSimulateRouteAction()/onAutodriveDisabled() are left in place in case a non-action-
++    // strip slot (e.g. a settings menu entry) is wired up for it later.
+     final ActionStrip.Builder builder = new ActionStrip.Builder();
+-    if (mIsDebug)
+-      builder.addAction(createSimulateRouteAction());
++    builder.addAction(createWardriveToggleAction());
+     builder.addAction(createTtsAction());
+     builder.addAction(UiHelpers.createSettingsActionForResult(this, getSurfaceRenderer(), this::onSettingsResult));
+     builder.addAction(stopActionBuilder.build());
+     return builder.build();
+   }
+ 
++  // Same row as the sound/settings/stop actions above, so a run can be started or stopped without
++  // leaving the navigation screen. Greyed out (SECONDARY tint, no click listener) while Wardrive
++  // Bridge isn't running, same "not ready" treatment createTtsAction() gives an unready TTS.
++  @NonNull
++  private Action createWardriveToggleAction()
++  {
++    final WardriveBridgeClient.Status status = mWardriveStatus;
++    final boolean running = status != null && status.getRunning();
++
++    @DrawableRes
++    final int imgRes = running ? R.drawable.ic_radio_button_checked : R.drawable.ic_radio_button_unchecked;
++    final CarIcon.Builder iconBuilder = new CarIcon.Builder(IconCompat.createWithResource(getCarContext(), imgRes));
++    if (running)
++      iconBuilder.setTint(CarColor.RED);
++    else if (status == null)
++      iconBuilder.setTint(CarColor.SECONDARY);
++
++    final Action.Builder actionBuilder = new Action.Builder().setIcon(iconBuilder.build());
++    if (status != null)
++    {
++      final Context context = getCarContext().getApplicationContext();
++      actionBuilder.setOnClickListener(() -> mWardriveExecutor.execute(() -> {
++        WardriveBridgeClient.INSTANCE.setRunning(context, !running);
++        refreshWardriveStatus();
++      }));
++    }
++    return actionBuilder.build();
++  }
++
++  /** Background-safe: reads Wardrive Bridge's state and redraws the strip if the button changed. */
++  private void refreshWardriveStatus()
++  {
++    final Context context = getCarContext().getApplicationContext();
++    mWardriveExecutor.execute(() -> {
++      final WardriveBridgeClient.Status previous = mWardriveStatus;
++      final WardriveBridgeClient.Status now = WardriveBridgeClient.INSTANCE.status(context);
++      mWardriveStatus = now;
++      final boolean wasRunning = previous != null && previous.getRunning();
++      final boolean isRunning = now != null && now.getRunning();
++      if ((previous == null) != (now == null) || wasRunning != isRunning)
++        mWardriveHandler.post(this::invalidate);
++    });
++  }
++
++
+   @Nullable
+   private TravelEstimate getDestinationTravelEstimate()
+   {
+diff --git a/android/libs/wardrive/build.gradle b/android/libs/wardrive/build.gradle
+new file mode 100644
+index 0000000000..d719058bb6
+--- /dev/null
++++ b/android/libs/wardrive/build.gradle
+@@ -0,0 +1,15 @@
++plugins {
++  id 'com.android.library'
++}
++
++apply from: "${rootProject.rootDir}/groovy/common-config.gradle"
++
++android {
++  namespace 'app.organicmaps.wardrive'
++  enableKotlin = true
++
++}
++
++dependencies {
++  implementation libs.androidx.annotation
++}
+diff --git a/android/libs/wardrive/src/main/AndroidManifest.xml b/android/libs/wardrive/src/main/AndroidManifest.xml
+new file mode 100644
+index 0000000000..d3267d9f94
+--- /dev/null
++++ b/android/libs/wardrive/src/main/AndroidManifest.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android">
++
++  <!-- Android 11+ package visibility: needed to reach the Wardrive Bridge app's status provider
++       and to launch it. -->
++  <queries>
++    <package android:name="com.dreknil.wardrivebridge" />
++    <provider android:authorities="com.dreknil.wardrivebridge.bridge" />
++  </queries>
++
++</manifest>
+diff --git a/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt
+new file mode 100644
+index 0000000000..f3fdb72f2b
+--- /dev/null
++++ b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt
+@@ -0,0 +1,71 @@
++package app.organicmaps.wardrive
++
++import android.content.Context
++import android.content.Intent
++import android.net.Uri
++
++/**
++ * Organic Maps' whole wardrive integration is a display of the standalone Wardrive Bridge app:
++ * that app owns the rig connection, scanning, logging and settings, and this just reads its live
++ * status (for the map overlay and the Android Auto badge) and asks it to start/stop a run (the
++ * car's record button). Nothing here scans or talks to the rig, so the two apps can't compete.
++ *
++ * Every call is cross-app IPC - keep them off the main thread.
++ */
++object WardriveBridgeClient {
++    const val BRIDGE_PACKAGE = "com.dreknil.wardrivebridge"
++    private val STATUS_URI: Uri = Uri.parse("content://com.dreknil.wardrivebridge.bridge/status")
++    private val BRIDGE_URI: Uri = Uri.parse("content://com.dreknil.wardrivebridge.bridge")
++
++    enum class RigState { DISCONNECTED, CONNECTING, CONNECTED }
++
++    data class Status(
++        val running: Boolean,
++        val paused: Boolean,
++        val wigle: Int,
++        val wdgw: Int,
++        val bt: Int,
++        val cydConnected: Boolean,
++        /** "BLE" or "USB" while the phone is linked to the CYD, blank otherwise. */
++        val cydTransport: String,
++        val rig: RigState,
++        val excluded: Int,
++    )
++
++    /** Live status, or null when Wardrive Bridge isn't installed, isn't running, or refused. */
++    fun status(context: Context): Status? {
++        val cursor = try {
++            context.contentResolver.query(STATUS_URI, null, null, null, null)
++        } catch (_: Exception) {
++            null
++        } ?: return null
++        cursor.use { c ->
++            if (!c.moveToFirst()) return null
++            fun int(name: String) = c.getInt(c.getColumnIndexOrThrow(name))
++            if (int("service_up") == 0) return null
++            return Status(
++                running = int("running") == 1,
++                paused = int("paused") == 1,
++                wigle = int("wigle"),
++                wdgw = int("wdgw"),
++                bt = int("bt"),
++                cydConnected = int("cyd_connected") == 1,
++                cydTransport = c.getString(c.getColumnIndexOrThrow("cyd_transport")) ?: "",
++                rig = RigState.entries.getOrElse(int("rig_state")) { RigState.DISCONNECTED },
++                excluded = int("excluded"),
++            )
++        }
++    }
++
++    /** Starts (true) or stops (false) a run in Wardrive Bridge. Returns false if it couldn't. */
++    fun setRunning(context: Context, run: Boolean): Boolean = try {
++        context.contentResolver.call(BRIDGE_URI, if (run) "start" else "stop", null, null)
++            ?.getBoolean("ok") == true
++    } catch (_: Exception) {
++        false
++    }
++
++    /** Intent that opens Wardrive Bridge, or null if it isn't installed. */
++    fun launchIntent(context: Context): Intent? =
++        context.packageManager.getLaunchIntentForPackage(BRIDGE_PACKAGE)
++}
+diff --git a/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt
+new file mode 100644
+index 0000000000..fa84c111c2
+--- /dev/null
++++ b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt
+@@ -0,0 +1,67 @@
++package app.organicmaps.wardrive
++
++import android.text.SpannableStringBuilder
++import android.text.style.ForegroundColorSpan
++
++// Exact colors from the CYD rig's own on-device stat box (cyd_node/src/main.cpp
++// COLOR_CYAN/COLOR_PURPLE/COLOR_GREEN/COLOR_RED), so the overlay reads as the same UI.
++const val COLOR_CYD_CYAN = 0xFF00F0FF.toInt()
++const val COLOR_CYD_PURPLE = 0xFF9D00FF.toInt()
++const val COLOR_CYD_GREEN = 0xFF22C55E.toInt()
++const val COLOR_CYD_RED = 0xFFEF4444.toInt()
++private const val COLOR_DIM = 0xFF9CA3AF.toInt()
++
++/**
++ * Builds the "OFF · WIGLE n · WDGW n · BT n · CYD BLE · Rig ✓" line shown on the main map overlay
++ * and the Android Auto corner badge, from Wardrive Bridge's live status. Always shown, including
++ * while stopped, so a glance answers "is everything linked and running". CYD is the phone's link
++ * to the CYD board (BLE, or USB as the fallback); Rig is the CYD's wired link to the other boards.
++ * [status] null means Wardrive Bridge isn't running (or isn't installed).
++ */
++fun formatStatusLine(status: WardriveBridgeClient.Status?): CharSequence {
++    val builder = SpannableStringBuilder()
++    fun appendColored(text: String, color: Int) {
++        val start = builder.length
++        builder.append(text)
++        builder.setSpan(ForegroundColorSpan(color), start, builder.length, 0)
++    }
++
++    if (status == null) {
++        appendColored("Wardrive Bridge not running", COLOR_DIM)
++        return builder
++    }
++
++    appendColored(
++        when {
++            status.paused -> "PAUSED"
++            status.running -> "ON"
++            else -> "OFF"
++        },
++        if (status.running && !status.paused) COLOR_CYD_GREEN else COLOR_CYD_RED,
++    )
++    builder.append("  ·  ")
++    appendColored("WIGLE ${status.wigle}", COLOR_CYD_CYAN)
++    builder.append("  ·  ")
++    appendColored("WDGW ${status.wdgw}", COLOR_CYD_PURPLE)
++    builder.append("  ·  ")
++    appendColored("BT ${status.bt}", COLOR_CYD_GREEN)
++    builder.append("  ·  ")
++    appendColored(
++        if (status.cydConnected) "CYD ${status.cydTransport.ifBlank { "✓" }}" else "CYD ✗",
++        if (status.cydConnected) COLOR_CYD_GREEN else COLOR_CYD_RED,
++    )
++    builder.append("  ·  ")
++    appendColored(
++        when (status.rig) {
++            WardriveBridgeClient.RigState.CONNECTED -> "Rig ✓"
++            WardriveBridgeClient.RigState.CONNECTING -> "Rig …"
++            WardriveBridgeClient.RigState.DISCONNECTED -> "Rig ✗"
++        },
++        when (status.rig) {
++            WardriveBridgeClient.RigState.CONNECTED -> COLOR_CYD_GREEN
++            WardriveBridgeClient.RigState.CONNECTING -> COLOR_CYD_PURPLE
++            WardriveBridgeClient.RigState.DISCONNECTED -> COLOR_CYD_RED
++        },
++    )
++    return builder
++}
+diff --git a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/CarPresentation.java b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/CarPresentation.java
+index 1ac2d4fde5..e2b956bb76 100644
+--- a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/CarPresentation.java
++++ b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/CarPresentation.java
+@@ -4,10 +4,13 @@ import android.app.Presentation;
+ import android.content.Context;
+ import android.graphics.Rect;
+ import android.os.Bundle;
++import android.text.TextUtils;
+ import android.view.Display;
+ import android.view.Gravity;
+ import android.view.SurfaceHolder;
++import android.view.View;
+ import android.widget.FrameLayout;
++import android.widget.TextView;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.lifecycle.LifecycleOwner;
+@@ -33,6 +36,10 @@ final class CarPresentation extends Presentation
+   @NonNull
+   private SpeedLimitView mSpeedLimitView;
+ 
++  @SuppressWarnings("NotNullFieldNotInitialized")
++  @NonNull
++  private TextView mWardriveStatusView;
++
+   @SuppressWarnings("NotNullFieldNotInitialized")
+   @NonNull
+   private FrameLayout mVisibleAreaContainer;
+@@ -43,6 +50,8 @@ final class CarPresentation extends Presentation
+ 
+   private int mSpeedLimit = 0;
+   private boolean mSpeedLimitExceeded = false;
++  @Nullable
++  private CharSequence mWardriveStatusText;
+   @NonNull
+   private final Rect mVisibleArea = new Rect();
+ 
+@@ -64,8 +73,10 @@ final class CarPresentation extends Presentation
+ 
+     final MapView mapView = findViewById(R.id.map_view);
+     mSpeedLimitView = findViewById(R.id.speed_limit_view);
++    mWardriveStatusView = findViewById(R.id.wardrive_status_view);
+     mVisibleAreaContainer = findViewById(R.id.visible_area_container);
+     mSpeedLimitView.setSpeedLimit(mSpeedLimit, mSpeedLimitExceeded);
++    applyWardriveStatus();
+     applyVisibleArea();
+ 
+     mMapController = new MapController(mapView, mLocationHelper, mMapRenderingListener, null, false);
+@@ -115,6 +126,23 @@ final class CarPresentation extends Presentation
+     mSpeedLimitView.setSpeedLimit(speedLimit, speedLimitExceeded);
+   }
+ 
++  void setWardriveStatus(@Nullable CharSequence text)
++  {
++    mWardriveStatusText = text;
++    applyWardriveStatus();
++  }
++
++  private void applyWardriveStatus()
++  {
++    if (TextUtils.isEmpty(mWardriveStatusText))
++    {
++      mWardriveStatusView.setVisibility(View.GONE);
++      return;
++    }
++    mWardriveStatusView.setText(mWardriveStatusText);
++    mWardriveStatusView.setVisibility(View.VISIBLE);
++  }
++
+   void setVisibleArea(@NonNull Rect visibleArea)
+   {
+     mVisibleArea.set(visibleArea);
+diff --git a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/Renderer.java b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/Renderer.java
+index 6bc215b0db..49b69c6410 100644
+--- a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/Renderer.java
++++ b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/Renderer.java
+@@ -1,5 +1,7 @@
+ package app.organicmaps.sdk.car.renderer;
+ 
++import androidx.annotation.Nullable;
++
+ public interface Renderer
+ {
+   boolean isRenderingActive();
+@@ -18,4 +20,14 @@ public interface Renderer
+    */
+   void setSpeedLimit(int speedLimit, boolean speedLimitExceeded);
+   void hideSpeedLimit();
++
++  /**
++   * Updates the corner status badge with arbitrary text. Generic on purpose - this SDK module
++   * knows nothing about what produces the text (e.g. an app-level scanning feature); it just
++   * renders whatever it's given, the same way setSpeedLimit() only knows about a number.
++   *
++   * @param text The text to display, or null/blank to hide the badge.
++   */
++  void setWardriveStatus(@Nullable CharSequence text);
++  void hideWardriveStatus();
+ }
+diff --git a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/RendererImpl.java b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/RendererImpl.java
+index 497988fdd8..6c3dada752 100644
+--- a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/RendererImpl.java
++++ b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/RendererImpl.java
+@@ -138,4 +138,10 @@ abstract class RendererImpl implements Renderer, DefaultLifecycleObserver
+   {
+     setSpeedLimit(0, false);
+   }
++
++  @Override
++  public void hideWardriveStatus()
++  {
++    setWardriveStatus(null);
++  }
+ }
+diff --git a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceCallback.java b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceCallback.java
+index e9afb70726..91ee55ecd7 100644
+--- a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceCallback.java
++++ b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceCallback.java
+@@ -120,6 +120,12 @@ final class SurfaceCallback extends SurfaceCallbackBase
+       mPresentation.setSpeedLimit(speedLimit, speedLimitExceeded);
+   }
+ 
++  void setWardriveStatus(@Nullable CharSequence text)
++  {
++    if (mPresentation != null)
++      mPresentation.setWardriveStatus(text);
++  }
++
+   private void createPresentation()
+   {
+     if (mVirtualDisplay == null)
+diff --git a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceRenderer.java b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceRenderer.java
+index 107561a41c..7d6cb8816a 100644
+--- a/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceRenderer.java
++++ b/android/sdk/car/src/main/java/app/organicmaps/sdk/car/renderer/SurfaceRenderer.java
+@@ -1,6 +1,7 @@
+ package app.organicmaps.sdk.car.renderer;
+ 
+ import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
+ import androidx.car.app.CarContext;
+ import androidx.lifecycle.LifecycleOwner;
+ import app.organicmaps.sdk.display.DisplayManager;
+@@ -47,4 +48,10 @@ final class SurfaceRenderer extends RendererImpl
+   {
+     mSurfaceCallback.setSpeedLimit(speedLimit, speedLimitExceeded);
+   }
++
++  @Override
++  public void setWardriveStatus(@Nullable CharSequence text)
++  {
++    mSurfaceCallback.setWardriveStatus(text);
++  }
+ }
+diff --git a/android/sdk/car/src/main/res/drawable/bg_wardrive_status.xml b/android/sdk/car/src/main/res/drawable/bg_wardrive_status.xml
+new file mode 100644
+index 0000000000..192884b7fa
+--- /dev/null
++++ b/android/sdk/car/src/main/res/drawable/bg_wardrive_status.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="rectangle">
++  <solid android:color="#CC1B1B1B" />
++  <corners android:radius="12dp" />
++</shape>
+diff --git a/android/sdk/car/src/main/res/layout/car_layout.xml b/android/sdk/car/src/main/res/layout/car_layout.xml
+index 95d6f77b15..8dc57736ad 100644
+--- a/android/sdk/car/src/main/res/layout/car_layout.xml
++++ b/android/sdk/car/src/main/res/layout/car_layout.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto"
++    xmlns:tools="http://schemas.android.com/tools"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent">
+ 
+@@ -23,6 +24,23 @@
+         android:layout_height="80dp"
+         android:layout_gravity="bottom|end"
+         android:layout_margin="8dp" />
++
++    <TextView
++        android:id="@+id/wardrive_status_view"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_gravity="top|end"
++        android:layout_marginTop="4dp"
++        android:layout_marginEnd="8dp"
++        android:background="@drawable/bg_wardrive_status"
++        android:gravity="center"
++        android:paddingHorizontal="12dp"
++        android:paddingVertical="6dp"
++        android:textColor="#FFFFFFFF"
++        android:textSize="16sp"
++        android:textStyle="bold"
++        android:visibility="gone"
++        tools:text="12 WiFi · 4 BLE · Rig ✓" />
+   </FrameLayout>
+ 
+ </FrameLayout>
+diff --git a/android/settings.gradle b/android/settings.gradle
+index 974662a7a5..4e1f4209f5 100644
+--- a/android/settings.gradle
++++ b/android/settings.gradle
+@@ -24,6 +24,7 @@ include ':libs:downloader'
+ include ':libs:googleassistant'
+ include ':libs:routing'
+ include ':libs:utils'
++include ':libs:wardrive'
+ include ':libs:wear-protocol'
+ include ':libs:wear-protocol-gms'
+ 
+-- 
+2.43.0
+

@@ -76,6 +76,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             for (map in bound.groups.values) for (obs in map.values) mapManager.upsertLive(obs)
             refreshDetailFeedIfShown()
             updateStatusText()
+            maybeStartRunFromShortcut()
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         setContentView(binding.root)
 
         appSettings = AppSettings(this)
+        if (intent?.action == ScanService.ACTION_START) startRunRequested = true
         adapter = ObservationAdapter(
             onHeaderClick = { source -> toggleGroup(source) },
             onRowLongClick = { obs -> startHunt(obs) },
@@ -180,7 +182,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }
 
         binding.headerMapButton.setOnClickListener { showDetail(DetailKind.MAP, "Wardriving") }
-        binding.headerExportButton.setOnClickListener { exportCsv() }
+        binding.headerExportButton.setOnClickListener { showExportMenu() }
         binding.headerSettingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -451,8 +453,27 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }.start()
     }
 
+    // Set when the widget or quick-settings tile opened us to start a run - see
+    // ScanService.toggleRun() for why they can't start it themselves.
+    private var startRunRequested = false
+
+    private fun maybeStartRunFromShortcut() {
+        val s = scanService ?: return
+        if (!startRunRequested) return
+        startRunRequested = false
+        if (!s.running) {
+            s.startRun(notifyRig = true)
+            binding.startStopButton.text = "> STOP"
+            binding.pauseResumeButton.visibility = View.VISIBLE
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == ScanService.ACTION_START) {
+            startRunRequested = true
+            maybeStartRunFromShortcut()
+        }
         if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
             scanService?.connectRig()
         }
@@ -470,11 +491,22 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     // osmdroid's own lifecycle hooks - releases/reclaims its tile-fetch
     // resources alongside the activity instead of leaking them.
+    // Status that changes without an event to hang a redraw on (rig health, fix freshness,
+    // battery) - refreshed every 2s while the screen is visible.
+    private val statusTicker = object : Runnable {
+        override fun run() {
+            updateStatusText()
+            binding.root.postDelayed(this, 2_000)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         binding.mapView.onResume()
         refreshAccountStats()
         refreshLifetimeChips()
+        binding.root.removeCallbacks(statusTicker)
+        binding.root.postDelayed(statusTicker, 2_000)
     }
 
     // wdgwars/WiGLE account totals - not per-observation, so fetched on a
@@ -523,6 +555,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     override fun onPause() {
         super.onPause()
         binding.mapView.onPause()
+        binding.root.removeCallbacks(statusTicker)
     }
 
     // ---- Permissions ----
@@ -919,8 +952,9 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             binding.meshDot.setTextColor(ContextCompat.getColor(this, meshColorRes))
         }
 
-        val gpsFix = service?.locationTracker?.lastLocation != null
-        binding.gpsDot.text = if (gpsFix) "GPS: 3D FIX" else "GPS: ---"
+        // "Fix" = a position fresh enough to log with, not just one seen at some point.
+        val gpsFix = service?.locationTracker?.hasFix() == true
+        binding.gpsDot.text = if (gpsFix) "GPS: FIX" else "GPS: ---"
         binding.gpsDot.setTextColor(ContextCompat.getColor(this, if (gpsFix) R.color.cyan_500 else R.color.text_secondary))
 
         val channel = service?.lastRigChannel ?: 0
@@ -979,6 +1013,17 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             binding.cellCountBig.text = "$cell"
             binding.countsStatus.text = "RIG WIFI $rigWifi · RIG BLE $rigBle · " +
                 "PHONE WIFI $phoneWifi · PHONE BLE $phoneBle"
+
+            val health = service.rigHealth?.takeIf { service.rigConnected && System.currentTimeMillis() - it.atMs < 10_000 }
+            binding.rigHealthText.visibility = if (health != null) View.VISIBLE else View.GONE
+            if (health != null) {
+                val gps = if (health.gpsFix) "GPS FIX" + (if (health.sats >= 0) " ${health.sats} SATS" else "") else "GPS: NO FIX"
+                val sd = if (health.sdOk) "SD OK" else "SD FAIL"
+                val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD" else ""
+                binding.rigHealthText.text = "RIG · $gps · $sd$pend"
+                binding.rigHealthText.setTextColor(ContextCompat.getColor(this,
+                    if (health.gpsFix && health.sdOk) R.color.cyan_500 else R.color.red_error))
+            }
 
             val shown = uniqueWifi.size + uniqueBle.size + cell
             val excluded = service.excludedCount
@@ -1468,13 +1513,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun showRunOptions(run: RunSummary) {
         AlertDialog.Builder(this)
             .setTitle(run.note.ifBlank { run.label })
-            .setItems(arrayOf("View on Map", "Share", "Add/Edit Note", "Export as GPX", "Delete")) { _, which ->
+            .setItems(arrayOf("View on Map", "Share", "Add/Edit Note", "Export as GPX", "Export as KML (Google Earth)", "Delete")) { _, which ->
                 when (which) {
                     0 -> viewRunOnMap(run)
                     1 -> shareRun(run)
                     2 -> editNote(run)
                     3 -> exportGpx(run)
-                    4 -> confirmDeleteLog(run)
+                    4 -> exportKml(run)
+                    5 -> confirmDeleteLog(run)
                 }
             }
             .show()
@@ -1586,6 +1632,60 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     // LogsAdapter's uploadedAt-gated button). A success here is the ONLY
     // thing that marks a run uploaded; a failure leaves it showing as missed
     // so it stays easy to find and retry.
+    private fun exportKml(run: RunSummary) {
+        Thread {
+            val points = dao.observationsForRun(run.id).map { it.toHistoricalPoint() }
+            val dir = File(getExternalFilesDir(null), "wardrive")
+            if (!dir.exists()) dir.mkdirs()
+            val kml = KmlExporter.convert(points, run.note.ifBlank { run.label }, File(dir, "${run.label}.kml"))
+            runOnUiThread {
+                if (kml == null) Toast.makeText(this, "No located points to export", Toast.LENGTH_SHORT).show()
+                else shareFile(kml, "application/vnd.google-earth.kml+xml")
+            }
+        }.start()
+    }
+
+    /** Every saved run as its own WigleWifi CSV, in one zip - a full backup, or a bulk import
+     *  into WiGLE's web uploader. */
+    private fun exportAllRuns() {
+        Toast.makeText(this, "Building export…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val runs = dao.allRunSummaries().filter { it.count > 0 }
+            val dir = File(getExternalFilesDir(null), "wardrive")
+            if (!dir.exists()) dir.mkdirs()
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.US).format(java.util.Date())
+            val zip = File(dir, "wardrive_all_runs_$stamp.zip")
+            var added = 0
+            java.util.zip.ZipOutputStream(zip.outputStream().buffered()).use { zos ->
+                for (run in runs) {
+                    val csv = CsvExporter.materialize(this, dao, run.id) ?: continue
+                    zos.putNextEntry(java.util.zip.ZipEntry(csv.name))
+                    csv.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                    added++
+                }
+            }
+            runOnUiThread {
+                if (added == 0) {
+                    zip.delete()
+                    Toast.makeText(this, "No runs to export yet", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "$added runs exported", Toast.LENGTH_SHORT).show()
+                    shareFile(zip, "application/zip")
+                }
+            }
+        }.start()
+    }
+
+    private fun showExportMenu() {
+        AlertDialog.Builder(this)
+            .setTitle("Export")
+            .setItems(arrayOf("This run (CSV)", "All runs (zip of CSVs)")) { _, which ->
+                if (which == 0) exportCsv() else exportAllRuns()
+            }
+            .show()
+    }
+
     private fun uploadRun(run: RunSummary) = uploadRun(run.id)
 
     private fun uploadRun(runId: Long) {

@@ -30,7 +30,19 @@ class SettingsActivity : AppCompatActivity() {
         binding.ssidBlacklistInput.setText(settings.ssidBlacklistRaw)
         binding.retentionDaysInput.setText(settings.retentionDays.toString())
         if (settings.maxHdop != 0.0) binding.maxHdopInput.setText(settings.maxHdop.toString())
+        if (settings.spokenUpdateMinutes > 0) binding.spokenMinutesInput.setText(settings.spokenUpdateMinutes.toString())
+        binding.spokenTrackerCheck.isChecked = settings.spokenTrackerAlerts
+        binding.autoUploadCheck.isChecked = settings.autoUploadOnWifi
 
+        // Keys are masked so they aren't readable over your shoulder; this reveals them briefly.
+        binding.showKeysButton.setOnClickListener {
+            val masked = binding.wigleTokenInput.inputType and android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD != 0
+            val type = android.text.InputType.TYPE_CLASS_TEXT or
+                if (masked) android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            binding.wigleTokenInput.inputType = type
+            binding.wdgwarsKeyInput.inputType = type
+            binding.showKeysButton.text = if (masked) "> HIDE KEYS" else "> SHOW KEYS"
+        }
         showPairedRig()
         binding.forgetRigButton.setOnClickListener {
             // rigLink is lateinit - only touch it on a service that got far enough to set it.
@@ -85,6 +97,9 @@ class SettingsActivity : AppCompatActivity() {
         settings.ssidBlacklistRaw = binding.ssidBlacklistInput.text.toString()
         settings.retentionDays = binding.retentionDaysInput.text.toString().toIntOrNull() ?: 0
         settings.maxHdop = binding.maxHdopInput.text.toString().toDoubleOrNull() ?: 0.0
+        settings.spokenUpdateMinutes = binding.spokenMinutesInput.text.toString().toIntOrNull()?.coerceIn(0, 120) ?: 0
+        settings.spokenTrackerAlerts = binding.spokenTrackerCheck.isChecked
+        settings.autoUploadOnWifi = binding.autoUploadCheck.isChecked
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
         finish()
     }

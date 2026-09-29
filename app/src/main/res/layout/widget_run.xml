@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home-screen widget: run state, this run's counts, and a START/STOP button. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widgetRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <TextView
+        android:id="@+id/widgetTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:text="&gt; WARDRIVE"
+        android:textColor="#FF00F0FF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widgetStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:text="STOPPED"
+        android:textColor="#FF4A607A"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/widgetCounts"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fontFamily="monospace"
+        android:gravity="center_vertical"
+        android:text="WIFI 0 · BT 0"
+        android:textColor="#FFE2E8F0"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/widgetButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/widget_button_bg"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:padding="6dp"
+        android:text="&gt; START"
+        android:textColor="#FF000000"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

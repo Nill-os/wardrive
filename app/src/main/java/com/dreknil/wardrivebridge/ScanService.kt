@@ -105,6 +105,10 @@ class ScanService : Service(), RigLinkManager.Listener {
     // channel" the way the rig's channel-hopping sniffer does, so this is
     // rig-only telemetry, 0 until the first status line ever arrives.
     var lastRigChannel = 0; private set
+
+    /** The rig's own health, from the extra fields in its WD:STATUS line (newer firmware). */
+    data class RigHealth(val gpsFix: Boolean, val sats: Int, val sdOk: Boolean, val pendingUploads: Int, val atMs: Long)
+    var rigHealth: RigHealth? = null; private set
     var runStartMs = 0L; private set
     var totalDistanceMeters = 0.0; private set
     private var lastFixForDistance: android.location.Location? = null
@@ -148,6 +152,9 @@ class ScanService : Service(), RigLinkManager.Listener {
     // multiply the number of rows written anywhere data leaves the app.
     private val loggedWifiMacsThisRun = mutableSetOf<String>()
     private val loggedBleMacsThisRun = mutableSetOf<String>()
+    private val loggedCellIdsThisRun = mutableSetOf<String>()
+
+    private val spoken by lazy { SpokenUpdates(this, appSettings) { wifiCountThisRun to bleCountThisRun } }
 
     override fun onCreate() {
         super.onCreate()
@@ -194,16 +201,48 @@ class ScanService : Service(), RigLinkManager.Listener {
     // launch), off the main thread since it touches the DB. 0 = keep
     // forever, same as the firmware default.
     private fun cleanupOldLogs() {
+        // Runs with nothing in them - normally deleted when the run stops, but a crash or a
+        // force-stop mid-run skips that and leaves an empty entry in the logs forever.
+        // Nothing is running yet at this point, so every empty run is an orphan.
+        dbExecutor.execute {
+            dao.allRunSummaries().filter { it.count == 0 }.forEach { dao.deleteRunWithObservations(it.id) }
+        }
         val days = appSettings.retentionDays
         if (days <= 0) return
         val cutoffMs = System.currentTimeMillis() - days * 24L * 3600L * 1000L
         dbExecutor.execute { dao.deleteRunsOlderThan(cutoffMs) }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    // The notification's STOP button reaches the service through this action.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP -> if (running) stopRun(notifyRig = true)
+        }
+        return START_STICKY
+    }
+
+    /** Distinct WiFi / BLE devices logged this run - for the notification, widget and speech. */
+    val wifiCountThisRun: Int get() = loggedWifiMacsThisRun.size
+    val bleCountThisRun: Int get() = loggedBleMacsThisRun.size
+
+    private var lastExternalUiUpdateMs = 0L
+
+    /** Refreshes everything outside the app that shows run state: notification, widget, tile. */
+    private fun updateExternalUi(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastExternalUiUpdateMs < EXTERNAL_UI_INTERVAL_MS) return
+        lastExternalUiUpdateMs = now
+        if (running) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.notify(NOTIF_ID, buildNotification())
+        }
+        RunWidgetProvider.refresh(this)
+        RunTileService.refresh(this)
+    }
 
     override fun onDestroy() {
         instance = null
+        spoken.shutdown()
         stopRun(notifyRig = false)
         rigLink.stop()
         super.onDestroy()
@@ -245,6 +284,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         groups.values.forEach { it.clear() }
         loggedWifiMacsThisRun.clear()
         loggedBleMacsThisRun.clear()
+        loggedCellIdsThisRun.clear()
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         // Blocking-but-brief, once per run start - the old WigleCsvWriter's
         // constructor did the same thing (synchronous file create + header
@@ -264,6 +304,8 @@ class ScanService : Service(), RigLinkManager.Listener {
 
         startForeground(NOTIF_ID, buildNotification())
         listener?.onRunStateChanged(true)
+        updateExternalUi(force = true)
+        spoken.onRunStarted()
     }
 
     fun stopRun(notifyRig: Boolean) {
@@ -289,6 +331,9 @@ class ScanService : Service(), RigLinkManager.Listener {
 
         if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
         listener?.onRunStateChanged(false)
+        updateExternalUi(force = true)
+        spoken.onRunStopped(wifiCountThisRun, bleCountThisRun)
+        if (finishedRunId != null) AutoUploader.maybeUpload(this, finishedRunId)
     }
 
     // Suspends scanning without ending the run - the run/dedup state/DB row
@@ -349,7 +394,8 @@ class ScanService : Service(), RigLinkManager.Listener {
             if (hdop != null && hdop > maxHdop) return
         }
 
-        val loc = locationTracker.lastLocation
+        // A fix older than this is somewhere we've already driven away from.
+        val loc = locationTracker.lastLocation?.takeIf { locationTracker.hasFix() }
         val withLocation = if (loc != null) {
             raw.copy(lat = loc.latitude, lon = loc.longitude, altitudeM = loc.altitude, accuracyM = loc.accuracy.toDouble())
         } else {
@@ -395,11 +441,16 @@ class ScanService : Service(), RigLinkManager.Listener {
         // see the comment on loggedWifiMacsThisRun/loggedBleMacsThisRun.
         // Fire-and-forget on dbExecutor - nothing downstream depends on the
         // insert having completed synchronously, same as the old CSV append.
+        //
+        // No position (no phone fix yet, and the rig didn't supply one) = shown live but not
+        // logged, and not marked as logged either, so it's written the first time it's seen
+        // with a fix. Logging it anyway put it at 0,0 - "Null Island" - in every export and upload.
         val runId = currentRunId
-        val newToDb = when (tagged2.source) {
+        val hasPosition = tagged2.lat != 0.0 || tagged2.lon != 0.0
+        val newToDb = hasPosition && when (tagged2.source) {
             Source.RIG_WIFI, Source.PHONE_WIFI -> loggedWifiMacsThisRun.add(tagged2.mac)
             Source.RIG_BLE, Source.PHONE_BLE -> loggedBleMacsThisRun.add(tagged2.mac)
-            Source.PHONE_CELL -> isNewThisRun // only one cell source - no cross-source case to dedup
+            Source.PHONE_CELL -> loggedCellIdsThisRun.add(tagged2.mac)
         }
         if (newToDb && runId != null) {
             val entity = tagged2.toEntity(runId)
@@ -424,10 +475,12 @@ class ScanService : Service(), RigLinkManager.Listener {
             if (movedM > PERSISTENT_TRACKER_ALERT_RADIUS_M) {
                 alertedTrackers.add(tagged.mac)
                 listener?.onPersistentTrackerAlert(tagged, previousSighting)
+                spoken.trackerAlert()
             }
         }
 
         listener?.onObservation(tagged2)
+        updateExternalUi()
     }
 
     // Privacy filters, checked after GPS tagging so the exclusion zone uses
@@ -466,11 +519,20 @@ class ScanService : Service(), RigLinkManager.Listener {
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0),
         )
+        val stopIntent = PendingIntent.getService(
+            this, 1, Intent(this, ScanService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0),
+        )
+        val miles = totalDistanceMeters / 1609.344
+        val text = "WiFi $wifiCountThisRun · BT $bleCountThisRun · %.1f mi".format(Locale.US, miles) +
+            if (paused) " · paused" else ""
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Wardrive Bridge")
-            .setContentText("Scanning is active")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Wardrive run active")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_radar)
             .setContentIntent(openAppIntent)
+            .addAction(0, "STOP", stopIntent)
+            .setOnlyAlertOnce(true)
             .setOngoing(true)
             .build()
     }
@@ -522,6 +584,12 @@ class ScanService : Service(), RigLinkManager.Listener {
         // dashboard's CH field just reads lastRigChannel directly.
         if (rawLine.startsWith("WD:STATUS")) {
             Regex("""ch=(\d+)""").find(rawLine)?.groupValues?.get(1)?.toIntOrNull()?.let { lastRigChannel = it }
+            fun field(name: String) = Regex("""\b$name=(-?\d+)""").find(rawLine)?.groupValues?.get(1)?.toIntOrNull()
+            val gps = field("gps")
+            if (gps != null) {
+                val health = RigHealth(gps == 1, field("sats") ?: -1, field("sd") == 1, field("pend") ?: 0, System.currentTimeMillis())
+                mainHandler.post { rigHealth = health }
+            }
         }
     }
 
@@ -560,9 +628,29 @@ class ScanService : Service(), RigLinkManager.Listener {
         private const val PERSISTENT_TRACKER_ALERT_RADIUS_M = 500.0
         private const val GNSS_PERSIST_INTERVAL_MS = 15000L
 
+        const val ACTION_START = "com.dreknil.wardrivebridge.START_RUN"
+        const val ACTION_STOP = "com.dreknil.wardrivebridge.STOP_RUN"
+        private const val EXTERNAL_UI_INTERVAL_MS = 5_000L
+
         fun start(context: Context) {
             context.startService(Intent(context, ScanService::class.java))
         }
+
+        /** Stops a run from outside the app (tile, widget). Returns false if nothing was running,
+         *  in which case the caller should open the app with startRunIntent() instead: Android 14+
+         *  won't let a location service start from the background, so a run has to start from the
+         *  app's own screen. */
+        fun stopRunIfRunning(): Boolean {
+            val s = instance ?: return false
+            if (!s.running) return false
+            s.stopRun(notifyRig = true)
+            return true
+        }
+
+        fun startRunIntent(context: Context): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(ACTION_START)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
         /** The live service, for BridgeProvider - main-thread state, so read it on the main thread. */
         @Volatile

@@ -344,6 +344,18 @@
                         android:alpha="0.6"
                         android:layout_marginTop="6dp" />
 
+                    <!-- Rig health from the CYD's WD:STATUS: its GPS, SD card and upload backlog. -->
+                    <TextView
+                        android:id="@+id/rigHealthText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/cyan_500"
+                        android:textSize="11sp"
+                        android:gravity="center"
+                        android:fontFamily="monospace"
+                        android:visibility="gone"
+                        android:layout_marginTop="4dp" />
+
                     <!-- Grand total this run, including observations the
                          home-exclusion/blacklist filter dropped - the
                          numbers above never counted those at all. -->
@@ -1175,10 +1187,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="1. DASH"
+                android:maxLines="1"
+                android:ellipsize="none"
                 android:textColor="@color/text_primary"
                 android:textSize="12sp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp"
                 android:background="@drawable/bg_pill_purple" />
@@ -1199,10 +1213,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="2. WIFI"
+                android:maxLines="1"
+                android:ellipsize="none"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp" />
         </LinearLayout>
@@ -1222,10 +1238,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="3. BT"
+                android:maxLines="1"
+                android:ellipsize="none"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp" />
         </LinearLayout>
@@ -1245,10 +1263,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="4. TRM"
+                android:maxLines="1"
+                android:ellipsize="none"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp" />
         </LinearLayout>
@@ -1268,10 +1288,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="5. LOG"
+                android:maxLines="1"
+                android:ellipsize="none"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp" />
         </LinearLayout>

@@ -55,6 +55,21 @@ class AppSettings(context: Context) {
         get() = prefs.getString("paired_rig_address", "") ?: ""
         set(value) = prefs.edit().putString("paired_rig_address", value).apply()
 
+    /** Minutes between spoken run updates while driving; 0 = off. */
+    var spokenUpdateMinutes: Int
+        get() = prefs.getInt("spoken_update_minutes", 0)
+        set(value) = prefs.edit().putInt("spoken_update_minutes", value).apply()
+
+    /** Say it out loud when a tracker seems to be following you. */
+    var spokenTrackerAlerts: Boolean
+        get() = prefs.getBoolean("spoken_tracker_alerts", true)
+        set(value) = prefs.edit().putBoolean("spoken_tracker_alerts", value).apply()
+
+    /** Upload each run as soon as it stops, if the phone is on WiFi. */
+    var autoUploadOnWifi: Boolean
+        get() = prefs.getBoolean("auto_upload_wifi", false)
+        set(value) = prefs.edit().putBoolean("auto_upload_wifi", value).apply()
+
     fun macBlacklist(): Set<String> =
         macBlacklistRaw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
 

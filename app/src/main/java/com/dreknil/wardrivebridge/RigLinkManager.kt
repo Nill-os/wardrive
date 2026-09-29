@@ -268,15 +268,22 @@ class RigLinkManager(private val context: Context, private val listener: Listene
      * and gets torn back down - a connect/disconnect/reconnect flap that
      * looks like "connected" on screen but never stays up long enough for
      * any real data (including the wdstream handshake) to get through. */
+    private var reportedNoUsbDevice = false
+
     fun findAndConnect() {
         if (port != null) return // already connected - nothing to do
         if (transport == Transport.BLE) return // BLE is primary - USB only fills in while it's down
         val driver: UsbSerialDriver = UsbSerialProber.getDefaultProber()
             .findAllDrivers(usbManager)
             .firstOrNull() ?: run {
-                listener.onRigLog("[rig] no USB serial device found - plug in the CYD display board")
+                // Once per absence, not on every retry - it used to flood the terminal.
+                if (!reportedNoUsbDevice) {
+                    reportedNoUsbDevice = true
+                    listener.onRigLog("[rig] no USB cable to the CYD - using Bluetooth")
+                }
                 return
             }
+        reportedNoUsbDevice = false
 
         val device = driver.device
         if (usbManager.hasPermission(device)) {

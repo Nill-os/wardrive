@@ -156,5 +156,13 @@ class LocationTracker(private val context: Context) {
         lastLocation = null
     }
 
-    fun hasFix(): Boolean = lastLocation != null
+    /** A position recent enough to log with - the same rule ScanService uses. */
+    fun hasFix(): Boolean {
+        val loc = lastLocation ?: return false
+        return android.os.SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos < FRESH_FIX_NS
+    }
+
+    companion object {
+        const val FRESH_FIX_NS = 30_000_000_000L // 30s
+    }
 }

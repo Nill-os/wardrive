@@ -69,6 +69,34 @@
             android:exported="false"
             android:foregroundServiceType="location|connectedDevice" />
 
+        <!-- Quick-settings tile: start/stop a run from the notification shade. -->
+        <service
+            android:name=".RunTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_radar"
+            android:label="Wardrive"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <!-- Home-screen widget. -->
+        <receiver
+            android:name=".RunWidgetProvider"
+            android:exported="false"
+            android:label="Wardrive">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/run_widget_info" />
+        </receiver>
+
         <!-- Android Auto entry point - the car head unit binds to this, not
              MainActivity. exported=true is required for the car host
              (a separate app/process) to reach it. -->

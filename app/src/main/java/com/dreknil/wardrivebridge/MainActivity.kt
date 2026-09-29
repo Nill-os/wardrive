@@ -183,6 +183,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         binding.headerMapButton.setOnClickListener { showDetail(DetailKind.MAP, "Wardriving") }
         binding.headerExportButton.setOnClickListener { showExportMenu() }
+        binding.rigHealthText.setOnClickListener { confirmRigUpload() }
         binding.headerSettingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -1019,7 +1020,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (health != null) {
                 val gps = if (health.gpsFix) "GPS FIX" + (if (health.sats >= 0) " ${health.sats} SATS" else "") else "GPS: NO FIX"
                 val sd = if (health.sdOk) "SD OK" else "SD FAIL"
-                val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD" else ""
+                val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD (TAP)" else ""
                 binding.rigHealthText.text = "RIG · $gps · $sd$pend"
                 binding.rigHealthText.setTextColor(ContextCompat.getColor(this,
                     if (health.gpsFix && health.sdOk) R.color.cyan_500 else R.color.red_error))
@@ -1675,6 +1676,23 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 }
             }
         }.start()
+    }
+
+    private fun confirmRigUpload() {
+        val health = scanService?.rigHealth ?: return
+        AlertDialog.Builder(this)
+            .setTitle("Upload rig data now?")
+            .setMessage(
+                (if (health.pendingUploads > 0) "The rig has ${health.pendingUploads} run(s) waiting. " else "Nothing is waiting on the rig right now. ") +
+                    "It will stop scanning, join its home WiFi from config.cfg, upload, then carry on. " +
+                    "The Bluetooth link drops for the upload and reconnects by itself.",
+            )
+            .setPositiveButton("UPLOAD") { _, _ ->
+                val sent = scanService?.requestRigUpload() == true
+                Toast.makeText(this, if (sent) "Rig upload started" else "Rig not connected", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showExportMenu() {

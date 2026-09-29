@@ -434,6 +434,9 @@ class RigLinkManager(private val context: Context, private val listener: Listene
     /** Ask the rig to stop scanning - see cyd_node's "scan stop" handler. */
     fun sendScanStop() = writeLine("scan stop")
 
+    /** Asks the rig to upload its own SD-card runs now (same as its UPLOAD button). */
+    fun sendRigUpload() = writeLine("rig upload")
+
     private fun writeLine(line: String, log: Boolean = true) {
         when (transport) {
             Transport.BLE -> ble.writeLine(line)

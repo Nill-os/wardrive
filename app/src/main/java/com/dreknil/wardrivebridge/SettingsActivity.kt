@@ -100,6 +100,15 @@ class SettingsActivity : AppCompatActivity() {
         settings.spokenUpdateMinutes = binding.spokenMinutesInput.text.toString().toIntOrNull()?.coerceIn(0, 120) ?: 0
         settings.spokenTrackerAlerts = binding.spokenTrackerCheck.isChecked
         settings.autoUploadOnWifi = binding.autoUploadCheck.isChecked
+        val wantsSpeech = settings.spokenUpdateMinutes > 0 || settings.spokenTrackerAlerts
+        val hasTtsEngine = packageManager.queryIntentServices(
+            android.content.Intent(android.speech.tts.TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0,
+        ).isNotEmpty()
+        if (wantsSpeech && !hasTtsEngine) {
+            Toast.makeText(this, "Saved - but this phone has no text-to-speech engine, so nothing will be spoken. Install one (e.g. Google Speech Services or RHVoice).", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
         finish()
     }

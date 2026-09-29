@@ -14,8 +14,13 @@ It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth an
 - **Detections:** trackers (AirTag/SmartTag), Flipper Zero, Flock cameras, skimmers, Remote ID drones, Meshtastic radios, and a few name-based heuristics. Every one is a best-effort pattern match on public signatures, not proof.
 - **Logs:** per-run history, a field report grouped by category or maker, a map with heatmap, and CSV (WigleWifi-1.6) or GPX export.
 - **Uploads:** WiGLE and wdgwars. A run only counts as uploaded once every configured service accepts it.
-- **Privacy:** a home exclusion zone, MAC/SSID blacklists, and `_nomap` SSIDs are always dropped.
-- **Android Auto:** a status screen for the car.
+- **Privacy:** a home exclusion zone, MAC/SSID blacklists, and `_nomap` SSIDs are always dropped. Sightings are only logged with a current GPS fix, never at 0,0. API keys are masked in Settings.
+- **Android Auto:** a status screen for the car, including rig health.
+- **Shortcuts:** a quick-settings tile and a home-screen widget to start and stop runs, plus a live notification with counts and a STOP button.
+- **Rig health and control:** the dashboard shows the rig's GPS fix, satellites, SD card and runs waiting to upload. Tap it to make the rig upload now.
+- **Exports:** a run as WigleWifi CSV, GPX or KML (Google Earth, coloured by security, with the route), or every run as one zip.
+- **Hands-free:** optional spoken updates every few minutes, and a spoken warning when a tracker seems to be following you. This needs a text-to-speech engine on the phone.
+- **Auto-upload:** optionally upload each run as soon as it stops, when you're on WiFi.
 
 ## Organic Maps overlay
 

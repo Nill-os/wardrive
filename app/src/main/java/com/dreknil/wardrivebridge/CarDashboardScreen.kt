@@ -81,11 +81,12 @@ class CarDashboardScreen(carContext: CarContext) : Screen(carContext) {
         pane.addRow(
             Row.Builder()
                 .setTitle("Rig")
-                .addText(if (service?.rigConnected == true) "Connected" else "Not connected")
+                .addText(rigText(service))
                 .build()
         )
 
-        val loc = service?.locationTracker?.lastLocation
+        // Only a fix fresh enough to log with counts (see LocationTracker.hasFix()).
+        val loc = service?.locationTracker?.lastLocation?.takeIf { service.locationTracker.hasFix() }
         pane.addRow(
             Row.Builder()
                 .setTitle("GPS")
@@ -160,5 +161,13 @@ class CarDashboardScreen(carContext: CarContext) : Screen(carContext) {
 
     companion object {
         private const val POLL_INTERVAL_MS = 2000L
+    }
+
+    private fun rigText(service: ScanService?): String {
+        if (service?.rigConnected != true) return "Not connected"
+        val h = service.rigHealth?.takeIf { System.currentTimeMillis() - it.atMs < 10_000 } ?: return "Connected"
+        val gps = if (h.gpsFix) "GPS ${if (h.sats >= 0) "${h.sats} sats" else "fix"}" else "GPS no fix"
+        val sd = if (h.sdOk) "SD OK" else "SD FAIL"
+        return "Connected · $gps · $sd" + if (h.pendingUploads > 0) " · ${h.pendingUploads} to upload" else ""
     }
 }

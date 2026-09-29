@@ -221,6 +221,13 @@ class ScanService : Service(), RigLinkManager.Listener {
         return START_STICKY
     }
 
+    /** Tells the rig to upload its SD-card runs now. False if no rig is connected. */
+    fun requestRigUpload(): Boolean {
+        if (!rigConnected) return false
+        rigLink.sendRigUpload()
+        return true
+    }
+
     /** Distinct WiFi / BLE devices logged this run - for the notification, widget and speech. */
     val wifiCountThisRun: Int get() = loggedWifiMacsThisRun.size
     val bleCountThisRun: Int get() = loggedBleMacsThisRun.size

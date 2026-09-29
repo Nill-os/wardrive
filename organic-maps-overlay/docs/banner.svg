@@ -18,7 +18,7 @@
   <rect x="16" y="16" width="1168" height="228" fill="none" stroke="#1E293B" stroke-width="2"/>
   <rect x="16" y="16" width="1168" height="3" fill="url(#glow)"/>
   <g class="mono">
-    <text x="40" y="60" font-size="14" fill="#4A607A">NILL-OS // PROJECT</text>
+    <text x="40" y="60" font-size="14" fill="#4A607A">NILL OS</text>
     <text x="40" y="122" font-size="52" font-weight="700" fill="#22C55E">&gt; WARDRIVE MAPS OVERLAY<tspan class="cursor">_</tspan></text>
     <text x="44" y="162" font-size="19" fill="#94A3B8">Wardrive Bridge status on Organic Maps and Android Auto - one small patch</text>
     <rect x="40" y="196" width="124" height="28" rx="4" fill="#080C10" stroke="#1E293B"/><text x="102.0" y="215" font-size="14" fill="#22C55E" text-anchor="middle">ORGANIC MAPS</text><rect x="174" y="196" width="79" height="28" rx="4" fill="#080C10" stroke="#1E293B"/><text x="213.5" y="215" font-size="14" fill="#22C55E" text-anchor="middle">ANDROID</text><rect x="263" y="196" width="124" height="28" rx="4" fill="#080C10" stroke="#1E293B"/><text x="325.0" y="215" font-size="14" fill="#22C55E" text-anchor="middle">ANDROID AUTO</text><rect x="397" y="196" width="61" height="28" rx="4" fill="#080C10" stroke="#1E293B"/><text x="427.5" y="215" font-size="14" fill="#22C55E" text-anchor="middle">PATCH</text>

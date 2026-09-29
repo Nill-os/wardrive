@@ -952,7 +952,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         // "Fix" = a position fresh enough to log with, not just one seen at some point.
         val gpsFix = service?.locationTracker?.hasFix() == true
-        binding.gpsDot.text = if (gpsFix) "GPS: FIX" else "GPS: ---"
+        binding.gpsDot.text = if (gpsFix) "PHONE GPS: FIX" else "PHONE GPS: ---"
         binding.gpsDot.setTextColor(ContextCompat.getColor(this, if (gpsFix) R.color.cyan_500 else R.color.text_secondary))
 
         val channel = service?.lastRigChannel ?: 0
@@ -984,7 +984,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             binding.wdgwCountBig.text = "0"
             binding.btCountBig.text = "0"
             binding.cellCountBig.text = "0"
-            binding.countsStatus.text = "RIG WIFI 0 · RIG BLE 0 · PHONE WIFI 0 · PHONE BLE 0"
+            binding.countsStatus.text = "RIG WIFI 0 · RIG BT 0 · PHONE WIFI 0 · PHONE BT 0"
             binding.totalStatus.text = "TOTAL: 0"
             updateMapStatusOverlay(service, 0, 0, 0)
         } else {
@@ -1009,18 +1009,20 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             binding.wdgwCountBig.text = "${uniqueWifi.size + uniqueBle.size}"
             binding.btCountBig.text = "${uniqueBle.size}"
             binding.cellCountBig.text = "$cell"
-            binding.countsStatus.text = "RIG WIFI $rigWifi · RIG BLE $rigBle · " +
-                "PHONE WIFI $phoneWifi · PHONE BLE $phoneBle"
-
             val health = service.rigHealth?.takeIf { service.rigConnected && System.currentTimeMillis() - it.atMs < 10_000 }
+            // The rig's own totals (its ESP32 and CYD scanners combined - the same numbers as the
+            // CYD screen) when it reports them; otherwise what the phone has received from it.
+            val rigWifiShown = health?.rigWifi ?: rigWifi
+            val rigBleShown = health?.rigBle ?: rigBle
+            binding.countsStatus.text = "RIG WIFI $rigWifiShown · RIG BT $rigBleShown · " +
+                "PHONE WIFI $phoneWifi · PHONE BT $phoneBle"
+
             binding.rigHealthText.visibility = if (health != null) View.VISIBLE else View.GONE
             if (health != null) {
-                val gps = if (health.gpsFix) "GPS FIX" + (if (health.sats >= 0) " ${health.sats} SATS" else "") else "GPS: NO FIX"
+                val gps = if (health.gpsFix) "RIG GPS FIX" + (if (health.sats >= 0) " ${health.sats} SATS" else "") else "RIG GPS: NO FIX"
                 val sd = if (health.sdOk) "SD OK" else "SD FAIL"
                 val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD (TAP)" else ""
-                // The CYD screen's own counts, so the two can be compared directly.
-                val cyd = if (health.rigWifi != null) " · CYD ${health.rigWifi} WIFI / ${health.rigBle} BT" else ""
-                binding.rigHealthText.text = "RIG · $gps · $sd$cyd$pend"
+                binding.rigHealthText.text = "$gps · $sd$pend"
                 binding.rigHealthText.setTextColor(ContextCompat.getColor(this,
                     if (health.gpsFix && health.sdOk) R.color.cyan_500 else R.color.red_error))
             }

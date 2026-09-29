@@ -184,6 +184,23 @@ class RigLinkManager(private val context: Context, private val listener: Listene
     // attempt" self-healing this was built for, without also resetting an
     // already-working stream every few seconds.
     private var wdstreamAcked = false
+    @Volatile private var lastStreamLineMs = 0L
+
+    // Streaming rigs send WD:STATUS every 2s. If that goes quiet while the link is up (the rig
+    // rebooted between our reconnects, a lost write), ask again - "wdstream start" is safe to
+    // repeat on current firmware, it only resets anything when the stream was off.
+    private val streamWatchdog = object : Runnable {
+        override fun run() {
+            if (transport == Transport.NONE) return
+            if (System.currentTimeMillis() - lastStreamLineMs > STREAM_WATCHDOG_MS) {
+                listener.onRigLog("[rig] no status from the rig - re-requesting the stream")
+                wdstreamAcked = false
+                handler.post(wdstreamKeepAlive)
+            } else {
+                handler.postDelayed(this, STREAM_WATCHDOG_MS)
+            }
+        }
+    }
     private val wdstreamKeepAlive = object : Runnable {
         override fun run() {
             if (transport == Transport.NONE || wdstreamAcked) return
@@ -494,13 +511,19 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         if (!line.startsWith("WD:")) return // ignore the rig's own debug prints
         listener.onRigLog("RX: $line")
 
-        // Any WD: line at all proves the rig received and is acting on the "wdstream start" we
-        // sent - stop the keepalive's periodic resend so it doesn't keep wiping the rig's own
-        // WiFi/BLE counters by re-issuing that (idempotent-but-resetting) command every few
-        // seconds for the rest of the run.
-        if (!wdstreamAcked) {
-            wdstreamAcked = true
-            handler.removeCallbacks(wdstreamKeepAlive)
+        // Only the rig's actual answers to "wdstream start" count as the handshake: WD:BEGIN, or
+        // the WD:STATUS it sends every 2s while streaming. Any WD: line used to count, but the rig
+        // also sends link/scan-state lines unprompted - after a reconnect one of those could
+        // arrive while our "wdstream start" had been lost, and the phone then never asked again,
+        // so no sightings or status ever came through for the rest of the drive.
+        if (line.startsWith("WD:BEGIN") || line.startsWith("WD:STATUS")) {
+            lastStreamLineMs = System.currentTimeMillis()
+            if (!wdstreamAcked) {
+                wdstreamAcked = true
+                handler.removeCallbacks(wdstreamKeepAlive)
+                handler.removeCallbacks(streamWatchdog)
+                handler.postDelayed(streamWatchdog, STREAM_WATCHDOG_MS)
+            }
         }
 
         when {
@@ -644,6 +667,7 @@ class RigLinkManager(private val context: Context, private val listener: Listene
     companion object {
         private const val ACTION_USB_PERMISSION = "com.dreknil.wardrivebridge.USB_PERMISSION"
         private const val WDSTREAM_RESEND_MS = 5000L
+        private const val STREAM_WATCHDOG_MS = 8000L
         // cyd_node's heartbeat fires roughly every 2s, so this gives it two
         // full cycles to prove its identity before giving up.
         private const val IDENTIFY_TIMEOUT_MS = 4500L

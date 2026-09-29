@@ -2555,6 +2555,14 @@ void loop() {
 
 	CydBleLink::poll();
 
+	// A paired phone always wants the live stream - start it the moment one connects rather than
+	// relying only on its "wdstream start" arriving (a write sent while the encrypted link is
+	// still settling can be lost, and the stream then never started).
+	static bool phoneWasConnected = false;
+	bool phoneConnected = CydBleLink::isConnected();
+	if (phoneConnected && !phoneWasConnected && !wdstreamActive) handleWdstreamCommand("wdstream start");
+	phoneWasConnected = phoneConnected;
+
 	if (millis() - lastSdHealthBroadcastMs > SD_HEALTH_BROADCAST_MS) {
 		lastSdHealthBroadcastMs = millis();
 		wifiLinkSend(sdOk ? "SDOK:1" : "SDOK:0");

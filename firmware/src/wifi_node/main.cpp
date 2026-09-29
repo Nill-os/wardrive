@@ -290,7 +290,7 @@ static void cydLinkSendf(const char *fmt, ...) {
 // from here, so this goes out several times a second (not with the 2s status
 // batch) to keep that position fresh at driving speed. Also tells ble_node
 // whether there's a fix - see its handling of GPSFIX.
-static const uint32_t GPSPOS_BROADCAST_MS = 250; // the GPS runs at 5Hz now - see configureGps()
+static const uint32_t GPSPOS_BROADCAST_MS = 500;
 static bool gpsLive(); // defined with the GPS gap-tolerance helpers below
 static bool getLoggablePosition(double &lat, double &lon, double &alt, double &acc);
 uint32_t lastGpsPosBroadcastMs = 0;
@@ -705,45 +705,7 @@ static void handleCydLinkLine(const String &line) {
 	}
 }
 
-// ---- GPS: 5Hz ----
-// The NEO-6M defaults to one fix a second, which at 30m/s means a position up
-// to 30m stale. These u-blox (UBX) commands switch it to 5 fixes a second and
-// turn off the NMEA sentences TinyGPS++ doesn't use (GSA/GSV/GLL/VTG), so GGA
-// and RMC at 5Hz (~725 B/s) still fit in 9600 baud. Needs the GPS RX wire
-// (GPIO17); without it the module just stays at 1Hz, which still works. Not
-// saved to the module's flash - resent every boot.
-static void sendUbx(uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t len) {
-	uint8_t ckA = 0, ckB = 0;
-	uint8_t head[4] = {cls, id, (uint8_t)(len & 0xFF), (uint8_t)(len >> 8)};
-	GpsSerial.write(0xB5);
-	GpsSerial.write(0x62);
-	for (uint8_t b : head) {
-		GpsSerial.write(b);
-		ckA += b;
-		ckB += ckA;
-	}
-	for (uint16_t i = 0; i < len; i++) {
-		GpsSerial.write(payload[i]);
-		ckA += payload[i];
-		ckB += ckA;
-	}
-	GpsSerial.write(ckA);
-	GpsSerial.write(ckB);
-	GpsSerial.flush();
-	delay(50);
-}
-
-static void configureGps() {
-	static const uint8_t unusedNmea[] = {0x01 /*GLL*/, 0x02 /*GSA*/, 0x03 /*GSV*/, 0x05 /*VTG*/};
-	for (uint8_t msgId : unusedNmea) {
-		uint8_t cfgMsg[] = {0xF0, msgId, 0}; // NMEA class, message, rate 0 = off
-		sendUbx(0x06, 0x01, cfgMsg, sizeof(cfgMsg));
-	}
-	uint8_t cfgRate[] = {200, 0, 1, 0, 1, 0}; // measRate 200ms, navRate 1, timeRef GPS
-	sendUbx(0x06, 0x08, cfgRate, sizeof(cfgRate));
-}
-
-// GGA sentences seen, for the heartbeat - ~5/s once configureGps() took.
+// GGA sentences seen, for the heartbeat - about 1/s from a healthy module.
 TinyGPSCustom ggaFixQuality(gps, "GPGGA", 6);
 uint32_t ggaCount = 0;
 
@@ -752,8 +714,12 @@ void setup() {
 
 	neopixelWrite(RGB_BUILTIN, 0, 0, 0);
 
+	// Plain factory default: 9600 baud, standard NMEA at 1 fix/second. Sending UBX config
+	// commands here was tried and made it worse - it left the module silent or overran the
+	// 9600 line. If the GPS gets power but never a fix, it's the antenna/sky or the TX wire,
+	// not this - watch gpsChars in the heartbeat (climbing = data arriving) and the module's
+	// own fix LED (blinks only once it has a position).
 	GpsSerial.begin(9600, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
-	configureGps();
 	BleLinkSerial.setRxBufferSize(LINK_BUFFER_BYTES);
 	BleLinkSerial.setTxBufferSize(LINK_BUFFER_BYTES);
 	BleLinkSerial.begin(LINK_BAUD, SERIAL_8N1, PIN_BLE_LINK_RX, PIN_BLE_LINK_TX);

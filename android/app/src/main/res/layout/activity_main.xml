@@ -337,7 +337,7 @@
                         android:id="@+id/countsStatus"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="RIG WIFI 0 · RIG BLE 0 · PHONE WIFI 0 · PHONE BLE 0"
+                        android:text="RIG WIFI 0 · RIG BT 0 · PHONE WIFI 0 · PHONE BT 0"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp"
                         android:gravity="center"

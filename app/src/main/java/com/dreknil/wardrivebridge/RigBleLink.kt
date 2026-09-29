@@ -56,9 +56,13 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
     private val settings = AppSettings(context)
     private var bondingDevice: BluetoothDevice? = null
 
-    // Connections to the saved rig that dropped before the link came up. The rig drops a phone
-    // it no longer has a bond for (its FORGET PHONES), so a run of these means "pair again".
+    // Connections to the saved rig that the rig itself rejected: up for a while but never
+    // secured, then dropped. The rig drops a phone it has no bond for after ~10s (after its
+    // FORGET PHONES), so a run of these means "pair again". Quick drops - the rig rebooting,
+    // the phone at the edge of range - don't count; counting those unpaired a phone that had
+    // simply driven away from the rig.
     private var failedAttempts = 0
+    private var connectStartedMs = 0L
 
     /** True when no rig is paired yet - the UI shows a pairing hint instead of just DOWN. */
     val needsPairing: Boolean get() = settings.pairedRigAddress.isEmpty()
@@ -311,6 +315,7 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
             return
         }
         callbacks.onBleLog("[ble] found ${device.address} - connecting")
+        connectStartedMs = System.currentTimeMillis()
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
@@ -368,7 +373,9 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
                 handler.post {
                     if (gatt === g) {
                         callbacks.onBleLog("[ble] disconnected (status $status)")
-                        if (!isConnected && ++failedAttempts >= MAX_FAILED_ATTEMPTS) {
+                        val rejected = !isConnected &&
+                            System.currentTimeMillis() - connectStartedMs >= REJECTED_AFTER_MS
+                        if (rejected && ++failedAttempts >= MAX_FAILED_ATTEMPTS) {
                             callbacks.onBleLog("[ble] rig keeps refusing this phone - pair again from the rig's CFG tab")
                             forgetBond(g.device)
                             settings.pairedRigAddress = ""
@@ -461,6 +468,8 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
         private const val MFG_COMPANY_ID = 0xFFFF
 
         private const val MAX_FAILED_ATTEMPTS = 3
+        // The rig drops an unsecured connection after 10s; anything shorter is a normal drop.
+        private const val REJECTED_AFTER_MS = 8_000L
         private const val SCAN_WINDOW_MS = 12_000L
         private const val RETRY_MS = 5_000L
         private const val RECONNECT_DELAY_MS = 1_500L

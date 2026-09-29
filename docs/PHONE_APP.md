@@ -53,7 +53,7 @@ If Bluetooth isn't available, plug the phone into the CYD's USB port with a USB-
 
 ## Organic Maps overlay (optional)
 
-A lightly patched Organic Maps build shows a one-line Wardrive Bridge status on the map, for example:
+A lightly patched Organic Maps build ([wardrive-maps-overlay](https://github.com/Nill-os/wardrive-maps-overlay)) shows a one-line Wardrive Bridge status on the map, for example:
 
 ```
 ON · WIGLE 12 · WDGW 9 · BT 30 · CYD BLE · Rig ✓

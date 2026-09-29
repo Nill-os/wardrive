@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Check for internet (cell or WiFi) before uploading the rig's data through the phone. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Required to read cell tower info (getAllCellInfo()) alongside location -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

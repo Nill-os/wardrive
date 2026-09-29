@@ -149,12 +149,12 @@ bool wasScanning = false;
 // them down to LED_BRIGHTNESS_PCT before writing, so this one constant
 // controls how bright the whole LED is.
 static const uint32_t LED_FLICKER_MS = 150;
-static const uint8_t LED_BRIGHTNESS_PCT = 3;
+uint8_t ledBrightnessPct = 3; // 0-100; set from cyd_node's CFG:ledBrightness relay
 uint32_t ledOffAtMs = 0;
 bool ledPriority = false; // true while a click/upload-status flash is showing
 
 static uint8_t scaleBrightness(uint8_t channel) {
-	return (uint16_t)channel * LED_BRIGHTNESS_PCT / 100;
+	return (uint16_t)channel * ledBrightnessPct / 100;
 }
 
 // priority=true (clicks, upload status) always shows and can't be cut short
@@ -695,6 +695,11 @@ static void handleCydLinkLine(const String &line) {
 	} else if (line.startsWith("CFG:channelHopMs=")) {
 		uint32_t v = line.substring(18).toInt();
 		if (v > 0) channelHopMs = v;
+	} else if (line.startsWith("CFG:ledBrightness=")) {
+		int v = line.substring(18).toInt();
+		ledBrightnessPct = v < 0 ? 0 : v > 100 ? 100 : v;
+		BleLinkSerial.printf("CFG:ledBrightness=%u\n", ledBrightnessPct); // relay onward to ble_node
+		if (WARDRIVE_DEBUG) Serial.printf("[cfg] LED brightness -> %u%%, relayed to ble_node\n", ledBrightnessPct);
 	} else if (line.startsWith("SCANSTATE:")) {
 		// cyd_node's touchscreen (and its own phone-facing wdstream link) is
 		// the primary control surface now that the physical button is gone -

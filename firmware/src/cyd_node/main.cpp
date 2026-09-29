@@ -193,11 +193,23 @@ static void phonePrintf(const char *fmt, ...) {
 	CydBleLink::send(buf);
 }
 
-// ---- LED (plain RGB, active-HIGH) ----
+// ---- LED (plain RGB, active-HIGH) + backlight, both dimmable via PWM ----
+// LEDC channels: 0 = backlight, 1/2/3 = R/G/B. Set from config.cfg
+// (led_brightness / screen_brightness) once it loads - see applyBrightness().
+static const uint8_t LEDC_CH_BL = 0, LEDC_CH_R = 1, LEDC_CH_G = 2, LEDC_CH_B = 3;
+static uint8_t ledDuty = 8;        // 0-255, the "on" level for the RGB LED
+static uint8_t screenDuty = 255;   // 0-255, TFT backlight
+
 static void setLed(bool r, bool g, bool b) {
-	digitalWrite(PIN_LED_R, r ? HIGH : LOW);
-	digitalWrite(PIN_LED_G, g ? HIGH : LOW);
-	digitalWrite(PIN_LED_B, b ? HIGH : LOW);
+	ledcWrite(LEDC_CH_R, r ? ledDuty : 0);
+	ledcWrite(LEDC_CH_G, g ? ledDuty : 0);
+	ledcWrite(LEDC_CH_B, b ? ledDuty : 0);
+}
+
+static void applyBrightness() {
+	ledDuty = (uint16_t)config.ledBrightness * 255 / 100;
+	screenDuty = (uint16_t)config.screenBrightness * 255 / 100;
+	ledcWrite(LEDC_CH_BL, screenDuty);
 }
 
 static const uint32_t LED_FLICKER_MS = 150;
@@ -1962,7 +1974,9 @@ File relayFile;
 bool relayActive = false;
 String relayName;
 uint32_t relayRows = 0;
-static const uint8_t RELAY_ROWS_PER_TICK = 6;
+static const uint8_t RELAY_ROWS_PER_TICK = 1;
+static const uint32_t RELAY_TICK_MS = 25; // ~one BLE connection interval - the reliable notify rate
+uint32_t lastRelayTickMs = 0;
 
 // While set, the phone is handling uploads - the rig skips its own WiFi
 // auto-upload so a file can't be sent twice. Refreshed by any rig-relay
@@ -2033,6 +2047,8 @@ static void relayStartSend(const String &name) {
 // Pumps a few rows of the in-progress transfer each loop() iteration.
 static void serviceRelay() {
 	if (!relayActive) return;
+	if (millis() - lastRelayTickMs < RELAY_TICK_MS) return;
+	lastRelayTickMs = millis();
 	for (uint8_t i = 0; i < RELAY_ROWS_PER_TICK && relayFile.available(); i++) {
 		String row = relayFile.readStringUntil('\n');
 		row.replace("\r", "");
@@ -2160,6 +2176,19 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			testFakeGps = true;
 			gpsFixKnown = true;
 			Serial.printf("[test] fake GPS %.6f,%.6f - logging to %s\n", lastKnownLat, lastKnownLon, TEST_SESSION_DIR);
+		}
+	} else if (line.startsWith("test:bright ")) {
+		// "test:bright led <0-100>" / "test:bright screen <0-100>" - live brightness (USB test).
+		String rest = line.substring(12); int sp = rest.indexOf(' ');
+		String what = rest.substring(0, sp); int v = rest.substring(sp + 1).toInt();
+		v = v < 0 ? 0 : v > 100 ? 100 : v;
+		if (what == "led") {
+			config.ledBrightness = v; applyBrightness();
+			char c[40]; snprintf(c, sizeof(c), "CFG:ledBrightness=%d", v); wifiLinkSend(c);
+			Serial.printf("[test] LED brightness %d%% (duty %u), relayed\n", v, ledDuty);
+		} else if (what == "screen") {
+			config.screenBrightness = v; applyBrightness();
+			Serial.printf("[test] screen brightness %d%% (duty %u)\n", v, screenDuty);
 		}
 	} else if (line.startsWith("test:exclude ")) {
 		// "test:exclude <metres>" - set the exclusion zone at the current fake fix (USB test only).
@@ -2518,9 +2547,12 @@ void setup() {
 	Serial.setTxBufferSize(2048); // debug/USB-phone prints queue instead of blocking the loop
 	Serial.begin(115200);
 
-	pinMode(PIN_LED_R, OUTPUT);
-	pinMode(PIN_LED_G, OUTPUT);
-	pinMode(PIN_LED_B, OUTPUT);
+	ledcSetup(LEDC_CH_R, 5000, 8);
+	ledcSetup(LEDC_CH_G, 5000, 8);
+	ledcSetup(LEDC_CH_B, 5000, 8);
+	ledcAttachPin(PIN_LED_R, LEDC_CH_R);
+	ledcAttachPin(PIN_LED_G, LEDC_CH_G);
+	ledcAttachPin(PIN_LED_B, LEDC_CH_B);
 	setLed(false, false, false);
 
 	pinMode(PIN_TOUCH_CS, OUTPUT);
@@ -2531,8 +2563,9 @@ void setup() {
 	digitalWrite(PIN_TOUCH_CS, HIGH);
 	digitalWrite(PIN_TOUCH_CLK, LOW);
 
-	pinMode(TFT_BL, OUTPUT);
-	digitalWrite(TFT_BL, HIGH);
+	ledcSetup(LEDC_CH_BL, 5000, 8);
+	ledcAttachPin(TFT_BL, LEDC_CH_BL);
+	ledcWrite(LEDC_CH_BL, 255); // full until config.cfg loads (applyBrightness)
 	tft.init();
 	// invertDisplay(true) was tried here based on an unverified assumption
 	// about this panel and turned out wrong - it was inverting every color
@@ -2670,6 +2703,7 @@ void loop() {
 			Serial.printf("[boot] sdOk=%d configOk=%d\n", sdOk, configOk);
 		}
 		logEvent(!sdOk ? "SD card missing" : configOk ? "SD ok, config loaded" : "SD ok, no config.cfg", sdOk && configOk ? COLOR_GREEN : COLOR_RED);
+		if (configOk) applyBrightness();
 		if (sdOk && uploader) uploader->removeEmptySessions(SESSION_DIR); // nothing's open yet this early
 		if (uploader) lastUploadOkEpoch = uploader->lastUploadEpoch();
 		checkStorage();
@@ -2740,6 +2774,8 @@ void loop() {
 		char cfgLine[48];
 		snprintf(cfgLine, sizeof(cfgLine), "CFG:channelHopMs=%lu", (unsigned long)config.channelHopMs);
 		wifiLinkSend(cfgLine);
+		snprintf(cfgLine, sizeof(cfgLine), "CFG:ledBrightness=%u", (unsigned)config.ledBrightness);
+		wifiLinkSend(cfgLine);
 	}
 
 	if (millis() - lastScanStateBroadcastMs > SCANSTATE_BROADCAST_MS) {
@@ -2794,7 +2830,7 @@ void loop() {
 	}
 	checkPhoneLinkTimeout();
 
-	if (wdstreamActive && millis() - lastWdstreamStatusMs > WDSTREAM_STATUS_INTERVAL_MS) {
+	if (wdstreamActive && !relayActive && millis() - lastWdstreamStatusMs > WDSTREAM_STATUS_INTERVAL_MS) {
 		lastWdstreamStatusMs = millis();
 		wdstreamEmitStatus();
 	}

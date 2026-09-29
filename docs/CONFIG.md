@@ -17,6 +17,8 @@ home_lon=-122.419400
 home_radius_m=150
 exclude_radius_m=0
 retention_days=0
+led_brightness=3
+screen_brightness=100
 channel_hop_ms=150
 ```
 
@@ -30,6 +32,8 @@ channel_hop_ms=150
 | `home_lat` / `home_lon` / `home_radius_m` | no | The home geofence for automatic "dock mode" uploads. When you arrive inside this circle with scanning stopped, the rig uploads once per arrival. Set `home_radius_m=0` or leave the keys out to disable it. |
 | `exclude_radius_m` | no | Drop any sighting within this many metres of `home_lat`/`home_lon` before logging or uploading it — the rig's home exclusion zone. Default 0 (off). |
 | `retention_days` | no | Delete **already-uploaded** session files older than this many days. The default, 0, keeps everything forever, which is the recommended setting. |
+| `led_brightness` | no | Status LED brightness on all three boards, 0-100 %. Default 3 (dim, easy on the eyes at night). |
+| `screen_brightness` | no | CYD screen backlight, 0-100 %. Default 100. |
 | `channel_hop_ms` | no | How long each board dwells on a channel before hopping. Default 150 (just over one beacon interval). wifi_node hops 1/6/11; the CYD sweeps 1–11. |
 
 ## Keep it private

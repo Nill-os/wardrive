@@ -75,6 +75,8 @@ struct WardriveConfig {
 	double homeLon = 0.0;
 	double homeRadiusM = 0.0; // 0 = geofence disabled
 	double excludeRadiusM = 0.0; // drop sightings within this many m of home; 0 = off
+	uint8_t ledBrightness = 3;    // 0-100 %, all boards' RGB status LEDs
+	uint8_t screenBrightness = 100; // 0-100 %, cyd_node's TFT backlight
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
 	uint32_t channelHopMs = 150;
 	bool pcapCaptureEnabled = false;

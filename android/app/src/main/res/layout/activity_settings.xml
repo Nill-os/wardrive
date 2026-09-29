@@ -262,18 +262,18 @@
             android:text="Upload each run automatically when it stops on WiFi" />
 
         <CheckBox
-            android:id="@+id/uploadRigViaPhoneCheck"
+            android:id="@+id/tripModeCheck"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textColor="@color/text_primary"
-            android:text="Upload the rig's data through this phone (over Bluetooth)" />
+            android:text="Trip mode: upload the rig's data through this phone (Bluetooth)" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
-            android:text="The rig sends its logs over the Bluetooth link and this phone uploads them, so the rig never needs WiFi. The rig holds off its own upload while connected, so nothing is sent twice." />
+            android:text="For trips away from home WiFi. While on, the rig sends its logs over Bluetooth and this phone uploads them over its own connection; the rig holds off its own upload so nothing is sent twice. Off = the rig uploads over its own WiFi as usual." />
 
         <Button
             android:id="@+id/saveSettingsButton"

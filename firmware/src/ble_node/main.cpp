@@ -68,12 +68,12 @@ uint32_t observationsSent = 0;
 // them down to LED_BRIGHTNESS_PCT before writing, so this one constant
 // controls how bright the whole LED is.
 static const uint32_t LED_FLICKER_MS = 150;
-static const uint8_t LED_BRIGHTNESS_PCT = 3;
+uint8_t ledBrightnessPct = 3; // 0-100; relayed from cyd_node via wifi_node
 uint32_t ledOffAtMs = 0;
 bool ledPriority = false; // true while a click/upload-status flash is showing
 
 static uint8_t scaleBrightness(uint8_t channel) {
-	return (uint16_t)channel * LED_BRIGHTNESS_PCT / 100;
+	return (uint16_t)channel * ledBrightnessPct / 100;
 }
 
 // priority=true (clicks, upload status) always shows and can't be cut short
@@ -168,6 +168,10 @@ static void handleLinkStatusLine(const String &line) {
 			flashLed(0, 255, 0, LED_FLICKER_MS, true);
 			if (WARDRIVE_DEBUG) Serial.printf("[link] was out of sync - resynced to scanning=%d\n", scanningActive);
 		}
+	} else if (line.startsWith("CFG:ledBrightness=")) {
+		int v = line.substring(18).toInt();
+		ledBrightnessPct = v < 0 ? 0 : v > 100 ? 100 : v;
+		if (WARDRIVE_DEBUG) Serial.printf("[cfg] LED brightness -> %u%%\n", ledBrightnessPct);
 	} else if (line.startsWith("SDOK:")) {
 		bool newVal = line.substring(5).toInt() != 0;
 		if (WARDRIVE_DEBUG && newVal != wifiNodeSdOk) {

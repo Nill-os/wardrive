@@ -33,7 +33,7 @@ class SettingsActivity : AppCompatActivity() {
         if (settings.spokenUpdateMinutes > 0) binding.spokenMinutesInput.setText(settings.spokenUpdateMinutes.toString())
         binding.spokenTrackerCheck.isChecked = settings.spokenTrackerAlerts
         binding.autoUploadCheck.isChecked = settings.autoUploadOnWifi
-        binding.uploadRigViaPhoneCheck.isChecked = settings.uploadRigViaPhone
+        binding.tripModeCheck.isChecked = settings.tripMode
 
         // Keys are masked so they aren't readable over your shoulder; this reveals them briefly.
         binding.showKeysButton.setOnClickListener {
@@ -101,7 +101,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.spokenUpdateMinutes = binding.spokenMinutesInput.text.toString().toIntOrNull()?.coerceIn(0, 120) ?: 0
         settings.spokenTrackerAlerts = binding.spokenTrackerCheck.isChecked
         settings.autoUploadOnWifi = binding.autoUploadCheck.isChecked
-        settings.uploadRigViaPhone = binding.uploadRigViaPhoneCheck.isChecked
+        settings.tripMode = binding.tripModeCheck.isChecked
         val wantsSpeech = settings.spokenUpdateMinutes > 0 || settings.spokenTrackerAlerts
         val hasTtsEngine = packageManager.queryIntentServices(
             android.content.Intent(android.speech.tts.TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0,

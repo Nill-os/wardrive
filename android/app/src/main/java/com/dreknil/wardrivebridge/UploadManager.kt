@@ -24,11 +24,13 @@ class UploadManager(private val appContext: Context) {
     // Debug only: if a file <filesDir>/debug_upload_host.txt exists, both uploads go there instead
     // of WiGLE/wdgwars. Used by the bench test so the relay can be exercised without touching real
     // accounts. Never written by the app itself.
-    private fun debugHost(): String? =
-        try {
+    private fun debugHost(): String? {
+        if (!BuildConfig.DEBUG) return null // never in a release build
+        return try {
             val f = File(appContext.filesDir, "debug_upload_host.txt")
             if (f.exists()) f.readText().trim().ifBlank { null } else null
         } catch (_: Exception) { null }
+    }
 
     fun upload(file: File, wigleToken: String, wdgwarsKey: String, callback: (Result) -> Unit) {
         executor.execute {

@@ -11,5 +11,9 @@ home_radius_m=150
 # Drop any sighting within this many meters of home before it is logged or
 # uploaded (the rig's own exclusion zone, like the phone app's). 0 = off.
 exclude_radius_m=0
+# Status LED brightness on all three boards, 0-100 %.
+led_brightness=3
+# CYD screen backlight, 0-100 %.
+screen_brightness=100
 retention_days=0
 channel_hop_ms=150

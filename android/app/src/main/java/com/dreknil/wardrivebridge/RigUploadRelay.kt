@@ -42,6 +42,8 @@ class RigUploadRelay(
     private var uploadedThisRun = 0
     private var failedThisRun = 0
     private var connected = false
+    private var currentRetries = 0
+    private val retryCounts = HashMap<String, Int>()
 
     fun onConnected() {
         connected = true
@@ -82,7 +84,8 @@ class RigUploadRelay(
                 return true
             }
             line.startsWith("WD:FEND ") -> {
-                finishReceiving()
+                val expected = field(line, "rows")?.toIntOrNull()
+                finishReceiving(expected)
                 return true
             }
             line.startsWith("WD:FERR ") -> {
@@ -150,13 +153,26 @@ class RigUploadRelay(
         }
     }
 
-    private fun finishReceiving() {
+    private fun finishReceiving(expectedRows: Int?) {
         val f = currentFile
         try { currentWriter?.flush(); currentWriter?.close() } catch (_: Exception) {}
         currentWriter = null
         if (f == null || rowsWritten == 0) { dropCurrent(); fetchNext(); return }
-        state = State.UPLOADING
+        // BLE notify can drop packets; the rig tells us how many rows it sent. If we got fewer,
+        // the file is incomplete - re-request it (bounded) rather than upload a truncated CSV.
         val name = current ?: f.name
+        if (expectedRows != null && rowsWritten != expectedRows) {
+            val tries = (retryCounts[name] ?: 0) + 1
+            retryCounts[name] = tries
+            log("[relay] $name incomplete ($rowsWritten/$expectedRows rows) - ${if (tries <= MAX_RETRIES) "retrying" else "giving up"}")
+            dropCurrent()
+            if (tries <= MAX_RETRIES) { pending.addFirst(name) }
+            state = State.IDLE
+            lastActivityMs = System.currentTimeMillis()
+            fetchNext()
+            return
+        }
+        state = State.UPLOADING
         log("[relay] uploading $name ($rowsWritten rows) via phone")
         UploadManager(context).upload(f, settings.wigleToken, settings.wdgwarsKey) { result ->
             val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk)
@@ -194,7 +210,7 @@ class RigUploadRelay(
     }
 
     private fun enabled(): Boolean {
-        if (!settings.uploadRigViaPhone) return false
+        if (!settings.tripMode) return false
         if (settings.wigleToken.isBlank() && settings.wdgwarsKey.isBlank()) return false
         // Any working internet (cell or WiFi) - the whole point is not needing the rig on WiFi.
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -207,6 +223,7 @@ class RigUploadRelay(
         Regex("""\b$key=(\S+)""").find(line)?.groupValues?.get(1)
 
     private companion object {
+        const val MAX_RETRIES = 3
         const val STALL_MS = 20_000L
         const val RELIST_MS = 120_000L   // re-check for new pending files every 2 min
     }

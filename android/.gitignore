@@ -1,0 +1,15 @@
+# Build output
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+
+# Machine-specific
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Test screenshots - may show upload credentials on the settings screen
+screenshot*.png

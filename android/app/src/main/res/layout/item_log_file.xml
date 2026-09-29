@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/logFileName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:maxLines="1"
+            android:ellipsize="middle" />
+
+        <TextView
+            android:id="@+id/logFileMeta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <!-- Only one of these two is visible at a time: a dim "Uploaded" mark
+         for runs already sent to wdgwars/WiGLE, or a tappable Upload pill
+         for anything missed - the whole point of this tab being searchable
+         is finding exactly the runs that need this action. -->
+    <TextView
+        android:id="@+id/logFileUploadedMark"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="[OK]"
+        android:textColor="@color/green_ok"
+        android:textSize="11sp"
+        android:layout_marginStart="8dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/logFileUploadButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="&gt; UPLOAD"
+        android:textColor="@color/background"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:background="@drawable/bg_pill_cyan"
+        android:layout_marginStart="8dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone" />
+</LinearLayout>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tactical Cyberdeck theme (2026-09-27), palette restored to keep a
+         real second accent (2026-09-27 follow-up) - collapsing purple_500
+         into cyan for a strict one-accent look left every icon badge/nav
+         pill using @color/purple_500 rendering identical to cyan, which
+         read as washed-out and flattened the WiFi-vs-BLE color coding
+         (Export/Settings quick-action badges, nav tab highlight) - purple
+         is back as its own real color, matching the rig's own CYD accent. -->
+    <color name="purple_500">#9D00FF</color>
+    <color name="purple_dark">#4C1D95</color>
+    <color name="cyan_500">#00F0FF</color>
+    <color name="background">#000000</color>
+    <color name="surface">#080C10</color>
+    <color name="text_primary">#00F0FF</color>
+    <color name="text_secondary">#4A607A</color>
+    <color name="green_ok">#22C55E</color>
+    <color name="red_error">#FF3333</color>
+    <color name="amber_warning">#FFB000</color>
+    <color name="icon_bg">#080C10</color>
+    <color name="pure_black">#000000</color>
+</resources>

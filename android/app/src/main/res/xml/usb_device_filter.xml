@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Espressif's USB vendor ID (0x303A / 12346 decimal) - covers the
+         ESP32-S3's native USB CDC interface regardless of exact product ID,
+         so this matches wifi_node whichever board it's flashed to. -->
+    <usb-device vendor-id="12346" />
+</resources>

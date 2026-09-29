@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; SETTINGS &lt;"
+            android:textColor="@color/cyan_500"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:paddingBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; RIG PAIRING"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:id="@+id/pairedRigText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/forgetRigButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&gt; FORGET THIS RIG"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; UPLOAD CREDENTIALS"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <EditText
+            android:id="@+id/wigleTokenInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="WiGLE API token (Basic auth value)"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="textPassword"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/wdgwarsKeyInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="wdgwars.pl API key"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="textPassword"
+            android:singleLine="true"
+            android:layout_marginTop="8dp" />
+
+        <Button
+            android:id="@+id/showKeysButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&gt; SHOW KEYS" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; PRIVACY: HOME EXCLUSION ZONE"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Observations captured within this radius of home are dropped entirely - never shown, logged, or uploaded. Radius 0 disables it."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:paddingBottom="8dp" />
+
+        <EditText
+            android:id="@+id/homeLatInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Home latitude"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="numberSigned|numberDecimal"
+            android:singleLine="true" />
+
+        <EditText
+            android:id="@+id/homeLonInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Home longitude"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="numberSigned|numberDecimal"
+            android:singleLine="true"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/homeRadiusInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Exclusion radius (meters)"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="numberDecimal"
+            android:singleLine="true"
+            android:layout_marginTop="8dp" />
+
+        <Button
+            android:id="@+id/useCurrentLocationButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&gt; USE CURRENT GPS FIX AS HOME"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; PRIVACY: BLACKLISTS"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Any SSID ending in _nomap is always excluded (WiGLE's own opt-out convention), regardless of these lists."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:paddingBottom="8dp" />
+
+        <EditText
+            android:id="@+id/macBlacklistInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="MAC blacklist, comma-separated"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" />
+
+        <EditText
+            android:id="@+id/ssidBlacklistInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SSID/name blacklist, comma-separated"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; GPS QUALITY GATING"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Pause logging when HDOP (horizontal position quality from real GPS NMEA data) rises above this value - tunnels, urban canyons, or no fix yet. 0 disables this and always logs."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:paddingBottom="8dp" />
+
+        <EditText
+            android:id="@+id/maxHdopInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Max HDOP, 0 = disabled"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="numberDecimal"
+            android:singleLine="true" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; STORAGE"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Delete logs older than this many days on app start. 0 keeps everything forever."
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:paddingBottom="8dp" />
+
+        <EditText
+            android:id="@+id/retentionDaysInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Retention (days), 0 = forever"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="number"
+            android:singleLine="true" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; DRIVING"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
+
+        <EditText
+            android:id="@+id/spokenMinutesInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Spoken update every N minutes, 0 = off"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="number"
+            android:singleLine="true" />
+
+        <CheckBox
+            android:id="@+id/spokenTrackerCheck"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:text="Say it out loud when a tracker seems to follow you" />
+
+        <CheckBox
+            android:id="@+id/autoUploadCheck"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:text="Upload each run automatically when it stops on WiFi" />
+
+        <Button
+            android:id="@+id/saveSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; SAVE"
+            android:layout_marginTop="24dp" />
+
+    </LinearLayout>
+</ScrollView>

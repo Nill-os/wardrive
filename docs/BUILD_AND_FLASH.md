@@ -62,7 +62,7 @@ Each board prints a `[heartbeat]` line every 2 seconds while `WARDRIVE_DEBUG` is
 |---|---|
 | wifi_node | `gpsFix=1` and `sats=` once the GPS has a fix. `gpsChars` should climb even without a fix, which proves the GPS wiring works. `cydrx=` counts bytes from the CYD. |
 | ble_node | `scanning=` and `sent=` (number of devices sent to wifi_node) |
-| cyd_node | `sdOk=1`. `wlrx=` counts bytes from wifi_node and should keep climbing once everything is wired. `wifi=` and `ble=` are this run's counts. |
+| cyd_node | `sdOk=1`. `wlrx=` counts bytes from wifi_node and should keep climbing once everything is wired. `wifi=` and `ble=` are this run's counts. `sniff=` counts the frames the CYD's own sniffer has heard. |
 
 The wifi_node heartbeat also prints your current `lat`/`lon`. Remember that before you paste a log anywhere public.
 

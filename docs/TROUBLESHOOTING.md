@@ -40,7 +40,7 @@ Always start with the serial monitor: `pio device monitor -p <port> -b 115200`. 
 
 ## The touchscreen hits the wrong spot
 
-The touch calibration constants (`TOUCH_RAW_*`, `TOUCH_SWAP_XY` and `TOUCH_INVERT_X/Y` in `src/cyd_node/main.cpp`) were tuned for one unit. Watch the `[touch] raw x=… y=…` serial lines while you tap each corner **briefly and separately**, then adjust the constants.
+The touch calibration constants (`TOUCH_RAW_*`, `TOUCH_SWAP_XY` and `TOUCH_INVERT_X/Y` in `src/cyd_node/main.cpp`) were calibrated on the author's unit and should suit most boards of this model. If yours is off, watch the `[touch] raw x=… y=…` serial lines while you tap each corner **briefly and separately**, then adjust the constants.
 
 ## The screen is inverted, rotated or blank
 

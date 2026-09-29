@@ -12,7 +12,7 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 
 ## Features
 
-- **Touchscreen control:** start/stop, upload and re-link, a live status bar, and 5 tabs.
+- **Touchscreen control:** start/stop, upload and re-link, a live status bar, and 4 tabs.
 - **Resumes after power cuts:** it picks up where it left off when the car restarts.
 - **Automatic upload on arriving home** (geofence), or manual upload.
 - **Smart de-duplication:** distance-based for WiFi, per-run for BLE. It rides out GPS gaps of up to 15 s.

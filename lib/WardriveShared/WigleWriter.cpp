@@ -16,7 +16,15 @@ static String sanitizeField(const String &s) {
 bool WigleWriter::begin(const String &dirPath, const String &role) {
 	if (!SD.exists(dirPath)) SD.mkdir(dirPath);
 
-	_path = dirPath + "/" + role + "_" + String((uint32_t)millis()) + ".csv";
+	// Named by millis(), which restarts at 0 every boot - and a power-loss
+	// resume happens at almost the same millis() every time, so the name alone
+	// can collide with an earlier session. FILE_WRITE truncates, and an old
+	// ".uploaded" marker would stop the new data ever uploading, so step past
+	// any name that's been used before.
+	uint32_t stamp = millis();
+	do {
+		_path = dirPath + "/" + role + "_" + String(stamp++) + ".csv";
+	} while (SD.exists(_path) || SD.exists(_path + ".uploaded"));
 	_rowsWritten = 0;
 	_file = SD.open(_path, FILE_WRITE);
 	if (!_file) return false;

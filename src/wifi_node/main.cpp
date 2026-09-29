@@ -56,15 +56,10 @@
 static constexpr bool WARDRIVE_DEBUG = true;
 static const uint32_t HEARTBEAT_MS = 2000;
 
-// wifi_node remains the authoritative source of truth for "should we be
-// scanning" - it broadcasts its own scanningActive over both status links
-// on this cadence, unconditionally (never gated behind WARDRIVE_DEBUG,
-// since this is a correctness mechanism, not just diagnostics). The button
-// is a shared physical signal so all three boards normally see the same
-// click at the same instant and already agree - this broadcast exists
-// purely to self-heal the case where a board missed a click because it was
-// unpowered at the time, regardless of which board came up first or how
-// long another was down.
+// Status batch to cyd_node (EPOCH/SATS/CH, which also doubles as the link
+// heartbeat cyd_node's RIG indicator watches) plus a SCANSTATE relay to
+// ble_node, so a board that missed a change self-heals within 2s. Never
+// gated behind WARDRIVE_DEBUG - this is a correctness mechanism.
 static const uint32_t SCAN_SYNC_BROADCAST_MS = 2000;
 uint32_t lastScanSyncBroadcastMs = 0;
 
@@ -283,13 +278,27 @@ static void cydLinkSendf(const char *fmt, ...) {
 	CydLinkSerial.println(buf);
 }
 
-static void broadcastScanState() {
-	// If this change originated here (idle-auto-stop) rather than being
-	// adopted FROM cyd_node, cyd_node still needs to hear about it; if it
-	// originated at cyd_node, this is a harmless echo its own resync check
-	// will just no-op on. Relayed onward to ble_node over the wired link
-	// too, same reasoning.
-	cydLinkSendf("SCANSTATE:%d", scanningActive);
+// cyd_node geotags its own sniffer's catches with the last position it heard
+// from here, so this goes out every second (not with the 2s status batch) to
+// keep that position no more than a second stale.
+static const uint32_t GPSPOS_BROADCAST_MS = 1000;
+static bool gpsLive(); // defined with the GPS gap-tolerance helpers below
+uint32_t lastGpsPosBroadcastMs = 0;
+
+static void sendGpsPos() {
+	lastGpsPosBroadcastMs = millis();
+	if (gpsLive()) cydLinkSendf("GPSPOS:1,%.6f,%.6f", gps.location.lat(), gps.location.lng());
+	else cydLinkSendf("GPSPOS:0,0,0");
+}
+
+// cyd_node owns the rig's scan state (it's the one that persists it across
+// power loss), so this board never tells it what the state is - it only
+// relays cyd_node's word on to ble_node. The one exception is idle
+// auto-stop, which goes to cyd_node as its own IDLESTOP event (see loop()).
+// Sending our own SCANSTATE back used to race cyd_node's power-loss resume:
+// this board boots stopped, and a "SCANSTATE:0" landing just after cyd_node
+// resumed could switch the whole rig off again.
+static void relayScanStateToBleNode() {
 	BleLinkSerial.printf("SCANSTATE:%d\n", scanningActive);
 }
 
@@ -329,8 +338,17 @@ static const uint32_t GPS_GAP_TOLERANCE_MS = 15000;
 double lastKnownLat = 0.0, lastKnownLon = 0.0, lastKnownAlt = 0.0, lastKnownAcc = 10.0;
 uint32_t lastKnownFixMs = 0;
 
+// TinyGPS++'s location.isValid() only means "a fix was seen at some point" -
+// it stays true forever after the first one, even once the module has lost
+// the sky. A live fix is one that's still being refreshed (the NEO-6M sends
+// one a second), so staleness is judged by age instead.
+static const uint32_t GPS_LIVE_MAX_AGE_MS = 3000;
+static bool gpsLive() {
+	return gps.location.isValid() && gps.location.age() < GPS_LIVE_MAX_AGE_MS;
+}
+
 static void rememberGpsFix() {
-	if (!gps.location.isValid()) return;
+	if (!gpsLive()) return;
 	lastKnownLat = gps.location.lat();
 	lastKnownLon = gps.location.lng();
 	lastKnownAlt = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
@@ -339,7 +357,7 @@ static void rememberGpsFix() {
 }
 
 static bool getLoggablePosition(double &lat, double &lon, double &alt, double &acc) {
-	if (gps.location.isValid()) {
+	if (gpsLive()) {
 		lat = gps.location.lat();
 		lon = gps.location.lng();
 		alt = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
@@ -368,6 +386,9 @@ static bool getLoggablePosition(double &lat, double &lon, double &alt, double &a
 static const double AP_DEDUP_MOVEMENT_THRESHOLD_M = 40.0;
 static const uint32_t AP_DEDUP_FORGET_AFTER_MS = 2UL * 3600UL * 1000UL; // 2 hours
 static const uint32_t AP_DEDUP_PRUNE_SWEEP_MS = 300000; // how often to check for entries to forget
+static const size_t AP_DEDUP_MAX_ENTRIES = 3000;
+static const double AP_DEDUP_EVICT_BEYOND_M = 1000.0;
+static const size_t AP_LED_SEEN_MAX_ENTRIES = 3000;
 
 struct ApDedupEntry {
 	uint32_t lastLoggedMs;
@@ -403,6 +424,20 @@ static bool shouldLogAp(const uint8_t *mac, double lat, double lon) {
 			if (now - it->second.lastLoggedMs > AP_DEDUP_FORGET_AFTER_MS) it = apDedupState.erase(it);
 			else ++it;
 		}
+	}
+
+	// A dense city drive sees many thousands of distinct BSSIDs, and each
+	// entry costs ~60 bytes of a heap this board also needs for WiFi - so
+	// past a cap, forget everything logged far from here (a duplicate is only
+	// possible within AP_DEDUP_MOVEMENT_THRESHOLD_M of the old spot anyway),
+	// and as a last resort forget everything.
+	if (apDedupState.size() >= AP_DEDUP_MAX_ENTRIES) {
+		for (auto it = apDedupState.begin(); it != apDedupState.end();) {
+			if (TinyGPSPlus::distanceBetween(lat, lon, it->second.lat, it->second.lon) > AP_DEDUP_EVICT_BEYOND_M) it = apDedupState.erase(it);
+			else ++it;
+		}
+		if (apDedupState.size() >= AP_DEDUP_MAX_ENTRIES * 3 / 4) apDedupState.clear();
+		if (WARDRIVE_DEBUG) Serial.printf("[dedup] pruned to %u entries\n", (unsigned)apDedupState.size());
 	}
 
 	uint64_t key = macToKey(mac);
@@ -617,14 +652,15 @@ static void handleCydLinkLine(const String &line) {
 		// the primary control surface now that the physical button is gone -
 		// this adopts whatever it says and relays it onward to ble_node, the
 		// same as a local change (this board's own idle-auto-stop) already
-		// does via broadcastScanState(). Comparing first avoids re-relaying
+		// does via relayScanStateToBleNode(). Comparing first avoids re-relaying
 		// (and re-flashing the LED for) a line that just confirms what this
 		// board already has - only a genuine change does either.
+		// Never echoed back to cyd_node - see relayScanStateToBleNode().
 		bool v = line.substring(10).toInt() != 0;
 		if (v != scanningActive) {
 			scanningActive = v;
 			flashLed(0, 255, 0, LED_FLICKER_MS, true);
-			broadcastScanState();
+			relayScanStateToBleNode();
 			if (WARDRIVE_DEBUG) Serial.printf("[cyd-link] resynced to scanning=%d from cyd_node\n", scanningActive);
 		}
 	}
@@ -681,9 +717,9 @@ void loop() {
 		Serial.printf("[heartbeat] up=%lus scanning=%d cydSdOk=%d gpsFix=%d lat=%.6f lon=%.6f sats=%d "
 					  "gpsChars=%u gpsSentWithFix=%u gpsFailedCk=%u gpsPassedCk=%u cydrx=%lu\n",
 					  (unsigned long)(millis() / 1000), scanningActive, cydSdOk,
-					  gps.location.isValid(),
-					  gps.location.isValid() ? gps.location.lat() : 0.0,
-					  gps.location.isValid() ? gps.location.lng() : 0.0,
+					  gpsLive(),
+					  gpsLive() ? gps.location.lat() : 0.0,
+					  gpsLive() ? gps.location.lng() : 0.0,
 					  gps.satellites.isValid() ? gps.satellites.value() : -1,
 					  (unsigned)gps.charsProcessed(), (unsigned)gps.sentencesWithFix(),
 					  (unsigned)gps.failedChecksum(), (unsigned)gps.passedChecksum(), (unsigned long)cydLinkRxBytes);
@@ -691,17 +727,13 @@ void loop() {
 
 	if (millis() - lastScanSyncBroadcastMs > SCAN_SYNC_BROADCAST_MS) {
 		lastScanSyncBroadcastMs = millis();
-		broadcastScanState();
+		relayScanStateToBleNode();
 
 		// cyd_node has no GPS of its own - these keep its upload
 		// rate-limiter/cleanup (EPOCH) and dock-mode home geofence
 		// (GPSPOS) working without needing its own fix.
 		cydLinkSendf("EPOCH:%lu", (unsigned long)gpsEpoch(gps));
-		if (gps.location.isValid()) {
-			cydLinkSendf("GPSPOS:1,%.6f,%.6f", gps.location.lat(), gps.location.lng());
-		} else {
-			cydLinkSendf("GPSPOS:0,0,0");
-		}
+		sendGpsPos();
 		// Satellite count - cyd_node has no GPS of its own to derive this
 		// from either, and it's a genuinely useful "collect everything
 		// possible" data point (fix quality, not just fix/no-fix) - shown
@@ -718,6 +750,7 @@ void loop() {
 		gps.encode(GpsSerial.read());
 	}
 	rememberGpsFix();
+	if (millis() - lastGpsPosBroadcastMs > GPSPOS_BROADCAST_MS) sendGpsPos();
 
 	while (CydLinkSerial.available()) {
 		String line = CydLinkSerial.readStringUntil('\n');
@@ -767,6 +800,7 @@ void loop() {
 
 		WifiObservation obs;
 		while (xQueueReceive(obsQueue, &obs, 0) == pdTRUE) {
+			if (apSeenThisRunForLed.size() >= AP_LED_SEEN_MAX_ENTRIES) apSeenThisRunForLed.clear(); // bounded - worst case an old AP flashes "new" again
 			if (apSeenThisRunForLed.insert(macToKey(obs.bssid)).second) {
 				flashLed(255, 0, 255); // purple - only for a genuinely new AP this run, independent of whether it can be logged
 				if (WARDRIVE_DEBUG) Serial.printf("[led] new AP this run: %s\n", macToString(obs.bssid).c_str());
@@ -791,7 +825,7 @@ void loop() {
 		// Only ever check this using a live fix, not the gap-tolerance
 		// fallback - a real GPS dropout (e.g. underground parking) must
 		// never itself look like "parked and idle" and shut the rig off.
-		if (gps.location.isValid()) {
+		if (gpsLive()) {
 			double lat = gps.location.lat(), lon = gps.location.lng();
 			if (!idleAnchorSet) {
 				idleAnchorLat = lat;
@@ -805,7 +839,8 @@ void loop() {
 			} else if (millis() - idleAnchorSetMs > IDLE_TIMEOUT_MS) {
 				scanningActive = false;
 				flashLed(0, 255, 0, LED_FLICKER_MS, true);
-				broadcastScanState();
+				cydLinkSendf("IDLESTOP");
+				relayScanStateToBleNode();
 				if (WARDRIVE_DEBUG) Serial.println("[idle] no movement for 30 minutes - auto-stopping to save power");
 			}
 		}

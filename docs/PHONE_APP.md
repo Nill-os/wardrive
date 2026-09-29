@@ -98,4 +98,4 @@ The CYD speaks a line-based text protocol over BLE, and over USB serial at 11520
 
 `tools/test_ble_link.sh` drives the BLE link from a Linux PC with BlueZ, which is handy for testing without a phone.
 
-> **Security note:** the BLE link is open. Anyone within Bluetooth range can connect and start or stop scanning. They cannot read your config, and they cannot inject sightings into your logs.
+> **Security note:** the BLE link is open. While your phone isn't connected, anyone within Bluetooth range can connect and start or stop scanning. They can't read your config, delete logs or inject sightings: the `test:` developer commands only work over USB.

@@ -9,43 +9,73 @@
 static const char *PREFS_NS = "wardrive";
 static const char *PREFS_KEY_LAST_UPLOAD = "last_upload";
 
-// Builds the whole multipart body in heap before sending. Fine for the
-// modest CSV files a rate-limited upload cycle produces; if you let capture
-// files grow very large between uploads on a non-PSRAM board, switch this to
-// a chunked/streaming implementation instead.
-//
-// Read in a real buffer, not file.read() one byte at a time - a single-byte
-// SD read has enough per-call overhead (locking, block lookup) that even a
-// modest CSV could take many seconds to build this way. A 512-byte buffer
-// cuts that to a handful of reads per file.
-static bool buildMultipartBody(const String &filePath, const String &fieldName,
-								String &outBody, String &outBoundary) {
-	File file = SD.open(filePath, FILE_READ);
-	if (!file) return false;
-
-	outBoundary = "----wardriveESP32Boundary7d1a9c";
-	String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
-
-	String head = "--" + outBoundary + "\r\n" +
-				  "Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + fileName + "\"\r\n" +
-				  "Content-Type: text/csv\r\n\r\n";
-	String tail = "\r\n--" + outBoundary + "--\r\n";
-
-	size_t fileSize = file.size();
-	outBody = "";
-	outBody.reserve(head.length() + fileSize + tail.length());
-	outBody += head;
-
-	uint8_t buf[512];
-	while (file.available()) {
-		size_t n = file.read(buf, sizeof(buf));
-		if (n == 0) break;
-		outBody.concat((const char *)buf, n);
+// Streams one multipart/form-data body - a fixed head, the CSV straight off
+// the SD card, a fixed tail - instead of building it in RAM first. A single
+// drive's CSV easily outgrows the CYD's free heap (~100KB, and TLS needs
+// ~40KB of that), so buffering capped uploads at a few hundred rows and
+// larger files failed forever.
+class MultipartFileStream : public Stream {
+public:
+	bool open(const String &filePath, const String &fieldName, const String &boundary) {
+		_file = SD.open(filePath, FILE_READ);
+		if (!_file) return false;
+		String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
+		_head = "--" + boundary + "\r\n" +
+				"Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + fileName + "\"\r\n" +
+				"Content-Type: text/csv\r\n\r\n";
+		_tail = "\r\n--" + boundary + "--\r\n";
+		_fileSize = _file.size();
+		_pos = 0;
+		return true;
 	}
-	outBody += tail;
-	file.close();
-	return true;
-}
+	void close() {
+		if (_file) _file.close();
+	}
+	size_t totalSize() const { return _head.length() + _fileSize + _tail.length(); }
+
+	int available() override { return (int)(totalSize() - _pos); }
+	int read() override {
+		uint8_t c;
+		return readBytes((char *)&c, 1) == 1 ? c : -1;
+	}
+	int peek() override { return -1; } // HTTPClient never peeks
+	size_t readBytes(char *buf, size_t len) override {
+		size_t n = 0;
+		while (n < len && _pos < totalSize()) {
+			size_t headLen = _head.length();
+			if (_pos < headLen) {
+				size_t k = min(len - n, headLen - _pos);
+				memcpy(buf + n, _head.c_str() + _pos, k);
+				n += k;
+				_pos += k;
+			} else if (_pos < headLen + _fileSize) {
+				size_t want = min(len - n, headLen + _fileSize - _pos);
+				int got = _file.read((uint8_t *)buf + n, want);
+				if (got <= 0) break; // card read failed - HTTPClient sees a short body and the POST fails
+				n += got;
+				_pos += got;
+			} else {
+				size_t off = _pos - headLen - _fileSize;
+				size_t k = min(len - n, _tail.length() - off);
+				memcpy(buf + n, _tail.c_str() + off, k);
+				n += k;
+				_pos += k;
+			}
+		}
+		return n;
+	}
+	size_t write(uint8_t) override { return 0; }
+
+private:
+	File _file;
+	String _head, _tail;
+	size_t _fileSize = 0, _pos = 0;
+};
+
+static const char *BOUNDARY = "----wardriveESP32Boundary7d1a9c";
+// A WigleWifi file with just its two header lines is ~240 bytes; any real row
+// takes it well past this.
+static const size_t HEADER_ONLY_MAX_BYTES = 260;
 
 // http is a long-lived, per-destination client (setReuse(true), kept open
 // across every file in a batch by the caller) - a fresh HTTPClient per file
@@ -53,24 +83,29 @@ static bool buildMultipartBody(const String &filePath, const String &fieldName,
 // more than the read/build work ever did. Reusing the connection lets every
 // file after the first skip that handshake entirely as long as the server
 // keeps it alive.
-static bool postMultipartBody(HTTPClient &http, const String &url, const String &body, const String &boundary,
-							   const std::vector<std::pair<String, String>> &headers) {
+static bool postMultipartFile(HTTPClient &http, const String &url, const String &filePath,
+							  const std::vector<std::pair<String, String>> &headers) {
+	MultipartFileStream body;
+	if (!body.open(filePath, "file", BOUNDARY)) return false;
+
 	// Without these, a network that associates fine but has no real route to
-	// the internet (bad DNS, dead upstream) can leave http.POST() blocked
-	// for a very long time with no way out - this bounds the worst case
-	// instead of freezing the whole board's main loop indefinitely.
+	// the internet (bad DNS, dead upstream) can leave the POST blocked for a
+	// very long time with no way out - this bounds the worst case instead of
+	// freezing the whole board's main loop indefinitely.
 	http.setConnectTimeout(8000);
 	http.setTimeout(10000);
 	http.begin(url);
-	http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+	http.addHeader("Content-Type", String("multipart/form-data; boundary=") + BOUNDARY);
 	for (auto &h : headers) http.addHeader(h.first, h.second);
 
 	Serial.printf("[upload] free heap before POST %s: %u bytes (largest block %u)\n",
 				  url.c_str(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 	uint32_t start = millis();
-	int code = http.POST((uint8_t *)body.c_str(), body.length());
+	size_t size = body.totalSize();
+	int code = http.sendRequest("POST", &body, size);
+	body.close();
 	Serial.printf("[upload] POST %s -> %d (%lums, %u bytes)\n",
-				  url.c_str(), code, (unsigned long)(millis() - start), (unsigned)body.length());
+				  url.c_str(), code, (unsigned long)(millis() - start), (unsigned)size);
 
 	// wdgwars.pl treats 409 (server-side dedup) as success too.
 	bool ok = code == 200 || code == 201 || code == 202 || code == 409;
@@ -149,7 +184,11 @@ void Uploader::setLastUploadEpoch(uint32_t epoch) {
 	p.end();
 }
 
-bool Uploader::uploadToWdgwars(HTTPClient &http, const String &body, const String &boundary) {
+String Uploader::endpoint(const char *real) const {
+	return _endpointOverride.length() > 0 ? _endpointOverride : String(real);
+}
+
+bool Uploader::uploadToWdgwars(HTTPClient &http, const String &filePath) {
 	// NOTE: wdgwars.pl's exact auth header/field name for /api/upload-csv is
 	// documented on its own site behind a login (Help section after signing
 	// in at wdgwars.pl). This uses the most common convention (X-Api-Key
@@ -157,27 +196,21 @@ bool Uploader::uploadToWdgwars(HTTPClient &http, const String &body, const Strin
 	// and adjust here if the key isn't accepted.
 	std::vector<std::pair<String, String>> headers;
 	headers.push_back({"X-Api-Key", _cfg.wdgwarsApiKey});
-	return postMultipartBody(http, "https://wdgwars.pl/api/upload-csv", body, boundary, headers);
+	return postMultipartFile(http, endpoint("https://wdgwars.pl/api/upload-csv"), filePath, headers);
 }
 
-bool Uploader::uploadToWigle(HTTPClient &http, const String &body, const String &boundary) {
+bool Uploader::uploadToWigle(HTTPClient &http, const String &filePath) {
 	if (_cfg.wigleApiToken.length() == 0) return true; // WiGLE upload optional
 	std::vector<std::pair<String, String>> headers;
 	headers.push_back({"Authorization", "Basic " + _cfg.wigleApiToken});
-	return postMultipartBody(http, "https://api.wigle.net/api/v2/file/upload", body, boundary, headers);
+	return postMultipartFile(http, endpoint("https://api.wigle.net/api/v2/file/upload"), filePath, headers);
 }
 
 UploadResult Uploader::uploadPending(const String &dirPath, uint32_t nowEpoch, bool force,
 									  UploadProgressCallback onProgress) {
 	if (!_cfg.valid) return UploadResult::Skipped;
 
-	if (!force) {
-		if (nowEpoch == 0) return UploadResult::Skipped; // no reliable clock yet
-		uint32_t last = lastUploadEpoch();
-		if (last != 0 && nowEpoch > last && (nowEpoch - last) < _cfg.minUploadIntervalSec) {
-			return UploadResult::Skipped;
-		}
-	}
+	if (!force && !autoUploadDue(nowEpoch)) return UploadResult::Skipped;
 
 	File dir = SD.open(dirPath);
 	if (!dir) return UploadResult::Skipped;
@@ -199,9 +232,15 @@ UploadResult Uploader::uploadPending(const String &dirPath, uint32_t nowEpoch, b
 	while (entry) {
 		String name = String(entry.name());
 		bool isCsv = name.endsWith(".csv");
+		size_t size = entry.size();
 		entry.close();
 
-		if (isCsv) {
+		if (isCsv && size <= HEADER_ONLY_MAX_BYTES) {
+			// Header only - a run that was cut off by a power loss before its
+			// first row (a clean stop deletes these itself). Nothing to send.
+			String fullPath = dirPath + "/" + name;
+			if (!alreadyUploaded(fullPath)) markUploaded(fullPath, nowEpoch);
+		} else if (isCsv) {
 			String fullPath = dirPath + "/" + name;
 			if (!alreadyUploaded(fullPath)) {
 				if (!anyAttempted) {
@@ -215,10 +254,8 @@ UploadResult Uploader::uploadPending(const String &dirPath, uint32_t nowEpoch, b
 				anyAttempted = true;
 
 				if (onProgress) onProgress("uploading", name.c_str());
-				String body, boundary;
-				bool built = buildMultipartBody(fullPath, "file", body, boundary);
-				bool wdgOk = built && uploadToWdgwars(httpWdg, body, boundary);
-				bool wigleOk = built && uploadToWigle(httpWigle, body, boundary);
+				bool wdgOk = uploadToWdgwars(httpWdg, fullPath);
+				bool wigleOk = uploadToWigle(httpWigle, fullPath);
 				// wdgwars.pl is the required destination; WiGLE is optional
 				// best-effort (see config.cfg.example). Requiring wigleOk
 				// too meant one WiGLE-side failure - a bad request format,
@@ -252,6 +289,28 @@ UploadResult Uploader::uploadPending(const String &dirPath, uint32_t nowEpoch, b
 		return UploadResult::UploadFailed;
 	}
 	return UploadResult::Skipped;
+}
+
+bool Uploader::autoUploadDue(uint32_t nowEpoch) {
+	if (nowEpoch == 0) return false; // no reliable clock yet
+	uint32_t last = lastUploadEpoch();
+	return !(last != 0 && nowEpoch > last && (nowEpoch - last) < _cfg.minUploadIntervalSec);
+}
+
+bool Uploader::hasPending(const String &dirPath) {
+	File dir = SD.open(dirPath);
+	if (!dir) return false;
+	bool found = false;
+	File entry = dir.openNextFile();
+	while (entry && !found) {
+		String name = String(entry.name());
+		size_t size = entry.size();
+		entry.close();
+		if (name.endsWith(".csv") && size > HEADER_ONLY_MAX_BYTES && !alreadyUploaded(dirPath + "/" + name)) found = true;
+		else entry = dir.openNextFile();
+	}
+	dir.close();
+	return found;
 }
 
 void Uploader::cleanupOldFiles(const String &dirPath, uint32_t nowEpoch) {

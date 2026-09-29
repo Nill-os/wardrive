@@ -9,11 +9,9 @@
 
 namespace CydBleLink {
 
-// Arbitrary private 128-bit UUIDs (not registered anywhere - fine for two
-// boards that only ever talk to each other). RX = central writes into it
-// (wifi_node -> cyd_node), TX = peripheral notifies on it (cyd_node ->
-// wifi_node) - named from the peripheral's point of view, same convention
-// Nordic's own UART service uses.
+// Arbitrary private 128-bit UUIDs (not registered anywhere). RX = the phone
+// writes into it, TX = cyd_node notifies on it - named from the peripheral's
+// point of view, same convention Nordic's own UART service uses.
 static const char *SERVICE_UUID = "5b60de00-0000-4a6c-9b1a-6364796477b1";
 static const char *RX_CHAR_UUID = "5b60de00-0001-4a6c-9b1a-6364796477b1";
 static const char *TX_CHAR_UUID = "5b60de00-0002-4a6c-9b1a-6364796477b1";
@@ -56,11 +54,8 @@ String readLine() {
 // Reassembles complete lines out of however many BLE packets they actually
 // arrived in, which may not align with line boundaries at all.
 //
-// Server role only: cyd_node only ever expects a single central connection
-// (wifi_node - see CydBleLink.h), but keys the assembly by BLE connection
-// handle anyway so a stray/leftover connection can't corrupt the real one's
-// buffer. The client role only ever has one connection (to cyd_node), so it
-// just uses slot 0 unconditionally.
+// Keyed by BLE connection handle so a stray/leftover connection can't corrupt
+// the real one's buffer.
 struct RxAssembly {
 	uint16_t connHandle = 0xFFFF; // 0xFFFF = unused slot
 	String buf;
@@ -136,24 +131,21 @@ static NimBLECharacteristic *pRxChar = nullptr;
 // phone app's MESH indicator stayed DOWN the whole time (2026-09-28). An
 // explicit bool updated directly from the connect/disconnect events isn't
 // vulnerable to whatever internal NimBLE bookkeeping produced that mismatch.
-static volatile bool serverConnected = false;
+//
+// A count rather than a bool: with a bool, a second central connecting and
+// leaving would mark the link down while the phone was still connected.
+// Advertising stops while a phone is connected (NimBLE's default), so a
+// second central can only slip in during the moment of a reconnect.
+static volatile int serverConnections = 0;
 
 class LinkServerCallbacks : public NimBLEServerCallbacks {
 	void onConnect(NimBLEServer *server, ble_gap_conn_desc *desc) override {
-		serverConnected = true;
-		// Keep advertising after a connect (NimBLE stops it by default once
-		// a central connects) - harmless if wifi_node is already the one
-		// connected, and lets it reconnect promptly if this onConnect is
-		// actually a stray/unexpected second central.
-		NimBLEDevice::startAdvertising();
+		serverConnections++;
 	}
 	void onDisconnect(NimBLEServer *server, ble_gap_conn_desc *desc) override {
-		// cyd_node only ever expects one real central (wifi_node) - no need to
-		// re-query for other survivors, same simple model the client role's
-		// clientConnected already uses.
-		serverConnected = false;
+		if (serverConnections > 0) serverConnections--;
 		clearAssembly(desc->conn_handle);
-		NimBLEDevice::startAdvertising(); // this board is meant to always be connectable/discoverable while idle
+		NimBLEDevice::startAdvertising(); // connectable again straight away, so the phone can come back
 	}
 };
 
@@ -215,9 +207,9 @@ void beginServer(const char *advertisedName) {
 // (see its own call site), so the BLE link isn't servicing anything during
 // that window regardless of whether the radio itself stays up - tearing it
 // down here costs nothing functionally and hands that RAM to the TLS
-// handshake instead. wifi_node's client task notices the disconnect and
-// reconnects on its own once resumeServer() re-advertises, the same
-// self-healing reconnect a real out-of-range gap already causes.
+// handshake instead. The phone app notices the disconnect and reconnects on
+// its own once resumeServer() re-advertises, the same self-healing reconnect
+// a real out-of-range gap already causes.
 void suspendServer() {
 	if (!pServer) return; // not running as a server, or already suspended
 	// Pointers nulled *before* deinit() (not after) - send() snapshots them
@@ -228,7 +220,7 @@ void suspendServer() {
 	pServer = nullptr;
 	pTxChar = nullptr;
 	pRxChar = nullptr;
-	serverConnected = false;
+	serverConnections = 0;
 	for (auto &a : rxAssemblies) {
 		a.connHandle = 0xFFFF;
 		a.buf = "";
@@ -241,153 +233,15 @@ void resumeServer() {
 	startServerStack();
 }
 
-// ---- Client / central role (wifi_node) ----
-
-static NimBLEClient *pClient = nullptr;
-static NimBLERemoteCharacteristic *pRemoteRxChar = nullptr; // write into cyd_node
-static NimBLERemoteCharacteristic *pRemoteTxChar = nullptr; // subscribe - cyd_node notifies us
-static volatile bool clientConnected = false;
-static String clientTargetName;
-static TaskHandle_t clientTaskHandle = nullptr;
-
-// The client role only ever has one connection (to cyd_node), so it always
-// uses assembly slot/handle 0 regardless of the real BLE connection handle
-// NimBLE assigns - there's no risk of cross-talk to guard against here
-// since there's only ever one peer.
-static const uint16_t CLIENT_ASSEMBLY_HANDLE = 0;
-
-class LinkClientCallbacks : public NimBLEClientCallbacks {
-	void onDisconnect(NimBLEClient *client) override {
-		Serial.println("[cydlink] client disconnected");
-		clientConnected = false;
-		pRemoteRxChar = nullptr;
-		pRemoteTxChar = nullptr;
-		clearAssembly(CLIENT_ASSEMBLY_HANDLE);
-	}
-};
-
-static void onRemoteNotify(NimBLERemoteCharacteristic *, uint8_t *data, size_t length, bool) {
-	feedIncomingBytes(CLIENT_ASSEMBLY_HANDLE, data, length);
-}
-
-// Scanning is owned by the CALLER (wifi_node), not by this module - lets
-// wifi_node reuse the same NimBLEScan handle for anything else it might
-// ever need a scan for, without this module fighting it over ownership of
-// NimBLE's single scan configuration.
-static volatile bool foundTargetPending = false;
-static NimBLEAddress foundTargetAddress;
-
-void feedScanResult(NimBLEAdvertisedDevice *device) {
-	if (clientConnected || foundTargetPending) return;
-	if (!device->haveName() || device->getName() != clientTargetName.c_str()) return;
-	foundTargetAddress = device->getAddress();
-	foundTargetPending = true; // clientTaskFn() below picks this up
-	Serial.printf("[cydlink] found target %s\n", foundTargetAddress.toString().c_str());
-}
-
-// Only the actual connect/discover/subscribe sequence happens here now
-// (scanning itself is the caller's job, fed in via feedScanResult() above) -
-// still deliberately isolated on its own task, since NimBLE's connect()
-// call can block for a couple of seconds, and a board with time-sensitive
-// work in its own main loop (wifi_node's WiFi channel-hop timing) can't
-// afford to stall on that.
-static void clientTaskFn(void *) {
-	for (;;) {
-		if (!clientConnected && foundTargetPending) {
-			foundTargetPending = false;
-			NimBLEAddress address = foundTargetAddress;
-
-			// A NimBLEClient object left over from a previous connection
-			// (whether it ended in a real disconnect or a failed subscribe
-			// below) reliably failed to connect() a second time in testing -
-			// NimBLE-Arduino 1.4.3's client-side GATT state doesn't fully
-			// reset on disconnect, so reusing the same object silently made
-			// every reconnect attempt after the very first one fail forever
-			// (connect() returning false with nothing left to retry, since
-			// the next scan match just tried the same broken object again).
-			// A fresh client per attempt is the reliable fix.
-			if (pClient) {
-				NimBLEDevice::deleteClient(pClient);
-				pClient = nullptr;
-			}
-			pRemoteRxChar = nullptr;
-			pRemoteTxChar = nullptr;
-			pClient = NimBLEDevice::createClient();
-			pClient->setClientCallbacks(new LinkClientCallbacks(), false);
-
-			// NimBLE-Arduino's connection defaults (~7.5-30ms interval, ~few-
-			// hundred-ms supervision timeout) assume a radio with nothing else
-			// to do. wifi_node's radio is also busy hopping WiFi channel every
-			// ~150ms in a tight promiscuous-capture loop the whole time it's
-			// scanning (the "WiFi/BT radio-coexistence tax" this file's header
-			// already calls out) - under that load, a short supervision
-			// timeout can trip on a single missed connection event that's just
-			// a WiFi channel-hop stealing the radio for a few ms, not an
-			// actual out-of-range drop, forcing a full reconnect+rescan+
-			// resubscribe cycle that loses every W,/B, line in the gap. A
-			// longer interval (needs the radio less often) and latency (lets
-			// several intervals pass with nothing to send before it's even
-			// due) plus a generous supervision timeout give normal
-			// coexistence hiccups room to resolve on their own within the
-			// same connection instead of tearing it down - unverified against
-			// a real drive yet, since this needs field testing to confirm,
-			// but directly targets the exact mechanism (coexistence-induced
-			// drops => lost mesh data => stalled aps/bles counts on cyd_node's
-			// own screen) reported from one.
-			pClient->setConnectionParams(24, 40, 4, 600);
-
-			bool connected = pClient->connect(address);
-			Serial.printf("[cydlink] connect(%s) -> %d\n", address.toString().c_str(), connected);
-			if (connected) {
-				NimBLERemoteService *service = pClient->getService(SERVICE_UUID);
-				if (service) {
-					pRemoteRxChar = service->getCharacteristic(RX_CHAR_UUID);
-					pRemoteTxChar = service->getCharacteristic(TX_CHAR_UUID);
-				}
-				bool subscribed = pRemoteRxChar && pRemoteTxChar && pRemoteTxChar->canNotify() &&
-								  pRemoteTxChar->subscribe(true, onRemoteNotify);
-				if (subscribed) {
-					clientConnected = true;
-				} else {
-					Serial.printf("[cydlink] service=%d rx=%d tx=%d subscribed=0 - disconnecting to retry\n",
-								  service != nullptr, pRemoteRxChar != nullptr, pRemoteTxChar != nullptr);
-					pClient->disconnect();
-				}
-			}
-		}
-
-		vTaskDelay(pdMS_TO_TICKS(clientConnected ? 1000 : 200));
-	}
-}
-
-// The caller must already have called NimBLEDevice::init() and set up its
-// own NimBLEScan (via NimBLEDevice::getScan()) before this - and must
-// forward every scan result to feedScanResult() above from its own
-// NimBLEAdvertisedDeviceCallbacks::onResult(). This module only handles the
-// connect-once-found part.
-void beginClient(const char *targetName) {
-	lineMutex = xSemaphoreCreateMutex();
-	clientTargetName = targetName;
-	xTaskCreatePinnedToCore(clientTaskFn, "cydBleLink", 8192, nullptr, 1, &clientTaskHandle, 1);
-}
-
 // ---- Shared entry points ----
 
 void poll() {
-	// Both roles do their real work elsewhere (BLE callbacks for the
-	// server, the dedicated task for the client) - nothing to do here for
-	// either role today. Kept as a real call (not a no-op macro) so future
-	// housekeeping has an obvious, already-wired-in place to live.
+	// The real work happens in BLE callbacks - nothing to do here today. Kept
+	// as a real call so future housekeeping has an obvious place to live.
 }
 
 bool isConnected() {
-	// Server role: pServer itself is read into a local first since
-	// suspendServer() (a different task, see its own comment) can null it
-	// out concurrently. serverConnected (not a live getConnectedCount()
-	// query) is the source of truth - see its own comment for why.
-	NimBLEServer *server = pServer;
-	if (server) return serverConnected;
-	return clientConnected;
+	return pServer != nullptr && serverConnections > 0;
 }
 
 void send(const String &line) {
@@ -399,9 +253,8 @@ void send(const String &line) {
 	// makes each send() call internally consistent instead.
 	NimBLECharacteristic *txChar = pTxChar;
 	NimBLEServer *server = pServer;
-	NimBLERemoteCharacteristic *rxChar = pRemoteRxChar;
-	if (txChar) { // server role - notify() reaches the connected central (the phone)
-		if (!server || !serverConnected) return;
+	if (txChar) { // notify() reaches the connected central (the phone)
+		if (!server || serverConnections <= 0) return;
 		// Chunk to whatever MTU the central actually negotiated (a phone
 		// typically asks for ~247) instead of always the 23-byte floor - a
 		// ~130-byte WD:AP line is one notification instead of eight. Still
@@ -416,11 +269,6 @@ void send(const String &line) {
 			txChar->setValue(data, n);
 			txChar->notify();
 		}, line, chunk);
-	} else if (rxChar) { // client role
-		if (!clientConnected) return;
-		sendChunked([rxChar](const uint8_t *data, size_t n) {
-			rxChar->writeValue(data, n, false);
-		}, line);
 	}
 }
 

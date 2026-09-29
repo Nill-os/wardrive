@@ -22,20 +22,19 @@ A status bar across the top is always visible:
 | `RIG:UP` / `RIG:WAIT` / `RIG:DOWN` | The wired link to wifi_node (and ble_node behind it). UP means wifi_node's broadcasts are arriving. WAIT shows briefly after RE-LINK ALL. DOWN means nothing has arrived for 6 s. |
 | `PHONE:BLE` / `PHONE:USB` / `PHONE:DOWN` | Whether a phone app is connected, and how |
 
-There are five tabs, which you tap along the bottom:
+There are four tabs, which you tap along the bottom:
 
 | Tab | What's on it | Buttons |
 |---|---|---|
 | **1.MAIN** | WiFi and BLE counts for this run, SD and config health, the last upload result, and the latest device seen | **START/STOP**, **UPLOAD**, **RE-LINK ALL** |
 | **2.TGTS** | The last 8 WiFi networks heard while scanning, with signal and security. Without a GPS fix they still show, dimmed and marked `no fix - not logged`. | **CLEAR** (clears the screen list only, not the logs) |
-| **3.LINKS** | Details for the rig link and the phone link | **RE-LINK ALL** |
-| **4.LOGS** | A live event terminal: every logged sighting, plus system events (scan start/stop, GPS fix gained/lost, rig and phone links, uploads, SD status) | **PAUSE/RESUME LOG**, **FLUSH TO SD** |
-| **5.CFG** | SD usage, GPS satellites, firmware info | **WIPE LOGS**, **REBOOT** |
+| **3.LOGS** | A live event terminal: every logged sighting, plus system events (scan start/stop, GPS fix gained/lost, rig and phone links, uploads, SD status) | **PAUSE/RESUME LOG**, **FLUSH TO SD** |
+| **4.CFG** | SD usage, GPS satellites, firmware info | **WIPE LOGS**, **REBOOT** |
 
 What the buttons do:
 
 - **START/STOP** starts or stops scanning and logging on all three boards. The rig remembers this through power cuts (see below).
-- **UPLOAD** uploads every session file that hasn't been uploaded yet, straight away. The phone's BLE link drops during the upload to free memory, and reconnects by itself afterwards.
+- **UPLOAD** uploads every session file that hasn't been uploaded yet, straight away. The phone's BLE link drops during the upload to free memory, and reconnects by itself afterwards. If there's nothing new, it says so and flashes green.
 - **RE-LINK ALL** re-sends the rig state to wifi_node, restarts the CYD's Bluetooth so the phone reconnects fresh, and re-announces itself to the phone. Try this first whenever a link looks stuck.
 - **WIPE LOGS** ⚠ deletes **every** session file on the card, including ones not yet uploaded. There is no confirmation. It only works while scanning is stopped.
 
@@ -63,7 +62,7 @@ Constant flicker in a busy area is normal.
 ## Car power and power loss
 
 - The rig **remembers whether it was scanning**. Cut the power mid-drive and, when power returns, it resumes scanning by itself. Only the CYD stores this; the other two boards pick it up from the CYD within about 2 seconds of booting.
-- Files are flushed to the card as sightings are written, so a power cut loses at most the last sighting or two.
+- The log files are flushed to the card every 5 seconds while scanning, so a power cut loses at most the last few seconds.
 - A file is marked as uploaded only after the server accepts it. A power cut mid-upload just means the file is retried next time.
 
 ### Idle auto-stop

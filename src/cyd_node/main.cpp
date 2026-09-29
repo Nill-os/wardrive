@@ -3,46 +3,22 @@
 // display driver - NOT the ILI9341 the classic single-USB CYD uses).
 // Owns the only microSD card and config.cfg, runs the WigleWifi CSV writer
 // and the wdgwars.pl/WiGLE uploader, and shows live rig status on its
-// screen. Has no GPS of its own - wifi_node streams its own (already
-// GPS-tagged) WiFi observations, plus every BLE observation ble_node
-// relays through it, over a wireless BLE link (see CydBleLink.h - this
-// board advertises, wifi_node connects to it; no wire needed between the
-// two), along with periodic GPS position/epoch/scan-state broadcasts since
-// this board has no GPS to derive those from itself.
+// screen. Has no GPS of its own - wifi_node sends its own (already
+// GPS-tagged) WiFi observations, plus every BLE observation ble_node relays
+// through it, over a wired UART on the CN1 header (see "Links" below), along
+// with GPS position/time/channel broadcasts.
 //
-// This board ALSO runs its own independent promiscuous WiFi sniffer now
-// (added 2026-09-27, at the user's request for extra coverage alongside
-// wifi_node's own) - a second antenna/vantage point sniffing the same
-// spectrum, contributing its own catches into the SAME WigleWifi CSV
-// wifi_node's relayed "W," lines already write to. Geotagged with the
-// SAME cached GPS state (lastKnownLat/lastKnownLon/gpsFixKnown) the old
-// dock-mode/home-geofence logic already relies on - this board still has
-// no GPS of its own, so its own sniffs are only as fresh as wifi_node's
-// last relayed fix, same staleness tradeoff GPSPOS broadcasts already
-// accepted. Also means this board's own BLE server (to wifi_node) now
-// shares its radio with its own WiFi sniffing, the same WiFi/BT
-// coexistence tax wifi_node's own README section already documents and
-// accepts - see startScanning()/stopScanning() below.
+// This board also runs its own promiscuous WiFi sniffer on channels 6-11
+// (wifi_node covers 1-6), geotagged with wifi_node's last relayed position
+// and written into the same WigleWifi CSV.
 //
-// This board's touchscreen is now the ONLY start/stop/upload control
-// surface for the whole rig - the shared physical button was removed
-// entirely (it used to be wired in parallel across all three boards).
-// cyd_node is therefore the authoritative source of scanning state:
-// touching START/STOP here broadcasts SCANSTATE over the BLE link, which
-// wifi_node adopts and relays onward to ble_node over its own wired link -
-// see CydBleLink.h and wifi_node/main.cpp's own header for the other side
-// of this.
+// The touchscreen is the rig's only control surface, and this board owns
+// the scan state: it persists it across power loss and broadcasts it to
+// wifi_node every 2s, which relays it on to ble_node.
 //
-// This board is also the one the phone plugs into over USB - it's a plain
-// ESP32 with a real USB-UART bridge chip, unlike wifi_node's/ble_node's
-// ESP32-S3 native USB peripheral, a better fit for a phone-side serial app
-// to talk to (see the "wdstream" section below). A phone running WardriveGo
-// can remotely start/stop scanning via "scan start"/"scan stop" over that
-// same USB port - that path was never touch-button-dependent either way.
-//
-// START/STOP button : toggle scanning + logging on/off (all three boards)
-// UPLOAD button      : immediately upload all not-yet-uploaded session
-//                      files to wdgwars.pl + WiGLE
+// The phone app connects over BLE (CydBleLink, primary) or this board's USB
+// port (fallback) and speaks the "wdstream" line protocol - see that section
+// below.
 //
 // Touch (XPT2046) is bit-banged in software rather than given its own
 // hardware SPI peripheral - this board wires touch to GPIO25/32/39/33/36,
@@ -96,19 +72,10 @@ static constexpr bool WARDRIVE_DEBUG = true;
 static const uint32_t HEARTBEAT_MS = 2000;
 
 // ---- Pin assignments (ESP32-2432S028 Dual USB / "CYD2USB" pinout) ----
-// TFT (ST7789) and touch (XPT2046) each have their own dedicated pins wired
-// on the board itself (see platformio.ini's [env:cyd_node] build_flags for
-// the display config, and the touch section further down for touch) - only
-// the pins this file touches directly are listed below. Only GPIO22,
-// GPIO27, and GPIO35 are actually free for our own use on this board;
-// everything else is already claimed by the display, touch controller, SD
-// slot, RGB LED, audio amp, or light sensor - see the wiring section of
-// ../../README.md for the full occupied-pin list this was checked against.
-//
-// GPIO22, GPIO27, and GPIO35 are all free and unused now - the wifi_node
-// link moved to BLE (CydBleLink.h) and the physical button (which used
-// GPIO35) was removed rig-wide; the touchscreen is the only control surface
-// now.
+// TFT (ST7789) and touch (XPT2046) are wired on the board itself (see
+// platformio.ini's [env:cyd_node] build_flags for the display, and the touch
+// section below). The only pins free for our own use are GPIO22 and GPIO27
+// (both on the CN1 header, used for the wifi_node link) and GPIO35.
 
 // microSD uses its own SPI bus (separate SPIClass instance below), distinct
 // from TFT_eSPI's internal SPI, to avoid the two contending over the bus.
@@ -134,6 +101,13 @@ static const uint8_t PIN_LED_G = 16;
 static const uint8_t PIN_LED_B = 17;
 
 static const char *SESSION_DIR = "/wardrive";
+// USB-only test mode (see the "test:" commands in handleWdstreamCommand()):
+// a fake GPS position so logging can be exercised indoors. Everything it logs
+// goes to a separate folder that normal uploads never look at, so fake
+// positions can't reach WiGLE or wdgwars.
+static const char *TEST_SESSION_DIR = "/wardrive_test";
+bool testFakeGps = false;
+static const char *sessionDir() { return testFakeGps ? TEST_SESSION_DIR : SESSION_DIR; }
 static const uint32_t DOCK_CHECK_MS = 60000;
 
 SPIClass sdSPI(VSPI);
@@ -149,6 +123,7 @@ volatile bool uploadRequested = false;
 bool wasScanning = false;
 bool sdOk = false;
 bool configOk = false;
+uint64_t sdUsedBytesCached = 0, sdTotalBytesCached = 0; // refreshed by checkStorage()
 
 uint32_t wifiCountThisRun = 0;
 uint32_t bleCountThisRun = 0;
@@ -250,9 +225,14 @@ static void serviceErrorBlink() {
 static const uint32_t UPLOAD_BLINK_MS = 200;
 TaskHandle_t uploadBlinkTaskHandle = nullptr;
 
+// Stopped by clearing this flag, never by vTaskDelete() from outside - a
+// task killed in the middle of wifiLinkSend() would die holding the UART's
+// lock, and the next write to the wifi_node link would hang forever.
+volatile bool uploadBlinkRunning = false;
+
 static void uploadBlinkTaskFn(void *) {
 	bool cyanPhase = true;
-	for (;;) {
+	while (uploadBlinkRunning) {
 		if (cyanPhase) {
 			setLed(false, true, true);
 			wifiLinkSend("BLINKPHASE:0");
@@ -263,18 +243,19 @@ static void uploadBlinkTaskFn(void *) {
 		cyanPhase = !cyanPhase;
 		vTaskDelay(pdMS_TO_TICKS(UPLOAD_BLINK_MS));
 	}
+	uploadBlinkTaskHandle = nullptr;
+	vTaskDelete(nullptr);
 }
 
 static void startUploadBlink() {
 	ledPriority = true;
+	uploadBlinkRunning = true;
 	xTaskCreate(uploadBlinkTaskFn, "uploadBlink", 2048, nullptr, 1, &uploadBlinkTaskHandle);
 }
 
 static void stopUploadBlink() {
-	if (uploadBlinkTaskHandle) {
-		vTaskDelete(uploadBlinkTaskHandle);
-		uploadBlinkTaskHandle = nullptr;
-	}
+	uploadBlinkRunning = false;
+	while (uploadBlinkTaskHandle) vTaskDelay(pdMS_TO_TICKS(10)); // at most one blink step
 }
 
 // ---- Touch (XPT2046, bit-banged) ----
@@ -417,18 +398,17 @@ static bool inRect(const TouchButton &r, int16_t x, int16_t y) {
 	return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
 
-// ---- Tabs (5-screen "Nill DECK" layout) ----
+// ---- Tabs (4-screen "Nill DECK" layout) ----
 // Only MAIN's controls map 1:1 onto real rig actions (this board only ever
 // had START/STOP/UPLOAD/RE-LINK, see onSingleClickHandler() etc below).
-// TARGETS/MESH/LOGS/CFG are new views onto data this board already has
-// (or can derive) but never displayed before - see each tab's own render
-// function for what's real vs. adapted from the original 3-rig-mesh design
-// brief (this rig only ever has ONE wifi_node and ONE ble_node, not a
-// cluster of independent RIG-01/02/03 peers).
-enum class Tab : uint8_t { Main, Targets, Links, Logs, Cfg };
+// TARGETS/LOGS/CFG are views onto data this board already has. There's no
+// separate links tab - the header's RIG/PHONE indicators and MAIN's
+// RE-LINK ALL already cover it.
+enum class Tab : uint8_t { Main, Targets, Logs, Cfg };
+static const uint8_t TAB_COUNT = 4;
 static Tab currentTab = Tab::Main;
-static const char *TAB_LABELS[5] = {"1.MAIN", "2.TGTS", "3.LINKS", "4.LOGS", "5.CFG"};
-TouchButton tabRects[5];
+static const char *TAB_LABELS[TAB_COUNT] = {"1.MAIN", "2.TGTS", "3.LOGS", "4.CFG"};
+TouchButton tabRects[TAB_COUNT];
 // Reused per-tab (only one tab's buttons are ever visible/tappable at
 // once) rather than named per-tab - up to 3 action buttons per tab.
 TouchButton actionRects[3];
@@ -441,7 +421,7 @@ void onWipeLogsHandler();
 void onRebootHandler();
 void onClearTargetsHandler();
 void onPauseLogHandler();
-static void handleWdstreamCommand(String line); // used by onReconnectHandler(), defined in the wdstream section further down
+static void handleWdstreamCommand(String line, bool fromUsb = false); // used by onReconnectHandler(), defined in the wdstream section further down
 void onFlushSdHandler();
 
 // ---- TARGETS tab: bounded ring buffer of recently-seen APs ----
@@ -540,25 +520,6 @@ static void drawUploadingOverlay(const char *stage, const char *detail) {
 	const int16_t w = tft.width();
 	const int16_t h = tft.height();
 	tft.fillScreen(COLOR_BG);
-
-	// Little octopus "swimming" across the top of the overlay - upload-
-	// screen-only, per user request (the same art used to also sit on the
-	// MAIN dashboard next to SYSTEMS, but was mistaken for a rendering
-	// artifact there and removed, 2026-09-27). Can't be a smooth animation
-	// since each call here happens once per progress callback (connect,
-	// then once per file, then once per reconnect-wait tick) and everything
-	// in between is a blocking call with no chance to redraw, but its x
-	// position is derived from millis() so it visibly drifts to a new spot
-	// (a triangle-wave bounce) on every call instead of sitting frozen.
-	const char *octo[] = {"  .--.", " /o  o\\", "( '--' )", " \\/\\/\\/"};
-	const int16_t octoW = 56;
-	uint32_t t = millis() % 6000;
-	int16_t range = w - octoW - 20;
-	int16_t octoX = 10 + (int16_t)(t < 3000 ? (t * range / 3000) : ((6000 - t) * range / 3000));
-	tft.setTextDatum(TL_DATUM);
-	tft.setTextSize(1);
-	tft.setTextColor(COLOR_CYAN, COLOR_BG);
-	for (uint8_t i = 0; i < 4; i++) tft.drawString(octo[i], octoX, 8 + i * 9);
 
 	tft.setTextDatum(MC_DATUM);
 	tft.setTextColor(COLOR_PURPLE, COLOR_BG);
@@ -744,8 +705,8 @@ static void drawHeader(bool firstDraw) {
 	// purple, matching the spec's active/inactive scheme.
 	if (firstDraw || currentTab != lastDrawnTab) {
 		tft.fillRect(0, TABBAR_Y, w, TABBAR_H, COLOR_BG);
-		int16_t tabW = w / 5;
-		for (uint8_t i = 0; i < 5; i++) {
+		int16_t tabW = w / TAB_COUNT;
+		for (uint8_t i = 0; i < TAB_COUNT; i++) {
 			tabRects[i] = {(int16_t)(i * tabW), TABBAR_Y, tabW, TABBAR_H};
 			bool active = (uint8_t)currentTab == i;
 			if (active) {
@@ -800,9 +761,7 @@ static void drawTabMain(bool redrawAll) {
 	if (redrawAll) {
 		drawPanelTitle(sysX, sysY, sysW, "SYSTEMS", COLOR_CYAN);
 
-		// Branding, right of the SYSTEMS panel - the ASCII-art octopus that
-		// used to sit above this was mistaken for a rendering artifact
-		// (user report, 2026-09-27) and was removed.
+		// Branding, right of the SYSTEMS panel.
 		const int16_t artX = sysX + sysW + 6;
 		tft.setTextSize(1);
 		tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
@@ -981,42 +940,7 @@ static void drawTabTargets(bool redrawAll) {
 	if (redrawAll) drawButton(actionRects[0], "> CLEAR", COLOR_PURPLE);
 }
 
-// ---- TAB 3: MESH - this rig only ever has ONE wifi_node and ONE
-// ble_node, not a cluster of independent RIG-01/02/03 peers (ble_node
-// relays through wifi_node's own wired UART link, it has no BLE
-// connection of its own to this board - see ble_node/main.cpp's header).
-// Shown honestly as what's really there: wifi_node's own BLE link state,
-// and ble_node's data flow (via wifi_node) as a second logical row.
-static void drawTabLinks(bool redrawAll) {
-	const int16_t w = tft.width();
-	if (redrawAll) {
-		clearContentArea();
-		drawPanelTitle(HDR_GAP, CONTENT_Y, w - HDR_GAP * 2, "LINKS", COLOR_PURPLE);
-	}
-	LinkState linkState = currentLinkState();
-	const int16_t rowY = CONTENT_Y + 24;
-	tft.fillRect(0, rowY, w, 76, COLOR_BG);
-	tft.setTextSize(1);
-
-	tft.setTextColor(COLOR_TEXT, COLOR_BG);
-	tft.drawString("RIG  (wired: wifi_node + ble_node)", HDR_GAP, rowY);
-	tft.setTextColor(linkState == LinkState::Connected ? COLOR_GREEN : linkState == LinkState::Connecting ? COLOR_ORANGE : COLOR_RED, COLOR_BG);
-	tft.drawString(linkState == LinkState::Connected ? "UP" : linkState == LinkState::Connecting ? "WAITING" : "DOWN", HDR_GAP, rowY + 10);
-	tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
-	tft.drawString(String("wifi: ") + wifiCountThisRun + "   ble: " + bleCountThisRun, HDR_GAP, rowY + 20);
-
-	tft.setTextColor(COLOR_TEXT, COLOR_BG);
-	tft.drawString("PHONE  (BLE, USB fallback)", HDR_GAP, rowY + 38);
-	tft.setTextColor(phoneLinkUp ? COLOR_GREEN : COLOR_RED, COLOR_BG);
-	tft.drawString(phoneLinkUp ? (CydBleLink::isConnected() ? "BLE" : "USB") : "DOWN", HDR_GAP, rowY + 48);
-
-	const int16_t btnY = CONTENT_BOTTOM - 26;
-	setActionButton(0, HDR_GAP, btnY, w - HDR_GAP * 2, 22);
-	actionRectCount = 1;
-	if (redrawAll) drawButton(actionRects[0], "> RE-LINK ALL", COLOR_CYAN);
-}
-
-// ---- TAB 4: LOGS - scrolling terminal of the same events MAIN's ticker
+// ---- TAB 3: LOGS - scrolling terminal of the same events MAIN's ticker
 // shows, kept as history (see LogLine ring buffer above).
 static void drawTabLogs(bool redrawAll) {
 	const int16_t w = tft.width();
@@ -1059,7 +983,7 @@ static void drawTabLogs(bool redrawAll) {
 	if (redrawAll) drawButton(actionRects[1], "> FLUSH TO SD", COLOR_PURPLE, 1);
 }
 
-// ---- TAB 5: CFG - storage/GPS/power/operator info. FORMAT SD is
+// ---- TAB 4: CFG - storage/GPS/power/operator info. FORMAT SD is
 // implemented as "wipe logged session files" (the closest safe
 // equivalent this SD library actually exposes - a real low-level format
 // isn't available through Arduino's SD.h); GPS toggle is omitted - GPS
@@ -1071,14 +995,24 @@ static void drawTabCfg(bool redrawAll) {
 		clearContentArea();
 		drawPanelTitle(HDR_GAP, CONTENT_Y, w - HDR_GAP * 2, "SYSTEM CONFIG & STORAGE", COLOR_PURPLE);
 	}
+	// Only repaint when something shown here changed - repainting every
+	// refresh made the text flicker.
+	static uint64_t lastUsed = UINT64_MAX;
+	static int16_t lastSats = -2;
+	static bool lastSdOkDrawn = false;
+	if (!redrawAll && lastUsed == sdUsedBytesCached && lastSats == lastKnownSatCount && lastSdOkDrawn == sdOk) return;
+	lastUsed = sdUsedBytesCached;
+	lastSats = lastKnownSatCount;
+	lastSdOkDrawn = sdOk;
+
 	const int16_t rowY = CONTENT_Y + 20;
 	tft.fillRect(0, rowY, w, 104, COLOR_BG);
 	tft.setTextSize(1);
 	tft.setTextColor(COLOR_TEXT, COLOR_BG);
 	tft.setCursor(HDR_GAP, rowY);
 	if (sdOk) {
-		double usedGB = SD.usedBytes() / 1073741824.0;
-		double totalGB = SD.totalBytes() / 1073741824.0;
+		double usedGB = sdUsedBytesCached / 1073741824.0;
+		double totalGB = sdTotalBytesCached / 1073741824.0;
 		tft.printf("SD: %.1f / %.1f GB used", usedGB, totalGB);
 	} else {
 		tft.print("SD: not mounted");
@@ -1099,15 +1033,17 @@ static void drawTabCfg(bool redrawAll) {
 	setActionButton(0, HDR_GAP, btnY, btnW, 22);
 	setActionButton(1, HDR_GAP * 2 + btnW, btnY, btnW, 22);
 	actionRectCount = 2;
-	if (redrawAll) {
-		drawButton(actionRects[0], "> WIPE LOGS", COLOR_ORANGE, 1);
-		drawButton(actionRects[1], "> REBOOT", COLOR_RED);
-	}
+	drawButton(actionRects[0], "> WIPE LOGS", COLOR_ORANGE, 1);
+	drawButton(actionRects[1], "> REBOOT", COLOR_RED);
 }
 
 static void drawStatus() {
 	static bool firstDraw = true;
 	if (forceFullRedraw) {
+		// Something outside the dashboard's own dirty-tracking (the upload
+		// overlay) painted over the screen - wipe it all, since each section
+		// only clears its own area and anything drawn elsewhere would stick.
+		tft.fillScreen(COLOR_BG);
 		firstDraw = true;
 		forceFullRedraw = false;
 	}
@@ -1121,7 +1057,6 @@ static void drawStatus() {
 	switch (currentTab) {
 		case Tab::Main: drawTabMain(redrawAll); break;
 		case Tab::Targets: drawTabTargets(redrawAll); break;
-		case Tab::Links: drawTabLinks(redrawAll); break;
 		case Tab::Logs: drawTabLogs(redrawAll); break;
 		case Tab::Cfg: drawTabCfg(redrawAll); break;
 	}
@@ -1141,7 +1076,11 @@ static const char *uploadResultStr(UploadResult r) {
 
 static void checkStorage() {
 	if (!sdOk) return;
-	uint64_t freeBytes = SD.totalBytes() - SD.usedBytes();
+	// Cached for the CFG tab - usedBytes() can mean a slow walk of the FAT on
+	// a big card, too slow to call on every screen refresh.
+	sdTotalBytesCached = SD.totalBytes();
+	sdUsedBytesCached = SD.usedBytes();
+	uint64_t freeBytes = sdTotalBytesCached - sdUsedBytesCached;
 	static const uint64_t LOW_STORAGE_THRESHOLD_BYTES = 100UL * 1024 * 1024; // 100MB
 	if (freeBytes < LOW_STORAGE_THRESHOLD_BYTES) {
 		flashLed(true, true, true, LED_FLICKER_MS, true);
@@ -1428,13 +1367,36 @@ static uint64_t cydMacKeyFromString(const String &mac) {
 	return key;
 }
 
+// Distance in metres - a flat-earth approximation, plenty for the tens-to-
+// hundreds of metres this is used for.
+static double cydApproxDistanceM(double lat1, double lon1, double lat2, double lon2) {
+	double dLat = (lat1 - lat2) * 111320.0;
+	double dLon = (lon1 - lon2) * 111320.0 * cos(lat1 * PI / 180.0);
+	return sqrt(dLat * dLat + dLon * dLon);
+}
+
+// Each entry costs ~50 bytes of a heap that's only ~95KB free while scanning
+// (and uploads need ~40KB of it for TLS), so this can't grow for a whole
+// drive - a city run sees thousands of APs. Past the cap, forget everything
+// logged far from here (a duplicate is only possible within 40m of the old
+// spot anyway), and as a last resort forget everything.
+static const size_t CYD_AP_DEDUP_MAX_ENTRIES = 600;
+static const double CYD_AP_DEDUP_EVICT_BEYOND_M = 500.0;
+
+static void cydPruneApDedup(double lat, double lon) {
+	for (auto it = cydApDedupState.begin(); it != cydApDedupState.end();) {
+		if (cydApproxDistanceM(lat, lon, it->second.lat, it->second.lon) > CYD_AP_DEDUP_EVICT_BEYOND_M) it = cydApDedupState.erase(it);
+		else ++it;
+	}
+	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES * 3 / 4) cydApDedupState.clear();
+	if (WARDRIVE_DEBUG) Serial.printf("[dedup] pruned to %u entries, heap=%u\n", (unsigned)cydApDedupState.size(), (unsigned)ESP.getFreeHeap());
+}
+
 static bool cydShouldLogApByKey(uint64_t key, double lat, double lon) {
+	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES) cydPruneApDedup(lat, lon);
 	auto it = cydApDedupState.find(key);
 	if (it != cydApDedupState.end()) {
-		double dLat = (lat - it->second.lat) * 111320.0;
-		double dLon = (lon - it->second.lon) * 111320.0 * cos(lat * PI / 180.0);
-		double movedM = sqrt(dLat * dLat + dLon * dLon);
-		if (movedM < CYD_AP_DEDUP_MOVEMENT_THRESHOLD_M) return false;
+		if (cydApproxDistanceM(lat, lon, it->second.lat, it->second.lon) < CYD_AP_DEDUP_MOVEMENT_THRESHOLD_M) return false;
 	}
 	cydApDedupState[key] = {millis(), lat, lon};
 	return true;
@@ -1444,12 +1406,30 @@ static bool cydShouldLogAp(const uint8_t *mac, double lat, double lon) {
 	return cydShouldLogApByKey(cydMacToKey(mac), lat, lon);
 }
 
+// (Re)arms this board's own WiFi sniffer. Needed on every start, not just at
+// boot: an upload leaves the radio switched off (Uploader::disconnectWifi()),
+// and promiscuous mode silently does nothing on a radio that isn't running.
+static void initSnifferRadio() {
+	WiFi.mode(WIFI_MODE_STA);
+	WiFi.disconnect();
+	esp_wifi_set_promiscuous_rx_cb(&cydWifiSnifferCallback);
+	// See wifi_node's identical call for why - drops non-management frames
+	// in the driver before they ever reach the callback.
+	wifi_promiscuous_filter_t cydPromFilter = {.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT};
+	esp_wifi_set_promiscuous_filter(&cydPromFilter);
+}
+
+uint32_t cydFramesSniffed = 0; // for the heartbeat - proves the sniffer is alive
+uint32_t lastSdFlushMs = 0;
+
 static bool startScanning() {
 	wifiCountThisRun = 0;
 	bleCountThisRun = 0;
-	bool wifiFileOk = wigleWifi.begin(SESSION_DIR, "wifi");
-	bool bleFileOk = wigleBle.begin(SESSION_DIR, "ble");
+	bool wifiFileOk = wigleWifi.begin(sessionDir(), "wifi");
+	bool bleFileOk = wigleBle.begin(sessionDir(), "ble");
 	cydApDedupState.clear();
+	lastSdFlushMs = millis();
+	initSnifferRadio();
 	esp_wifi_set_promiscuous(true);
 	cydCurrentChannel = CYD_CHANNEL_MIN;
 	esp_wifi_set_channel(cydCurrentChannel, WIFI_SECOND_CHAN_NONE);
@@ -1463,6 +1443,10 @@ static void stopScanning() {
 	wigleWifi.close();
 	wigleBle.flush();
 	wigleBle.close();
+	// The run's over - free the dedup map's heap now rather than at the next
+	// start, since an upload (TLS) usually comes next and needs it.
+	cydApDedupState.clear();
+	std::unordered_map<uint64_t, CydApDedupEntry>().swap(cydApDedupState);
 }
 
 static UploadResult doUpload(bool force) {
@@ -1472,6 +1456,22 @@ static UploadResult doUpload(bool force) {
 		if (force) {
 			flashLed(true, false, false, LED_RESULT_MS, true);
 			wifiLinkSend("FAIL");
+		}
+		return UploadResult::Skipped;
+	}
+
+	// Nothing to do? Say so without the expensive part - dropping the
+	// phone's BLE link and taking over the screen. Dock mode calls this every
+	// minute while parked, so without this the phone got kicked off once a
+	// minute.
+	bool pendingNow = uploader->configValid() && uploader->hasPending(sessionDir());
+	bool pendingAfterStop = scanningActive && uploader->configValid(); // the open run's files become pending once closed
+	if ((!pendingNow && !pendingAfterStop) || (!force && !uploader->autoUploadDue(lastKnownEpoch))) {
+		if (force) {
+			const char *why = !uploader->configValid() ? "no config.cfg / keys" : "nothing new";
+			lastUploadStatusText = why;
+			logEvent(String("upload: ") + why, COLOR_TEXT_DIM);
+			flashLed(false, true, false, LED_RESULT_MS, true);
 		}
 		return UploadResult::Skipped;
 	}
@@ -1495,7 +1495,7 @@ static UploadResult doUpload(bool force) {
 	// app reconnects on its own once resumeServer() re-advertises (a
 	// USB-connected phone never notices).
 	CydBleLink::suspendServer();
-	UploadResult result = uploader->uploadPending(SESSION_DIR, lastKnownEpoch, force, onUploadProgress);
+	UploadResult result = uploader->uploadPending(sessionDir(), lastKnownEpoch, force, onUploadProgress);
 	CydBleLink::resumeServer();
 
 	if (WARDRIVE_DEBUG) {
@@ -1508,7 +1508,7 @@ static UploadResult doUpload(bool force) {
 
 	if (force) {
 		stopUploadBlink();
-		if (result == UploadResult::Ok) {
+		if (result == UploadResult::Ok || result == UploadResult::Skipped) {
 			flashLed(false, true, false, LED_RESULT_MS, true);
 			wifiLinkSend("OK");
 		} else {
@@ -1628,23 +1628,29 @@ static void wipeAllLogs() {
 	// first, the directory handle is fully closed, and only then are the
 	// files actually removed by name - no iterator is ever alive at the
 	// same time as a delete.
-	static const uint8_t MAX_WIPE_FILES = 64; // generous - this session dir realistically never holds more
+	// Batches of names, repeated until the folder's empty - a card that's
+	// been driving for months easily holds more files than one batch.
+	static const uint8_t MAX_WIPE_FILES = 64;
 	String names[MAX_WIPE_FILES];
-	uint8_t count = 0;
+	for (;;) {
+		uint8_t count = 0;
+		File dir = SD.open(sessionDir());
+		if (!dir) return;
+		File entry = dir.openNextFile();
+		while (entry && count < MAX_WIPE_FILES) {
+			if (!entry.isDirectory()) names[count++] = String(entry.name());
+			entry.close();
+			entry = dir.openNextFile();
+		}
+		if (entry) entry.close();
+		dir.close();
+		if (count == 0) return;
 
-	File dir = SD.open(SESSION_DIR);
-	if (!dir) return;
-	File entry = dir.openNextFile();
-	while (entry && count < MAX_WIPE_FILES) {
-		if (!entry.isDirectory()) names[count++] = String(entry.name());
-		entry.close();
-		entry = dir.openNextFile();
-	}
-	if (entry) entry.close();
-	dir.close();
-
-	for (uint8_t i = 0; i < count; i++) {
-		SD.remove(String(SESSION_DIR) + "/" + names[i]);
+		uint8_t removed = 0;
+		for (uint8_t i = 0; i < count; i++) {
+			if (SD.remove(String(sessionDir()) + "/" + names[i])) removed++;
+		}
+		if (removed == 0) return; // card won't delete anything - don't spin forever
 	}
 }
 
@@ -1759,8 +1765,15 @@ static void wdstreamEmitStatus() {
 				  (unsigned)lastKnownChannel, (unsigned long)(uptimeS / 60), (unsigned long)(uptimeS % 60));
 }
 
-static void handleWdstreamCommand(String line) {
+// fromUsb: the "test:" commands below can wipe logs and redirect uploads, so
+// they're only accepted from someone physically plugged into the USB port -
+// never over BLE, which anyone in range can connect to.
+static void handleWdstreamCommand(String line, bool fromUsb) {
 	line.trim();
+	if (line.startsWith("test:") && !fromUsb) {
+		if (WARDRIVE_DEBUG) Serial.printf("[wdstream] ignored %s over BLE - USB only\n", line.c_str());
+		return;
+	}
 	if (line == "wdstream start" || line.startsWith("wdstream start ")) {
 		// Only reset on a genuine fresh start, not a repeat while already
 		// streaming - some wdstream clients (the comment above this function
@@ -1823,15 +1836,96 @@ static void handleWdstreamCommand(String line) {
 		onWipeLogsHandler();
 		if (WARDRIVE_DEBUG) Serial.println("[test] wipe-logs simulated");
 	} else if (line.startsWith("test:tab ")) {
-		// "test:tab N" (0-4) switches tabs, exercising the same path a tap
-		// on the tab nav bar does - lets the whole 5-tab UI be tested over
+		// "test:tab N" (0-3) switches tabs, exercising the same path a tap
+		// on the tab nav bar does - lets the whole tab UI be tested over
 		// USB Serial too, not just MAIN's 3 original buttons.
 		int n = line.substring(9).toInt();
-		if (n >= 0 && n <= 4) {
+		if (n >= 0 && n < TAB_COUNT) {
 			currentTab = (Tab)n;
 			forceFullRedraw = true;
 			Serial.printf("[test] switched to tab %d (%s)\n", n, TAB_LABELS[n]);
 		}
+	} else if (line.startsWith("test:fakegps ")) {
+		// "test:fakegps <lat> <lon>" / "test:fakegps off" - a pretend fix so
+		// logging, de-dup and uploads can be tested indoors. Only switchable
+		// while stopped, so a run never mixes real and test folders.
+		String arg = line.substring(13);
+		arg.trim();
+		if (scanningActive) {
+			Serial.println("[test] stop scanning first");
+		} else if (arg == "off") {
+			testFakeGps = false;
+			gpsFixKnown = false;
+			Serial.println("[test] fake GPS off");
+		} else {
+			int sp = arg.indexOf(' ');
+			lastKnownLat = arg.substring(0, sp).toDouble();
+			lastKnownLon = arg.substring(sp + 1).toDouble();
+			testFakeGps = true;
+			gpsFixKnown = true;
+			Serial.printf("[test] fake GPS %.6f,%.6f - logging to %s\n", lastKnownLat, lastKnownLon, TEST_SESSION_DIR);
+		}
+	} else if (line.startsWith("test:move ")) {
+		// "test:move <metres>" - shifts the fake fix north, to exercise the
+		// distance-based de-dup.
+		if (testFakeGps) lastKnownLat += line.substring(10).toDouble() / 111320.0;
+		Serial.printf("[test] fake GPS now %.6f,%.6f\n", lastKnownLat, lastKnownLon);
+	} else if (line.startsWith("test:uploadhost ")) {
+		// "test:uploadhost <url>" sends every upload there instead of
+		// wdgwars/WiGLE, until reboot. Refused unless test mode is on, so
+		// real logs can't be sent to an arbitrary server this way.
+		if (!testFakeGps) {
+			Serial.println("[test] turn on test:fakegps first");
+		} else if (uploader) {
+			uploader->setEndpointOverride(line.substring(16));
+			Serial.printf("[test] uploads -> %s\n", line.substring(16).c_str());
+		}
+	} else if (line.startsWith("test:dedupfill ")) {
+		// "test:dedupfill <n>" - n fake APs spread around the fake fix, to
+		// check the de-dup cap keeps the heap safe.
+		int n = line.substring(15).toInt();
+		for (int i = 0; i < n; i++) {
+			uint64_t key = 0xFE0000000000ULL + (uint64_t)esp_random();
+			double lat = lastKnownLat + ((int)(esp_random() % 20000) - 10000) / 111320.0 * 0.2;
+			cydShouldLogApByKey(key, lat, lastKnownLon);
+		}
+		Serial.printf("[test] dedup entries=%u heap=%u\n", (unsigned)cydApDedupState.size(), (unsigned)ESP.getFreeHeap());
+	} else if (line.startsWith("test:bigfile ")) {
+		// "test:bigfile <rows>" - a synthetic CSV in the test folder, to prove
+		// large files upload (they stream from SD rather than fitting in RAM).
+		if (!testFakeGps || scanningActive) {
+			Serial.println("[test] needs test:fakegps and scanning stopped");
+		} else {
+			WigleWriter big;
+			int rows = line.substring(13).toInt();
+			if (big.begin(TEST_SESSION_DIR, "wifi")) {
+				for (int i = 0; i < rows; i++) {
+					char mac[18];
+					snprintf(mac, sizeof(mac), "02:00:00:%02X:%02X:%02X", (i >> 16) & 0xFF, (i >> 8) & 0xFF, i & 0xFF);
+					big.logWifi(mac, "test-row", "[WPA2-PSK][ESS]", "2026-01-01 00:00:00", 6, 2437, -70,
+								lastKnownLat, lastKnownLon, 0.0, 30.0);
+				}
+				big.close();
+				Serial.printf("[test] wrote %d rows to %s\n", rows, big.currentFilePath().c_str());
+			}
+		}
+	} else if (line == "test:status") {
+		Serial.printf("[test] scanning=%d tab=%d fakegps=%d dir=%s pending=%d phone=%s rig=%d heap=%u maxblock=%u\n",
+					  scanningActive, (int)currentTab, testFakeGps, sessionDir(),
+					  uploader ? uploader->hasPending(sessionDir()) : -1, phoneLinkLabel(), (int)currentLinkState(),
+					  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+	} else if (line == "test:ls") {
+		File dir = SD.open(sessionDir());
+		if (dir) {
+			File e = dir.openNextFile();
+			while (e) {
+				Serial.printf("[test] ls %s %u\n", e.name(), (unsigned)e.size());
+				e.close();
+				e = dir.openNextFile();
+			}
+			dir.close();
+		}
+		Serial.println("[test] ls end");
 	}
 }
 
@@ -1856,40 +1950,17 @@ static void handleIncomingLine(const String &line) {
 		lastKnownChannel = (uint8_t)line.substring(3).toInt();
 		return;
 	}
-	if (line.startsWith("SCANSTATE:")) {
-		bool v = line.substring(10).toInt() != 0;
-		// Bug found via live BLE testing (2026-09-26): this used to gate the
-		// scanningActive resync behind "did the last-seen wifi_node state
-		// change from the previous SCANSTATE line", not "does scanningActive
-		// actually disagree with v" - if the first SCANSTATE line ever
-		// received happened to match that cached default (false) while
-		// scanningActive was already true (e.g. resumed from a power-loss
-		// save), the resync never ran at all, silently leaving the two
-		// permanently out of sync. The comparison below is now purely
-		// v-vs-scanningActive, independent of any cached previous state.
-		// Ignore a disagreeing echo for a short window after OUR OWN local
-		// setScanning() call (touch toggle or phone "scan start"/"scan
-		// stop") - wifi_node's SCAN_SYNC_BROADCAST_MS periodic broadcast
-		// (2s) can have already queued a STALE state moments before it
-		// actually processes the change we just sent it, and that stale
-		// echo arriving here would otherwise silently stomp the local
-		// change back before wifi_node's own fresh confirmation catches up
-		// (found via testing 2026-09-27: "scan start" right after a LINK
-		// reconnect reliably got reverted to scanning=0 within one loop
-		// iteration, before the next heartbeat could even show it as ever
-		// having been 1). A resync we did NOT just cause locally - e.g. the
-		// legitimate case of adopting wifi_node's true state right after
-		// this board's own reboot or a fresh reconnect - still applies
-		// immediately, since lastLocalScanSetMs is stale/zero then.
-		static const uint32_t LOCAL_SCAN_SET_GRACE_MS = 2500;
-		if (millis() - lastLocalScanSetMs < LOCAL_SCAN_SET_GRACE_MS) return;
-		if (v != scanningActive) {
-			scanningActive = v;
-			statePrefs.putBool(STATE_PREFS_KEY, scanningActive);
-			flashLed(false, true, false, LED_FLICKER_MS, true);
-			phonePrintf("WD:SCANSTATE:%d", scanningActive ? 1 : 0); // phone app mirror
-			if (WARDRIVE_DEBUG) Serial.printf("[link] resynced to scanning=%d from wifi_node\n", scanningActive);
-			logEvent(scanningActive ? "wifi_node says: scanning" : "wifi_node says: stopped", COLOR_TEXT_DIM);
+	// wifi_node no longer sends SCANSTATE here - this board owns the scan
+	// state, and wifi_node only reports its own idle auto-stop (IDLESTOP
+	// below). Adopting its SCANSTATE used to race the power-loss resume.
+	if (line == "IDLESTOP") {
+		// wifi_node's idle auto-stop - the one scan-state change that starts
+		// there rather than here. Adopted like a local STOP, so it's persisted
+		// and relayed back out.
+		if (scanningActive) {
+			setScanning(false);
+			if (WARDRIVE_DEBUG) Serial.println("[link] wifi_node idle auto-stop");
+			logEvent("idle 30 min - auto-stopped", COLOR_ORANGE);
 		}
 		return;
 	}
@@ -1902,6 +1973,7 @@ static void handleIncomingLine(const String &line) {
 		int c1 = rest.indexOf(',');
 		int c2 = rest.indexOf(',', c1 + 1);
 		if (c1 < 0 || c2 < 0) return;
+		if (testFakeGps) return; // test mode holds its fake fix - see TEST_SESSION_DIR
 		bool hadFix = gpsFixKnown;
 		gpsFixKnown = rest.substring(0, c1).toInt() != 0;
 		if (gpsFixKnown != hadFix) logEvent(gpsFixKnown ? "GPS fix acquired" : "GPS fix lost - not logging", gpsFixKnown ? COLOR_GREEN : COLOR_ORANGE);
@@ -2177,15 +2249,7 @@ void setup() {
 	WifiLinkSerial.begin(115200, SERIAL_8N1, PIN_WIFI_LINK_RX, PIN_WIFI_LINK_TX);
 
 	cydObsQueue = xQueueCreate(64, sizeof(CydWifiObservation));
-	WiFi.mode(WIFI_MODE_STA);
-	WiFi.disconnect();
-	esp_wifi_set_promiscuous_rx_cb(&cydWifiSnifferCallback);
-	// See wifi_node's identical call for why - this board's own sniffer has
-	// the same software-only type filter in cydWifiSnifferCallback(), and
-	// gets the same driver-level cut of non-management traffic before it
-	// ever reaches that callback (2026-09-27 speed optimization pass).
-	wifi_promiscuous_filter_t cydPromFilter = {.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT};
-	esp_wifi_set_promiscuous_filter(&cydPromFilter);
+	initSnifferRadio();
 
 	Serial.println("cyd_node ready");
 }
@@ -2201,6 +2265,7 @@ bool wasNearHomeForDock = false;
 bool dockUploadDoneThisArrival = false;
 uint32_t lastStorageCheckMs = 0;
 static const uint32_t STORAGE_CHECK_INTERVAL_MS = 30000; // how often to retry a dead card / recheck free space
+static const uint32_t SD_FLUSH_INTERVAL_MS = 5000; // most a power cut can lose
 uint32_t lastSdHealthBroadcastMs = 0;
 // Fast and independent of the recheck interval above - wifi_node (and,
 // relayed onward, ble_node) needs to learn about a bad card quickly so they
@@ -2240,7 +2305,7 @@ void loop() {
 	if (touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
 		lastTouchDispatchMs = millis();
 		bool hit = false;
-		for (uint8_t i = 0; i < 5 && !hit; i++) {
+		for (uint8_t i = 0; i < TAB_COUNT && !hit; i++) {
 			if (inRect(tabRects[i], touch.x, touch.y)) {
 				currentTab = (Tab)i;
 				hit = true;
@@ -2260,9 +2325,6 @@ void loop() {
 					break;
 				case Tab::Targets:
 					if (i == 0) onClearTargetsHandler();
-					break;
-				case Tab::Links:
-					if (i == 0) onReconnectHandler(); // same RE-LINK ALL as the main tab
 					break;
 				case Tab::Logs:
 					if (i == 0) onPauseLogHandler();
@@ -2290,9 +2352,10 @@ void loop() {
 	if (sdTaskDone && !sdTaskReported) {
 		sdTaskReported = true;
 		if (WARDRIVE_DEBUG) {
-			Serial.printf("[boot] sdOk=%d configOk=%d wifi_ssid=%s\n", sdOk, configOk, config.wifiSsid.c_str());
+			Serial.printf("[boot] sdOk=%d configOk=%d\n", sdOk, configOk);
 		}
 		logEvent(!sdOk ? "SD card missing" : configOk ? "SD ok, config loaded" : "SD ok, no config.cfg", sdOk && configOk ? COLOR_GREEN : COLOR_RED);
+		checkStorage();
 		if (resumeScanningIntent) {
 			// Just sets the flag - the scanningActive != wasScanning edge
 			// detector later in this same loop() iteration is what actually
@@ -2310,10 +2373,11 @@ void loop() {
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
-		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu heap=%lu wlrx=%lu\n",
+		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu heap=%lu wlrx=%lu sniff=%lu dedup=%u phone=%s\n",
 					  (unsigned long)(millis() / 1000), scanningActive, sdOk,
 					  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun,
-					  (unsigned long)ESP.getFreeHeap(), (unsigned long)wifiLinkRxBytes);
+					  (unsigned long)ESP.getFreeHeap(), (unsigned long)wifiLinkRxBytes,
+					  (unsigned long)cydFramesSniffed, (unsigned)cydApDedupState.size(), phoneLinkLabel() + 6);
 	}
 
 	if (millis() - lastStorageCheckMs > STORAGE_CHECK_INTERVAL_MS) {
@@ -2382,7 +2446,7 @@ void loop() {
 		if (c == '\n') {
 			if (wdstreamLineBuf.length() > 0) {
 				notePhoneCommandReceived();
-				handleWdstreamCommand(wdstreamLineBuf);
+				handleWdstreamCommand(wdstreamLineBuf, true);
 			}
 			wdstreamLineBuf = "";
 		} else if (c != '\r') {
@@ -2435,8 +2499,18 @@ void loop() {
 			esp_wifi_set_channel(cydCurrentChannel, WIFI_SECOND_CHAN_NONE);
 		}
 
+		// Rows are written straight to the card, but FAT only records a file's
+		// new size when it's flushed - so without this, a car power cut
+		// mid-drive left the whole run's file looking header-only.
+		if (millis() - lastSdFlushMs > SD_FLUSH_INTERVAL_MS) {
+			lastSdFlushMs = millis();
+			wigleWifi.flush();
+			wigleBle.flush();
+		}
+
 		CydWifiObservation obs;
 		while (xQueueReceive(cydObsQueue, &obs, 0) == pdTRUE) {
+			cydFramesSniffed++;
 			// No dedicated LED flash for this - every other on/off
 			// combination this board's plain RGB LED can show is already
 			// claimed by an existing signal (see README.md's color table),
@@ -2512,7 +2586,7 @@ void loop() {
 		}
 		if (uploader && millis() - lastCleanupMs > CLEANUP_INTERVAL_MS) {
 			lastCleanupMs = millis();
-			uploader->cleanupOldFiles(SESSION_DIR, lastKnownEpoch);
+			uploader->cleanupOldFiles(sessionDir(), lastKnownEpoch);
 		}
 	}
 

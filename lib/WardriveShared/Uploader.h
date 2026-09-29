@@ -42,14 +42,28 @@ public:
 	// nowEpoch is 0 (no reliable clock yet - never delete on a guess).
 	void cleanupOldFiles(const String &dirPath, uint32_t nowEpoch);
 
+	// Cheap pre-checks, so the caller can skip the expensive setup around an
+	// upload (dropping the phone's BLE link, the progress overlay) when
+	// there's nothing to send or the dock-mode cooldown hasn't passed.
+	bool hasPending(const String &dirPath);
+	bool autoUploadDue(uint32_t nowEpoch);
+	bool configValid() const { return _cfg.valid; }
+
+	// Test hook: send every upload to this URL instead of wdgwars/WiGLE, so
+	// the upload path can be exercised without real (or fake) data reaching
+	// either service. Empty = normal endpoints.
+	void setEndpointOverride(const String &url) { _endpointOverride = url; }
+
 private:
 	const WardriveConfig &_cfg;
+	String _endpointOverride;
+	String endpoint(const char *real) const;
 
 	bool connectWifi(uint32_t timeoutMs = 15000);
 	void disconnectWifi();
 
-	bool uploadToWdgwars(HTTPClient &http, const String &body, const String &boundary);
-	bool uploadToWigle(HTTPClient &http, const String &body, const String &boundary);
+	bool uploadToWdgwars(HTTPClient &http, const String &filePath);
+	bool uploadToWigle(HTTPClient &http, const String &filePath);
 
 	bool alreadyUploaded(const String &filePath);
 	void markUploaded(const String &filePath, uint32_t nowEpoch);

@@ -2,7 +2,7 @@
 // No SD card, no GPS, no upload logic - this board only scans and streams
 // each observation to wifi_node over a wired UART link. wifi_node enriches
 // it with its own GPS fix/timestamp and relays it onward to cyd_node over
-// BLE, same as its own WiFi observations - see wifi_node/main.cpp's header.
+// its wired link, same as its own WiFi observations - see wifi_node/main.cpp.
 //
 // No physical button on this board (removed rig-wide - cyd_node's
 // touchscreen is now the only start/stop/upload control surface). Scanning
@@ -182,6 +182,7 @@ static void handleLinkStatusLine(const String &line) {
 // shouldSendBle() checks and consumes that flag before touching the set,
 // keeping every actual read/write on the one task that owns it.
 std::unordered_set<uint64_t> bleSeenThisRun;
+static const size_t BLE_SEEN_MAX_ENTRIES = 4000;
 volatile bool bleDedupClearPending = false;
 
 static uint64_t macToKey(const uint8_t *mac) {
@@ -195,6 +196,11 @@ static bool shouldSendBle(const uint8_t *mac) {
 		bleDedupClearPending = false;
 		bleSeenThisRun.clear();
 	}
+
+	// Phones rotate their BLE address every ~15 minutes, so a long city run can
+	// see tens of thousands of "new" MACs - bounded so the set can't eat the
+	// heap. Clearing it just means a device may be sent twice in one run.
+	if (bleSeenThisRun.size() >= BLE_SEEN_MAX_ENTRIES) bleSeenThisRun.clear();
 
 	uint64_t key = macToKey(mac);
 	if (bleSeenThisRun.count(key)) return false; // already sent this one, this run

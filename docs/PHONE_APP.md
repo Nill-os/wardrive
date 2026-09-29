@@ -29,6 +29,7 @@ You need JDK 17 and the Android SDK. Android Studio installs both; `local.proper
 1. Grant **Location** ("Allow all the time" if you want it scanning with the screen off), **Nearby devices** (Bluetooth) and **Notifications**.
 2. Open **Settings**:
    - **Upload credentials:** your WiGLE "Encoded for use" token and your wdgwars API key. These are only needed if the phone should upload its own logs.
+   - **Upload the rig's data through this phone** (on by default): the phone pulls the rig's own log files over the Bluetooth link and uploads them with your keys, over whatever connection the phone has (cell or WiFi). The rig then never needs WiFi, and holds off its own upload while connected, so nothing is sent twice. Turn it off to have the rig upload over its own WiFi (`config.cfg`) instead.
    - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is dropped completely.
    - **Blacklists:** any MACs or SSIDs you never want logged, such as your own devices.
    - Tap **SAVE**.

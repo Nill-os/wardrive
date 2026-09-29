@@ -75,6 +75,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     lateinit var rigLink: RigLinkManager; private set
+    private lateinit var uploadRelay: RigUploadRelay
     lateinit var locationTracker: LocationTracker; private set
     private lateinit var wifiScanner: PhoneWifiScanner
     private lateinit var bleScanner: PhoneBleScanner
@@ -166,6 +167,12 @@ class ScanService : Service(), RigLinkManager.Listener {
         appSettings = AppSettings(this)
         dao = AppDatabase.get(this).dao()
         rigLink = RigLinkManager(applicationContext, this)
+        uploadRelay = RigUploadRelay(
+            applicationContext, appSettings,
+            send = { line -> rigLink.sendRaw(line) },
+            log = { msg -> mainHandler.post { listener?.onRigLogLine(msg) } },
+            onProgress = { up, failed -> mainHandler.post { listener?.onRigLogLine("[relay] $up uploaded, $failed failed") } },
+        )
         locationTracker = LocationTracker(applicationContext)
         locationTracker.onNewFix = { loc ->
             lastFixForDistance?.let { prev -> if (running) totalDistanceMeters += prev.distanceTo(loc) }
@@ -197,6 +204,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         cellScanner = PhoneCellScanner(applicationContext) { obs -> mainHandler.post { onObservation(obs) } }
         createNotificationChannel()
         rigLink.start() // registers the USB permission receiver once and attempts an initial connect
+        mainHandler.postDelayed(relayTicker, 10_000)
         cleanupOldLogs()
     }
 
@@ -277,8 +285,17 @@ class ScanService : Service(), RigLinkManager.Listener {
         RunTileService.refresh(this)
     }
 
+    // Drives the upload relay: re-checks the rig for pending files and times out stalls.
+    private val relayTicker = object : Runnable {
+        override fun run() {
+            if (::uploadRelay.isInitialized) uploadRelay.onIdle()
+            mainHandler.postDelayed(this, 10_000)
+        }
+    }
+
     override fun onDestroy() {
         instance = null
+        mainHandler.removeCallbacks(relayTicker)
         spoken.shutdown()
         stopRun(notifyRig = false, reason = "app closed")
         rigLink.stop()
@@ -594,9 +611,12 @@ class ScanService : Service(), RigLinkManager.Listener {
     // `running` are only ever touched from one thread, same discipline the
     // old Activity-owned version relied on via runOnUiThread.
 
+    override fun onRigRelayLine(line: String): Boolean = uploadRelay.onLine(line)
+
     override fun onRigConnected() {
         mainHandler.post {
             rigConnected = true
+            uploadRelay.onConnected()
             // Re-assert scan state on every reconnect, not just the run's original start - a USB
             // drop severe enough to need the reconnect-retry loop can plausibly brown-out/reboot
             // the rig (or just wifi_node/ble_node) independently of the phone, coming back up with
@@ -619,6 +639,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             // whatever mesh state happened to be last-known would be a stale, possibly-wrong
             // reading with no way to tell it apart from a current one.
             meshLinkState = RigLinkManager.MeshLinkState.DISCONNECTED
+            uploadRelay.onDisconnected()
             listener?.onRigDisconnected()
             listener?.onMeshLinkStateChanged(meshLinkState)
         }

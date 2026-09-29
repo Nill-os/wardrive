@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private lateinit var historicalAdapter: HistoricalAdapter
     private var browsingAllLogs = false
     private val expandedHistGroups = mutableMapOf<String, Boolean>()
-    private val uploadManager = UploadManager()
+    private val uploadManager by lazy { UploadManager(applicationContext) }
     private var huntDialog: HuntDialog? = null
     private val dao: WardriveDao by lazy { AppDatabase.get(applicationContext).dao() }
 

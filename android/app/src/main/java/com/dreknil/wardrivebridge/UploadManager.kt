@@ -13,22 +13,34 @@ import java.util.concurrent.Executors
  * convention" guess the firmware makes - confirm against your account's
  * docs at wdgwars.pl if a key gets rejected.
  */
-class UploadManager {
+import android.content.Context
+
+class UploadManager(private val appContext: Context) {
     private val executor = Executors.newSingleThreadExecutor()
     private val boundary = "----WardriveBridgeBoundary9f3c2a"
 
     data class Result(val wdgwarsAttempted: Boolean, val wdgwarsOk: Boolean, val wdgwarsMessage: String, val wigleAttempted: Boolean, val wigleOk: Boolean, val wigleMessage: String)
 
+    // Debug only: if a file <filesDir>/debug_upload_host.txt exists, both uploads go there instead
+    // of WiGLE/wdgwars. Used by the bench test so the relay can be exercised without touching real
+    // accounts. Never written by the app itself.
+    private fun debugHost(): String? =
+        try {
+            val f = File(appContext.filesDir, "debug_upload_host.txt")
+            if (f.exists()) f.readText().trim().ifBlank { null } else null
+        } catch (_: Exception) { null }
+
     fun upload(file: File, wigleToken: String, wdgwarsKey: String, callback: (Result) -> Unit) {
         executor.execute {
             val body = buildMultipartBody(file)
+            val dbg = debugHost()
 
             var wdgwarsAttempted = false
             var wdgOk = false
             var wdgMsg = "skipped (no key set)"
             if (wdgwarsKey.isNotBlank()) {
                 wdgwarsAttempted = true
-                val (ok, msg) = post("https://wdgwars.pl/api/upload-csv", body, mapOf("X-Api-Key" to wdgwarsKey))
+                val (ok, msg) = post(dbg ?: "https://wdgwars.pl/api/upload-csv", body, mapOf("X-Api-Key" to wdgwarsKey))
                 wdgOk = ok
                 wdgMsg = msg
             }
@@ -38,7 +50,7 @@ class UploadManager {
             var wigleMsg = "skipped (no token set)"
             if (wigleToken.isNotBlank()) {
                 wigleAttempted = true
-                val (ok, msg) = post("https://api.wigle.net/api/v2/file/upload", body, mapOf("Authorization" to "Basic $wigleToken"))
+                val (ok, msg) = post(dbg ?: "https://api.wigle.net/api/v2/file/upload", body, mapOf("Authorization" to "Basic $wigleToken"))
                 wigleOk = ok
                 wigleMsg = msg
             }

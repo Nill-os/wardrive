@@ -1950,6 +1950,102 @@ static void wdstreamEmitStatus() {
 // fromUsb: the "test:" commands below can wipe logs and redirect uploads, so
 // they're only accepted from someone physically plugged into the USB port -
 // never over BLE, which anyone in range can connect to.
+// ---- Upload relay: the phone uploads the rig's log files over its own
+// internet (BLE link), so the rig never needs WiFi and the two never
+// double-upload. The phone pulls each pending file, uploads it, and acks;
+// the rig then marks it .uploaded exactly as its own uploader would.
+//
+// Paced across loop() iterations (a few rows per tick) so it never overruns
+// the BLE notify buffers or stalls the UI. CSV rows are single lines, so
+// they go over the line-based link as-is (WD:FROW <row>), no encoding.
+File relayFile;
+bool relayActive = false;
+String relayName;
+uint32_t relayRows = 0;
+static const uint8_t RELAY_ROWS_PER_TICK = 6;
+
+// While set, the phone is handling uploads - the rig skips its own WiFi
+// auto-upload so a file can't be sent twice. Refreshed by any rig-relay
+// command; expires if the phone goes quiet.
+uint32_t phoneUploadClaimMs = 0;
+static const uint32_t PHONE_UPLOAD_CLAIM_MS = 600000; // 10 min
+
+static bool phoneHandlesUploads() {
+	return phoneUploadClaimMs != 0 && millis() - phoneUploadClaimMs < PHONE_UPLOAD_CLAIM_MS;
+}
+
+// A bare session filename only (no path separators, must live in the session
+// dir), so a phone can never pull an arbitrary file off the card.
+static bool relaySafeName(const String &name) {
+	if (name.length() == 0 || name.length() > 40) return false;
+	if (name.indexOf('/') >= 0 || name.indexOf("..") >= 0) return false;
+	return name.endsWith(".csv");
+}
+
+static void relayMarkUploaded(const String &name) {
+	String path = String(sessionDir()) + "/" + name;
+	if (!SD.exists(path)) return;
+	File f = SD.open(path + ".uploaded", FILE_WRITE);
+	if (f) {
+		f.println((uint32_t)lastKnownEpoch);
+		f.close();
+	}
+	if (uploader) pendingUploadFiles = uploader->pendingCount(sessionDir());
+	logEvent(String("phone uploaded ") + name, COLOR_GREEN);
+}
+
+static void relayListPending() {
+	phoneUploadClaimMs = millis();
+	File dir = SD.open(sessionDir());
+	if (!dir) {
+		phonePrintf("WD:PENDEND");
+		return;
+	}
+	File e = dir.openNextFile();
+	while (e) {
+		String name = String(e.name());
+		size_t sz = e.size();
+		bool csv = name.endsWith(".csv");
+		e.close();
+		// Skip header-only files (nothing to upload) and already-uploaded ones.
+		if (csv && sz > 260 && !SD.exists(String(sessionDir()) + "/" + name + ".uploaded")) {
+			phonePrintf("WD:PEND name=%s size=%u", name.c_str(), (unsigned)sz);
+		}
+		e = dir.openNextFile();
+	}
+	dir.close();
+	phonePrintf("WD:PENDEND");
+}
+
+static void relayStartSend(const String &name) {
+	phoneUploadClaimMs = millis();
+	if (relayActive) { relayFile.close(); relayActive = false; }
+	if (!relaySafeName(name)) { phonePrintf("WD:FERR %s bad-name", name.c_str()); return; }
+	String path = String(sessionDir()) + "/" + name;
+	relayFile = SD.open(path, FILE_READ);
+	if (!relayFile) { phonePrintf("WD:FERR %s open-failed", name.c_str()); return; }
+	relayName = name;
+	relayRows = 0;
+	relayActive = true;
+	phonePrintf("WD:FBEGIN name=%s size=%u", name.c_str(), (unsigned)relayFile.size());
+}
+
+// Pumps a few rows of the in-progress transfer each loop() iteration.
+static void serviceRelay() {
+	if (!relayActive) return;
+	for (uint8_t i = 0; i < RELAY_ROWS_PER_TICK && relayFile.available(); i++) {
+		String row = relayFile.readStringUntil('\n');
+		row.replace("\r", "");
+		phonePrintf("WD:FROW %s", row.c_str());
+		relayRows++;
+	}
+	if (!relayFile.available()) {
+		relayFile.close();
+		relayActive = false;
+		phonePrintf("WD:FEND name=%s rows=%lu", relayName.c_str(), (unsigned long)relayRows);
+	}
+}
+
 static void handleWdstreamCommand(String line, bool fromUsb) {
 	line.trim();
 	if (line.startsWith("test:") && !fromUsb) {
@@ -2000,6 +2096,15 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 	} else if (line == "scan stop") {
 		setScanning(false);
 		if (WARDRIVE_DEBUG) Serial.println("[wdstream] remote stop requested");
+	} else if (line == "rig files") {
+		// Phone asks what's waiting to upload - it will pull and upload each.
+		relayListPending();
+	} else if (line.startsWith("rig send ")) {
+		relayStartSend(line.substring(9));
+	} else if (line.startsWith("rig ack ")) {
+		relayMarkUploaded(line.substring(8));
+	} else if (line == "rig autoupload off") {
+		phoneUploadClaimMs = millis(); // the phone is handling uploads - hold off the rig's WiFi one
 	} else if (line == "rig upload") {
 		// The Wardrive Bridge app's "upload the rig's runs now" - same as tapping UPLOAD.
 		// Safe to accept over BLE: only a paired phone can send commands (see CydBleLink).
@@ -2236,7 +2341,7 @@ static void handleIncomingLine(const String &line) {
 		pushApSighting(bssid, ssid, authMode, rssi, true);
 		pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(rssi) + "dB", COLOR_CYAN);
 
-		if (wdstreamActive) {
+		if (wdstreamActive && !relayActive) {
 			// Not raw scan activity (this board never sees the radio hit
 			// itself - see the wdstream section's own header comment), but
 			// close enough in practice: relayed within a couple hundred ms
@@ -2275,7 +2380,7 @@ static void handleIncomingLine(const String &line) {
 		bleCountThisRun++;
 		pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
 
-		if (wdstreamActive) {
+		if (wdstreamActive && !relayActive) {
 			phonePrintf("WD:BLE ts=%lu mac=%s name_hex=%s rssi=%d mfg_hex=%s",
 						  (unsigned long)millis(), mac.c_str(),
 						  hexEncode((const uint8_t *)name.c_str(), name.length()).c_str(),
@@ -2618,6 +2723,11 @@ void loop() {
 	static bool phoneWasConnected = false;
 	bool phoneConnected = CydBleLink::isConnected();
 	if (phoneConnected && !phoneWasConnected && !wdstreamActive) handleWdstreamCommand("wdstream start");
+	if (!phoneConnected && phoneUploadClaimMs != 0 && !CydBleLink::isConnected()) {
+		// Phone gone - let the rig's own WiFi upload resume as the fallback.
+		if (millis() - phoneUploadClaimMs > 15000) phoneUploadClaimMs = 0;
+	}
+	serviceRelay();
 	phoneWasConnected = phoneConnected;
 
 	if (millis() - lastSdHealthBroadcastMs > SD_HEALTH_BROADCAST_MS) {
@@ -2777,7 +2887,7 @@ void loop() {
 			// Mirror this board's own catches to the phone too, same as wifi_node's relayed
 			// ones - without this the phone never saw channels 6-11 and its rig count ran
 			// far below this screen's.
-			if (wdstreamActive) {
+			if (wdstreamActive && !relayActive) {
 				phonePrintf("WD:AP ts=%lu bssid=%s ssid_hex=%s rssi=%d ch=%u auth=%s hidden=%u",
 							  (unsigned long)millis(), bssid.c_str(),
 							  hexEncode((const uint8_t *)ssid.c_str(), ssid.length()).c_str(),
@@ -2789,7 +2899,7 @@ void loop() {
 	}
 
 	if (!scanningActive) {
-		if (millis() - lastDockCheckMs > DOCK_CHECK_MS) {
+		if (millis() - lastDockCheckMs > DOCK_CHECK_MS && !phoneHandlesUploads()) {
 			lastDockCheckMs = millis();
 			if (config.homeRadiusM > 0.0) {
 				// A real geofence is configured, so "arrival" is a

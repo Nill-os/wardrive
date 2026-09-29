@@ -23,7 +23,7 @@ object AutoUploader {
             // stopRun() deletes a run that never logged anything, on its own executor - skip those.
             if (dao.observationsForRun(runId).isEmpty()) return@Thread
             val file = CsvExporter.materialize(app, dao, runId) ?: return@Thread
-            UploadManager().upload(file, settings.wigleToken, settings.wdgwarsKey) { result ->
+            UploadManager(app).upload(file, settings.wigleToken, settings.wdgwarsKey) { result ->
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk)
                 if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
                 Handler(Looper.getMainLooper()).post {

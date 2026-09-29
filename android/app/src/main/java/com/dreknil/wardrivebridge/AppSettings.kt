@@ -70,6 +70,13 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("auto_upload_wifi", false)
         set(value) = prefs.edit().putBoolean("auto_upload_wifi", value).apply()
 
+    /** Upload the RIG's own log files through this phone's internet over Bluetooth, so the rig
+     *  never needs WiFi. On by default - the rig then holds off its own upload, so nothing is
+     *  sent twice. */
+    var uploadRigViaPhone: Boolean
+        get() = prefs.getBoolean("upload_rig_via_phone", true)
+        set(value) = prefs.edit().putBoolean("upload_rig_via_phone", value).apply()
+
     fun macBlacklist(): Set<String> =
         macBlacklistRaw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
 

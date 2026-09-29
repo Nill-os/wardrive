@@ -43,6 +43,9 @@ class RigLinkManager(private val context: Context, private val listener: Listene
 
         /** The rig's scan state as of the moment the phone (re)connected - see cyd_node's WD:RIGSTATE. */
         fun onRigStateSnapshot(active: Boolean)
+
+        /** Every WD: line, for the upload relay (WD:PEND/FBEGIN/FROW/FEND). Return true if consumed. */
+        fun onRigRelayLine(line: String): Boolean
         /** cyd_node's own mesh link to wifi_node changed - this is a THIRD link, distinct from
          * both onRigConnected/Disconnected (this phone's USB link to cyd_node) and
          * onRigScanStateChanged (whether the rig is actively scanning). The phone being
@@ -457,6 +460,9 @@ class RigLinkManager(private val context: Context, private val listener: Listene
     /** Asks the rig to upload its own SD-card runs now (same as its UPLOAD button). */
     fun sendRigUpload() = writeLine("rig upload")
 
+    /** Send a raw command line to the rig (used by the upload relay). */
+    fun sendRaw(line: String) = writeLine(line, log = false)
+
     private fun writeLine(line: String, log: Boolean = true) {
         when (transport) {
             Transport.BLE -> ble.writeLine(line)
@@ -509,6 +515,12 @@ class RigLinkManager(private val context: Context, private val listener: Listene
 
     private fun processLine(line: String) {
         if (!line.startsWith("WD:")) return // ignore the rig's own debug prints
+        // File-relay lines are high-volume; let the relay consume them before the normal routing.
+        if (listener.onRigRelayLine(line)) {
+            if (line.startsWith("WD:PEND") || line.startsWith("WD:FBEGIN") || line.startsWith("WD:FEND")) {
+                // still a handshake line - fall through so the watchdog sees activity
+            } else return
+        }
         listener.onRigLog("RX: $line")
 
         // Only the rig's actual answers to "wdstream start" count as the handshake: WD:BEGIN, or

@@ -115,6 +115,14 @@ static uint32_t channelHopMs = 150;
 static const uint8_t CHANNEL_MIN = 1;
 static const uint8_t CHANNEL_MAX = 6; // cyd_node picks up 6-11 - see comment above
 
+// Both board-to-board links. 460800 (not 115200) because every forwarded
+// sighting is a ~120-byte line: at 115200 that's ~10ms of blocking per line,
+// which in a busy area stalled this loop, delayed channel hops and dropped
+// sightings. Short jumper wires handle 460800 fine. Must match ble_node and
+// cyd_node.
+static const uint32_t LINK_BAUD = 460800;
+static const size_t LINK_BUFFER_BYTES = 4096; // TX/RX headroom so a burst never blocks the loop
+
 // UART0 is free here: ARDUINO_USB_CDC_ON_BOOT routes Serial to native USB.
 HardwareSerial CydLinkSerial(0);
 uint32_t cydLinkRxBytes = 0; // raw bytes off the wire, for the heartbeat
@@ -279,16 +287,20 @@ static void cydLinkSendf(const char *fmt, ...) {
 }
 
 // cyd_node geotags its own sniffer's catches with the last position it heard
-// from here, so this goes out every second (not with the 2s status batch) to
-// keep that position no more than a second stale.
-static const uint32_t GPSPOS_BROADCAST_MS = 1000;
+// from here, so this goes out several times a second (not with the 2s status
+// batch) to keep that position fresh at driving speed. Also tells ble_node
+// whether there's a fix - see its handling of GPSFIX.
+static const uint32_t GPSPOS_BROADCAST_MS = 250; // the GPS runs at 5Hz now - see configureGps()
 static bool gpsLive(); // defined with the GPS gap-tolerance helpers below
+static bool getLoggablePosition(double &lat, double &lon, double &alt, double &acc);
 uint32_t lastGpsPosBroadcastMs = 0;
 
 static void sendGpsPos() {
 	lastGpsPosBroadcastMs = millis();
 	if (gpsLive()) cydLinkSendf("GPSPOS:1,%.6f,%.6f", gps.location.lat(), gps.location.lng());
 	else cydLinkSendf("GPSPOS:0,0,0");
+	double lat, lon, alt, acc;
+	BleLinkSerial.printf("GPSFIX:%d\n", getLoggablePosition(lat, lon, alt, acc) ? 1 : 0);
 }
 
 // cyd_node owns the rig's scan state (it's the one that persists it across
@@ -516,6 +528,30 @@ static uint8_t classifyAuthMode(const RsnInfo &rsn, bool hasWpaVendor, bool priv
 	return AUTH_OPEN;
 }
 
+// Every AP beacons ~10 times a second, and without this each one was queued -
+// in a busy area the 64-slot queue filled with repeats and genuinely new APs
+// were dropped at xQueueSend(). A tiny direct-mapped cache drops a BSSID heard
+// in the last SNIFF_REPEAT_MS right here in the callback. Collisions only
+// ever let an extra frame through, never drop a new AP.
+static const uint32_t SNIFF_REPEAT_MS = 500;
+static const size_t SNIFF_CACHE_SLOTS = 512;
+struct SniffCacheSlot {
+	uint32_t tag;
+	uint32_t ms;
+};
+static SniffCacheSlot sniffCache[SNIFF_CACHE_SLOTS];
+volatile uint32_t sniffFrames = 0, sniffQueued = 0, sniffDropped = 0; // for the heartbeat
+
+static inline bool sniffSeenRecently(const uint8_t *bssid) {
+	uint32_t tag = (bssid[2] << 24 | bssid[3] << 16 | bssid[4] << 8 | bssid[5]) ^ (bssid[0] << 8 | bssid[1]);
+	SniffCacheSlot &slot = sniffCache[(tag ^ (tag >> 9)) % SNIFF_CACHE_SLOTS];
+	uint32_t now = millis();
+	if (slot.tag == tag && now - slot.ms < SNIFF_REPEAT_MS) return true;
+	slot.tag = tag;
+	slot.ms = now;
+	return false;
+}
+
 void IRAM_ATTR wifiSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
 	if (type != WIFI_PKT_MGMT) return;
 
@@ -529,6 +565,9 @@ void IRAM_ATTR wifiSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) 
 	if (frameType != 0) return; // management frames only
 
 	if (frameSubtype != 8 && frameSubtype != 5) return; // beacon(8) / probe response(5) only
+
+	sniffFrames++;
+	if (sniffSeenRecently(payload + 16)) return;
 
 	WifiObservation obs = {};
 	memcpy(obs.bssid, payload + 16, 6); // addr3 = BSSID
@@ -568,7 +607,8 @@ void IRAM_ATTR wifiSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) 
 	obs.pmfCapable = rsn.mfpCapable;
 	obs.pmfRequired = rsn.mfpRequired;
 
-	xQueueSend(obsQueue, &obs, 0);
+	if (xQueueSend(obsQueue, &obs, 0) == pdTRUE) sniffQueued++;
+	else sniffDropped++;
 }
 
 static void startScanning() {
@@ -605,7 +645,6 @@ static void handleBleLinkLine(const String &line) {
 	String name = line.substring(c2 + 1, c3);
 	String mfgHex = line.substring(c3 + 1);
 
-	if (WARDRIVE_DEBUG) Serial.printf("[ble-link] %s rssi=%d name=%s\n", mac.c_str(), rssi, name.c_str());
 
 	double lat, lon, alt, acc;
 	if (!getLoggablePosition(lat, lon, alt, acc)) return; // no usable position, live or recent
@@ -666,22 +705,67 @@ static void handleCydLinkLine(const String &line) {
 	}
 }
 
+// ---- GPS: 5Hz ----
+// The NEO-6M defaults to one fix a second, which at 30m/s means a position up
+// to 30m stale. These u-blox (UBX) commands switch it to 5 fixes a second and
+// turn off the NMEA sentences TinyGPS++ doesn't use (GSA/GSV/GLL/VTG), so GGA
+// and RMC at 5Hz (~725 B/s) still fit in 9600 baud. Needs the GPS RX wire
+// (GPIO17); without it the module just stays at 1Hz, which still works. Not
+// saved to the module's flash - resent every boot.
+static void sendUbx(uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t len) {
+	uint8_t ckA = 0, ckB = 0;
+	uint8_t head[4] = {cls, id, (uint8_t)(len & 0xFF), (uint8_t)(len >> 8)};
+	GpsSerial.write(0xB5);
+	GpsSerial.write(0x62);
+	for (uint8_t b : head) {
+		GpsSerial.write(b);
+		ckA += b;
+		ckB += ckA;
+	}
+	for (uint16_t i = 0; i < len; i++) {
+		GpsSerial.write(payload[i]);
+		ckA += payload[i];
+		ckB += ckA;
+	}
+	GpsSerial.write(ckA);
+	GpsSerial.write(ckB);
+	GpsSerial.flush();
+	delay(50);
+}
+
+static void configureGps() {
+	static const uint8_t unusedNmea[] = {0x01 /*GLL*/, 0x02 /*GSA*/, 0x03 /*GSV*/, 0x05 /*VTG*/};
+	for (uint8_t msgId : unusedNmea) {
+		uint8_t cfgMsg[] = {0xF0, msgId, 0}; // NMEA class, message, rate 0 = off
+		sendUbx(0x06, 0x01, cfgMsg, sizeof(cfgMsg));
+	}
+	uint8_t cfgRate[] = {200, 0, 1, 0, 1, 0}; // measRate 200ms, navRate 1, timeRef GPS
+	sendUbx(0x06, 0x08, cfgRate, sizeof(cfgRate));
+}
+
+// GGA sentences seen, for the heartbeat - ~5/s once configureGps() took.
+TinyGPSCustom ggaFixQuality(gps, "GPGGA", 6);
+uint32_t ggaCount = 0;
+
 void setup() {
 	Serial.begin(115200);
 
 	neopixelWrite(RGB_BUILTIN, 0, 0, 0);
 
 	GpsSerial.begin(9600, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
-	BleLinkSerial.begin(115200, SERIAL_8N1, PIN_BLE_LINK_RX, PIN_BLE_LINK_TX);
-	CydLinkSerial.begin(115200, SERIAL_8N1, PIN_CYD_LINK_RX, PIN_CYD_LINK_TX);
-	// readStringUntil() blocks for up to this long on a partial line - keep it
-	// far below channelHopMs so a split line can't stall the hop timing.
-	CydLinkSerial.setTimeout(20);
+	configureGps();
+	BleLinkSerial.setRxBufferSize(LINK_BUFFER_BYTES);
+	BleLinkSerial.setTxBufferSize(LINK_BUFFER_BYTES);
+	BleLinkSerial.begin(LINK_BAUD, SERIAL_8N1, PIN_BLE_LINK_RX, PIN_BLE_LINK_TX);
+	CydLinkSerial.setRxBufferSize(LINK_BUFFER_BYTES);
+	CydLinkSerial.setTxBufferSize(LINK_BUFFER_BYTES);
+	CydLinkSerial.begin(LINK_BAUD, SERIAL_8N1, PIN_CYD_LINK_RX, PIN_CYD_LINK_TX);
 
-	obsQueue = xQueueCreate(64, sizeof(WifiObservation));
+	obsQueue = xQueueCreate(128, sizeof(WifiObservation));
 
 	WiFi.mode(WIFI_MODE_STA);
 	WiFi.disconnect();
+	esp_wifi_set_ps(WIFI_PS_NONE); // radio always listening - no modem-sleep gaps
 	esp_wifi_set_promiscuous_rx_cb(&wifiSnifferCallback);
 	// wifiSnifferCallback() already throws away everything but management
 	// frames in software (type != WIFI_PKT_MGMT), but without this, the
@@ -715,14 +799,15 @@ void loop() {
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
 		Serial.printf("[heartbeat] up=%lus scanning=%d cydSdOk=%d gpsFix=%d lat=%.6f lon=%.6f sats=%d "
-					  "gpsChars=%u gpsSentWithFix=%u gpsFailedCk=%u gpsPassedCk=%u cydrx=%lu\n",
+					  "gpsChars=%u gpsSentWithFix=%u gpsFailedCk=%u gpsPassedCk=%u cydrx=%lu gga=%lu frames=%lu queued=%lu qdrop=%lu\n",
 					  (unsigned long)(millis() / 1000), scanningActive, cydSdOk,
 					  gpsLive(),
 					  gpsLive() ? gps.location.lat() : 0.0,
 					  gpsLive() ? gps.location.lng() : 0.0,
 					  gps.satellites.isValid() ? gps.satellites.value() : -1,
 					  (unsigned)gps.charsProcessed(), (unsigned)gps.sentencesWithFix(),
-					  (unsigned)gps.failedChecksum(), (unsigned)gps.passedChecksum(), (unsigned long)cydLinkRxBytes);
+					  (unsigned)gps.failedChecksum(), (unsigned)gps.passedChecksum(), (unsigned long)cydLinkRxBytes,
+					  (unsigned long)ggaCount, (unsigned long)sniffFrames, (unsigned long)sniffQueued, (unsigned long)sniffDropped);
 	}
 
 	if (millis() - lastScanSyncBroadcastMs > SCAN_SYNC_BROADCAST_MS) {
@@ -748,21 +833,37 @@ void loop() {
 
 	while (GpsSerial.available()) {
 		gps.encode(GpsSerial.read());
+		if (ggaFixQuality.isUpdated()) {
+			ggaFixQuality.value(); // reading it clears isUpdated()
+			ggaCount++;
+		}
 	}
 	rememberGpsFix();
 	if (millis() - lastGpsPosBroadcastMs > GPSPOS_BROADCAST_MS) sendGpsPos();
 
+	// Byte-at-a-time into a line buffer - readStringUntil() blocks waiting for
+	// the rest of a half-arrived line, stalling the channel hop.
+	static String cydLineBuf, bleLineBuf;
 	while (CydLinkSerial.available()) {
-		String line = CydLinkSerial.readStringUntil('\n');
-		cydLinkRxBytes += line.length() + 1;
-		line.trim();
-		if (line.length() > 0) handleCydLinkLine(line);
+		char c = (char)CydLinkSerial.read();
+		cydLinkRxBytes++;
+		if (c == '\n') {
+			cydLineBuf.trim();
+			if (cydLineBuf.length() > 0) handleCydLinkLine(cydLineBuf);
+			cydLineBuf = "";
+		} else if (c != '\r' && cydLineBuf.length() < 256) {
+			cydLineBuf += c;
+		}
 	}
-
 	while (BleLinkSerial.available()) {
-		String line = BleLinkSerial.readStringUntil('\n');
-		line.trim();
-		if (line.length() > 0) handleBleLinkLine(line);
+		char c = (char)BleLinkSerial.read();
+		if (c == '\n') {
+			bleLineBuf.trim();
+			if (bleLineBuf.length() > 0) handleBleLinkLine(bleLineBuf);
+			bleLineBuf = "";
+		} else if (c != '\r' && bleLineBuf.length() < 256) {
+			bleLineBuf += c;
+		}
 	}
 
 	if (scanningActive != wasScanning) {
@@ -803,7 +904,6 @@ void loop() {
 			if (apSeenThisRunForLed.size() >= AP_LED_SEEN_MAX_ENTRIES) apSeenThisRunForLed.clear(); // bounded - worst case an old AP flashes "new" again
 			if (apSeenThisRunForLed.insert(macToKey(obs.bssid)).second) {
 				flashLed(255, 0, 255); // purple - only for a genuinely new AP this run, independent of whether it can be logged
-				if (WARDRIVE_DEBUG) Serial.printf("[led] new AP this run: %s\n", macToString(obs.bssid).c_str());
 			}
 
 			double lat, lon, alt, acc;

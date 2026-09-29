@@ -41,6 +41,17 @@ static const uint8_t PIN_LINK_RX = 3;  // <- wifi_node TX
 static const uint8_t PIN_LINK_TX = 8;  // -> wifi_node RX
 
 HardwareSerial LinkSerial(1);
+// Must match wifi_node's LINK_BAUD - see its comment for why it's not 115200.
+static const uint32_t LINK_BAUD = 460800;
+static const size_t LINK_BUFFER_BYTES = 4096;
+
+// Whether wifi_node has a position to tag sightings with (its GPSFIX line,
+// several times a second). Without one it drops every sighting - so while
+// false, nothing is sent AND nothing is marked as seen, otherwise every
+// device seen before the first fix of a run was lost for the whole run.
+volatile bool wifiNodeHasFix = false;
+volatile uint32_t lastGpsFixLineMs = 0;
+static const uint32_t GPSFIX_STALE_MS = 3000; // link gone quiet - treat as no fix
 
 NimBLEScan *pBLEScan;
 
@@ -126,7 +137,7 @@ volatile bool wifiNodeSdOk = true;
 // state onward over this wire so this board's LED and scanning state stay
 // in step, even though cyd_node is the only one with SD/config/upload logic.
 static void handleLinkStatusLine(const String &line) {
-	if (WARDRIVE_DEBUG) Serial.printf("[link] rx: %s\n", line.c_str());
+	if (WARDRIVE_DEBUG && !line.startsWith("GPSFIX:")) Serial.printf("[link] rx: %s\n", line.c_str());
 	if (line == "START") {
 		// No LED action here - cyd_node's blink task sends its first
 		// BLINKPHASE line within a blink interval anyway, and reacting to
@@ -163,6 +174,9 @@ static void handleLinkStatusLine(const String &line) {
 			Serial.printf("[link] wifiNodeSdOk %d -> %d\n", wifiNodeSdOk, newVal);
 		}
 		wifiNodeSdOk = newVal;
+	} else if (line.startsWith("GPSFIX:")) {
+		wifiNodeHasFix = line.substring(7).toInt() != 0;
+		lastGpsFixLineMs = millis();
 	}
 }
 
@@ -242,12 +256,12 @@ static void sendObservation(const uint8_t *mac, int rssi, const std::string &raw
 	snprintf(line, sizeof(line), "%s,%d,%s,%s", macStr, rssi, name.c_str(), mfgHex);
 	LinkSerial.println(line);
 	observationsSent++;
-	if (WARDRIVE_DEBUG) Serial.printf("[ble] %s rssi=%d name=%s\n", macStr, rssi, name.c_str());
 }
 
 class WardriveScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 	void onResult(NimBLEAdvertisedDevice *device) override {
 		if (!scanningActive) return;
+		if (!wifiNodeHasFix || millis() - lastGpsFixLineMs > GPSFIX_STALE_MS) return; // see wifiNodeHasFix
 
 		// getAddress() returns a temporary NimBLEAddress by value, and
 		// getNative() points into that temporary's own storage - it's
@@ -283,12 +297,19 @@ void setup() {
 
 	neopixelWrite(RGB_BUILTIN, 0, 0, 0);
 
-	LinkSerial.begin(115200, SERIAL_8N1, PIN_LINK_RX, PIN_LINK_TX);
+	LinkSerial.setRxBufferSize(LINK_BUFFER_BYTES);
+	LinkSerial.setTxBufferSize(LINK_BUFFER_BYTES); // sends happen on the NimBLE task - never block it
+	LinkSerial.begin(LINK_BAUD, SERIAL_8N1, PIN_LINK_RX, PIN_LINK_TX);
 
 	NimBLEDevice::init("");
 	pBLEScan = NimBLEDevice::getScan();
 	pBLEScan->setAdvertisedDeviceCallbacks(&scanCallbacks, true);
 	pBLEScan->setActiveScan(true);
+	// The controller's own duplicate filter reports each address once per scan
+	// and never again - so a device first heard before there was a GPS fix
+	// could never be logged later in the run. shouldSendBle() does the de-dup
+	// instead, and only once a sighting can actually be logged.
+	pBLEScan->setDuplicateFilter(false);
 	// window == interval - continuous scanning, no gap between listening
 	// windows. BLE devices advertise on their own independent schedules
 	// (anywhere from ~20ms to several seconds apart), so unlike WiFi's
@@ -323,15 +344,21 @@ void loop() {
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
-		Serial.printf("[heartbeat] up=%lus scanning=%d sent=%lu\n",
+		Serial.printf("[heartbeat] up=%lus scanning=%d sent=%lu fix=%d\n",
 					  (unsigned long)(millis() / 1000), scanningActive,
-					  (unsigned long)observationsSent);
+					  (unsigned long)observationsSent, wifiNodeHasFix && millis() - lastGpsFixLineMs <= GPSFIX_STALE_MS);
 	}
 
+	static String lineBuf; // byte-at-a-time - readStringUntil() would block on a half-arrived line
 	while (LinkSerial.available()) {
-		String line = LinkSerial.readStringUntil('\n');
-		line.trim();
-		if (line.length() > 0) handleLinkStatusLine(line);
+		char c = (char)LinkSerial.read();
+		if (c == '\n') {
+			lineBuf.trim();
+			if (lineBuf.length() > 0) handleLinkStatusLine(lineBuf);
+			lineBuf = "";
+		} else if (c != '\r' && lineBuf.length() < 256) {
+			lineBuf += c;
+		}
 	}
 
 	if (scanningActive != wasScanning) {

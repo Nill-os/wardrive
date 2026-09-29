@@ -46,7 +46,7 @@ The ESP32-S3 boards use their onboard RGB LED, dimmed to 3% (`LED_BRIGHTNESS_PCT
 | Colour | Meaning |
 |---|---|
 | Purple flicker (wifi_node) | A WiFi AP was seen |
-| Cyan flicker (ble_node) | A new BLE device was seen this run |
+| Cyan flicker (ble_node) | A new BLE device was seen this run (only once there's a GPS fix) |
 | Green (brief) | Scanning started or stopped, or the rig stopped itself after sitting idle |
 | Blue (brief, CYD) | UPLOAD tapped |
 | Purple (brief, CYD) | RE-LINK ALL tapped |

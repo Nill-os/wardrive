@@ -161,6 +161,11 @@ int16_t lastKnownSatCount = -1; // -1 = not yet known / no valid GPS fix on wifi
 static const uint8_t PIN_WIFI_LINK_TX = 22;
 static const uint8_t PIN_WIFI_LINK_RX = 27;
 HardwareSerial WifiLinkSerial(2);
+// Must match wifi_node's LINK_BAUD (see its comment). The big receive buffer
+// is what keeps a screen redraw or SD write from overflowing the UART: the
+// default 256 bytes filled in ~20ms at 115200, silently losing sightings.
+static const uint32_t LINK_BAUD = 460800;
+static const size_t LINK_RX_BUFFER_BYTES = 8192;
 uint32_t wifiLinkRxBytes = 0; // bytes of wifi_node lines received, for the heartbeat
 
 static void wifiLinkSend(const char *line) {
@@ -171,13 +176,20 @@ static void wifiLinkSend(const char *line) {
 	WifiLinkSerial.write((const uint8_t *)buf, n);
 }
 
+// When a phone (or anything) last sent a command over USB. Phone lines only
+// go out over USB while that's recent: the USB port is a 115200-baud UART, so
+// each ~130-byte WD:AP line costs ~11ms, and mirroring every sighting there
+// with nobody listening was stealing most of this loop in a busy area.
+uint32_t lastUsbCommandMs = 0;
+static const uint32_t USB_PHONE_TIMEOUT_MS = 15000; // the app pings "wdstream status" every 5s over USB
+
 static void phonePrintf(const char *fmt, ...) {
 	char buf[240];
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
-	Serial.println(buf);
+	if (lastUsbCommandMs != 0 && millis() - lastUsbCommandMs < USB_PHONE_TIMEOUT_MS) Serial.println(buf);
 	CydBleLink::send(buf);
 }
 
@@ -1350,6 +1362,27 @@ static uint8_t cydClassifyAuthMode(const CydRsnInfo &rsn, bool hasWpaVendor, boo
 	return CYD_AUTH_OPEN;
 }
 
+// Same repeat filter as wifi_node's sniffer (see sniffSeenRecently() there):
+// drop a BSSID heard in the last 500ms before it ever reaches the queue.
+static const uint32_t CYD_SNIFF_REPEAT_MS = 500;
+static const size_t CYD_SNIFF_CACHE_SLOTS = 512;
+struct CydSniffCacheSlot {
+	uint32_t tag;
+	uint32_t ms;
+};
+static CydSniffCacheSlot cydSniffCache[CYD_SNIFF_CACHE_SLOTS];
+volatile uint32_t cydSniffDropped = 0; // queue full - for the heartbeat
+
+static inline bool cydSniffSeenRecently(const uint8_t *bssid) {
+	uint32_t tag = (bssid[2] << 24 | bssid[3] << 16 | bssid[4] << 8 | bssid[5]) ^ (bssid[0] << 8 | bssid[1]);
+	CydSniffCacheSlot &slot = cydSniffCache[(tag ^ (tag >> 9)) % CYD_SNIFF_CACHE_SLOTS];
+	uint32_t now = millis();
+	if (slot.tag == tag && now - slot.ms < CYD_SNIFF_REPEAT_MS) return true;
+	slot.tag = tag;
+	slot.ms = now;
+	return false;
+}
+
 void IRAM_ATTR cydWifiSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t type) {
 	if (type != WIFI_PKT_MGMT) return;
 
@@ -1362,6 +1395,8 @@ void IRAM_ATTR cydWifiSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t typ
 	uint8_t frameSubtype = (payload[0] >> 4) & 0xF;
 	if (frameType != 0) return;
 	if (frameSubtype != 8 && frameSubtype != 5) return;
+
+	if (cydSniffSeenRecently(payload + 16)) return;
 
 	CydWifiObservation obs = {};
 	memcpy(obs.bssid, payload + 16, 6);
@@ -1401,7 +1436,7 @@ void IRAM_ATTR cydWifiSnifferCallback(void *buf, wifi_promiscuous_pkt_type_t typ
 	obs.pmfCapable = rsn.mfpCapable;
 	obs.pmfRequired = rsn.mfpRequired;
 
-	xQueueSend(cydObsQueue, &obs, 0);
+	if (xQueueSend(cydObsQueue, &obs, 0) != pdTRUE) cydSniffDropped++;
 }
 
 static int cydChannelToFreqMHz(uint8_t channel) {
@@ -1510,6 +1545,8 @@ static bool cydShouldLogAp(const uint8_t *mac, double lat, double lon) {
 static void initSnifferRadio() {
 	WiFi.mode(WIFI_MODE_STA);
 	WiFi.disconnect();
+	// No esp_wifi_set_ps(WIFI_PS_NONE) here, unlike wifi_node: with BLE running
+	// the WiFi driver requires modem sleep for coexistence, and aborts without it.
 	esp_wifi_set_promiscuous_rx_cb(&cydWifiSnifferCallback);
 	// See wifi_node's identical call for why - drops non-management frames
 	// in the driver before they ever reach the callback.
@@ -2310,6 +2347,7 @@ static void runTouchCalibrationDebug() {
 }
 
 void setup() {
+	Serial.setTxBufferSize(2048); // debug/USB-phone prints queue instead of blocking the loop
 	Serial.begin(115200);
 
 	pinMode(PIN_LED_R, OUTPUT);
@@ -2351,9 +2389,11 @@ void setup() {
 	xTaskCreatePinnedToCore(sdInitTask, "sdInit", 8192, nullptr, 1, nullptr, 0);
 
 	CydBleLink::beginServer("WardriveCYD");
-	WifiLinkSerial.begin(115200, SERIAL_8N1, PIN_WIFI_LINK_RX, PIN_WIFI_LINK_TX);
+	WifiLinkSerial.setRxBufferSize(LINK_RX_BUFFER_BYTES);
+	WifiLinkSerial.setTxBufferSize(1024);
+	WifiLinkSerial.begin(LINK_BAUD, SERIAL_8N1, PIN_WIFI_LINK_RX, PIN_WIFI_LINK_TX);
 
-	cydObsQueue = xQueueCreate(64, sizeof(CydWifiObservation));
+	cydObsQueue = xQueueCreate(128, sizeof(CydWifiObservation));
 	initSnifferRadio();
 
 	Serial.println("cyd_node ready");
@@ -2482,11 +2522,11 @@ void loop() {
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
-		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu heap=%lu wlrx=%lu sniff=%lu dedup=%u phone=%s\n",
+		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu heap=%lu wlrx=%lu sniff=%lu qdrop=%lu dedup=%u phone=%s\n",
 					  (unsigned long)(millis() / 1000), scanningActive, sdOk,
 					  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun,
 					  (unsigned long)ESP.getFreeHeap(), (unsigned long)wifiLinkRxBytes,
-					  (unsigned long)cydFramesSniffed, (unsigned)cydApDedupState.size(), phoneLinkLabel() + 6);
+					  (unsigned long)cydFramesSniffed, (unsigned long)cydSniffDropped, (unsigned)cydApDedupState.size(), phoneLinkLabel() + 6);
 	}
 
 	if (millis() - lastStorageCheckMs > STORAGE_CHECK_INTERVAL_MS) {
@@ -2554,6 +2594,7 @@ void loop() {
 		char c = (char)Serial.read();
 		if (c == '\n') {
 			if (wdstreamLineBuf.length() > 0) {
+				lastUsbCommandMs = millis();
 				notePhoneCommandReceived();
 				handleWdstreamCommand(wdstreamLineBuf, true);
 			}

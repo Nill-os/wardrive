@@ -20,7 +20,7 @@ Always start with the serial monitor: `pio device monitor -p <port> -b 115200`. 
 
 ## No BLE counts
 
-- ble_node's heartbeat `sent=` should climb, and wifi_node should flicker purple for WiFi. If ble_node sends but nothing arrives, check the 8↔8 and 3↔3 wires and the GND.
+- ble_node only sends once wifi_node has a GPS fix (`fix=1` in its heartbeat). After that, `sent=` should climb, and wifi_node should flicker purple for WiFi. If ble_node sends but nothing arrives, check the 8↔8 and 3↔3 wires and the GND.
 - ble_node only logs each device once per run, so in a quiet place the count levels off quickly.
 
 ## The phone app shows CYD: PAIR

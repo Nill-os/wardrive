@@ -29,9 +29,9 @@ Pins are named the way they are printed on each board. On every serial link, **T
 | VCC | 3V3 |
 | GND | GND |
 | TX | **GPIO18** (ESP32 RX) |
-| RX | GPIO17 (ESP32 TX). Optional: only needed if you want to send commands to the GPS. |
+| RX | GPIO17 (ESP32 TX). Recommended: the firmware uses it to switch the GPS to 5 fixes a second. Without it the GPS runs at 1 fix a second. |
 
-### ble_node ↔ wifi_node (115200 baud)
+### ble_node ↔ wifi_node (460800 baud)
 
 | ble_node | wifi_node | Carries |
 |---|---|---|
@@ -39,7 +39,7 @@ Pins are named the way they are printed on each board. On every serial link, **T
 | GPIO3 (RX) | GPIO3 (TX) | Scan state and LED events: `START`, `STOP`, `OK`, `FAIL`, `LOWSTORAGE` and so on |
 | GND | GND | Common ground |
 
-### wifi_node ↔ cyd_node (115200 baud)
+### wifi_node ↔ cyd_node (460800 baud)
 
 Use the CYD's 4-pin **CN1** header. It is labelled `GND IO22 IO27 3.3V`.
 

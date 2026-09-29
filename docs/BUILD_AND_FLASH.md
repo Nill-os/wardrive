@@ -26,6 +26,8 @@ cd wardrive-esp32
 
 Plug in **one board at a time**, so you know exactly which port is which board.
 
+> **Flash all three from the same version of this repo.** The boards talk to each other at a fixed speed and protocol, so a board left on older firmware can't understand the others.
+
 ```
 pio run -e wifi_node -t upload     # ESP32-S3 that gets the GPS
 pio run -e ble_node  -t upload     # the other ESP32-S3

@@ -33,7 +33,16 @@ ble_node --UART 8/3--> wifi_node --UART 13/14--> cyd_node --BLE (USB fallback)--
   - `SDOK`, `CFG:channelHopMs=…` and `SCANSTATE`.
   - `START`, `OK` and `FAIL` (upload LED states), plus `BLINKPHASE` and `LOWSTORAGE`.
 
-Every link runs at 115200 8N1, one `\n`-terminated line per message.
+Both board-to-board links run at 460800 8N1 with 4–8 KB UART buffers, one `\n`-terminated line per message. At 115200, each ~120-byte sighting line blocked the sender for about 10 ms, and the CYD's default 256-byte receive buffer overflowed during screen redraws.
+
+## Capture speed
+
+- **Repeat filter in the sniffer callback:** a 512-slot cache drops a BSSID heard in the last 500 ms before it's queued, so repeated beacons can't crowd new APs out of the 128-slot queue. `frames`, `queued` and `qdrop` in wifi_node's heartbeat (and `qdrop` on the CYD) show how it's doing.
+- **Channel split:** wifi_node hops 1–6 and the CYD hops 6–11, both at `channel_hop_ms` (150 ms, just over one beacon interval).
+- **GPS at 5 Hz:** wifi_node sends u-blox UBX commands at boot to set 5 fixes a second and turn off the NMEA sentences it doesn't use. `gga=` in the heartbeat climbs about 5 per second once that has taken. This needs the GPS RX wire; without it the module stays at 1 Hz.
+- **Positions to the CYD every 250 ms**, so the CYD's own catches are tagged with a fresh position.
+- **No sightings lost before the first fix:** ble_node only sends (and marks as seen) while wifi_node reports a fix (`GPSFIX:1`), and the BLE controller's duplicate filter is off. Before this, every BLE device heard before the first fix of a run was never logged.
+- **USB mirroring only when used:** the CYD copies phone lines to its USB port only while something has sent a USB command in the last 15 s.
 
 ## Why the CYD link is a wire
 

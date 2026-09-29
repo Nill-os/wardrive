@@ -61,7 +61,7 @@ class RigUploadRelay(
         when {
             line.startsWith("WD:PEND name=") -> {
                 val name = field(line, "name")
-                if (name != null && dir.resolve(name).let { true } && name.endsWith(".csv")) pending.addLast(name)
+                if (name != null && safeName(name)) pending.addLast(name)
                 lastActivityMs = System.currentTimeMillis()
                 return true
             }
@@ -138,7 +138,7 @@ class RigUploadRelay(
     }
 
     private fun startReceiving(name: String?) {
-        if (name == null) return
+        if (name == null || !safeName(name)) { dropCurrent(); fetchNext(); return }
         current = name
         val f = File(dir, name)
         try {
@@ -219,7 +219,11 @@ class RigUploadRelay(
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
-    private fun field(line: String, key: String): String? =
+    /** A bare .csv filename with no path parts - the name comes off the wire, so never trust it. */
+    private fun safeName(name: String): Boolean =
+        name.endsWith(".csv") && !name.contains('/') && !name.contains("..") && name.length in 5..48
+
+        private fun field(line: String, key: String): String? =
         Regex("""\b$key=(\S+)""").find(line)?.groupValues?.get(1)
 
     private companion object {

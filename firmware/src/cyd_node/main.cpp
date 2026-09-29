@@ -1997,6 +1997,7 @@ static bool relaySafeName(const String &name) {
 }
 
 static void relayMarkUploaded(const String &name) {
+	if (!relaySafeName(name)) return;
 	String path = String(sessionDir()) + "/" + name;
 	if (!SD.exists(path)) return;
 	File f = SD.open(path + ".uploaded", FILE_WRITE);

@@ -111,6 +111,5 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 - **The SD card is the single point of failure.** If it fails or is missing, sightings are dropped rather than buffered.
 - **The SD card is only checked when scanning starts.** A card pulled mid-run fails silently until the next START.
 - **Security type is a heuristic.** It works from the RSN tag, the WPA vendor tag and the privacy bit, so WPA3 shows as WPA2.
-- **No `_nomap` filter in firmware.** The phone app drops these SSIDs, but the rig's own CSVs and uploads include them.
 - **No raw pcap capture** in the three-board layout.
 - **Touch calibration** was measured on one unit; other panels may need `TOUCH_RAW_*` adjusted.

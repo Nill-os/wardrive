@@ -15,6 +15,7 @@ min_upload_interval_sec=21600
 home_lat=37.774900
 home_lon=-122.419400
 home_radius_m=150
+exclude_radius_m=0
 retention_days=0
 channel_hop_ms=150
 ```
@@ -27,6 +28,7 @@ channel_hop_ms=150
 | `wigle_api_token` | no | From [wigle.net/account](https://wigle.net/account). Paste the **"Encoded for use"** value, which is already base64 of `apiName:apiToken`. Leave it blank to skip WiGLE. WiGLE is best-effort: if it fails, the file is still marked as uploaded. |
 | `min_upload_interval_sec` | no | Minimum gap between automatic uploads when **no** home geofence is set. Default 21600 (6 hours). Tapping UPLOAD ignores it. |
 | `home_lat` / `home_lon` / `home_radius_m` | no | The home geofence for automatic "dock mode" uploads. When you arrive inside this circle with scanning stopped, the rig uploads once per arrival. Set `home_radius_m=0` or leave the keys out to disable it. |
+| `exclude_radius_m` | no | Drop any sighting within this many metres of `home_lat`/`home_lon` before logging or uploading it — the rig's home exclusion zone. Default 0 (off). |
 | `retention_days` | no | Delete **already-uploaded** session files older than this many days. The default, 0, keeps everything forever, which is the recommended setting. |
 | `channel_hop_ms` | no | How long wifi_node listens on each 2.4 GHz channel before moving on. Default 150. Lower values catch more APs at speed; higher values catch more quiet devices. |
 
@@ -36,7 +38,8 @@ channel_hop_ms=150
 
 - It is listed in `.gitignore`. Never commit it, and never post a photo of it.
 - The session CSVs on the card contain GPS coordinates of everywhere you drove, including the start and end of every trip. Treat them as location history.
-- The rig's geofence only controls **when uploads happen**. It does **not** remove sightings near home from the logs. To drop sightings near home before they are shown or uploaded, use the Wardrive Bridge app's home exclusion zone (see [Phone app](PHONE_APP.md#privacy)), or trim the CSVs before uploading them anywhere.
+- `home_radius_m` (the geofence) only controls **when uploads happen**. To keep sightings near home out of the logs entirely, set **`exclude_radius_m`** — the rig drops any sighting within that many metres of `home_lat`/`home_lon` before writing or uploading it. This is separate from the Wardrive Bridge app's own exclusion zone; set both if you use the phone too.
+- SSIDs ending in `_nomap` or `_optout` are never logged (WiGLE's opt-out convention).
 
 ## Files the rig writes
 

@@ -1219,6 +1219,30 @@ static bool nearHome() {
 	return distanceM <= config.homeRadiusM;
 }
 
+// The rig's home exclusion zone: true if this position is within
+// exclude_radius_m of home, so the sighting should be dropped before it ever
+// reaches the SD card or an upload. Mirrors the phone app's exclusion zone,
+// but standalone on the rig - see config.cfg's exclude_radius_m.
+static bool inExclusionZone(double lat, double lon) {
+	if (config.excludeRadiusM <= 0.0) return false;
+	if (lat == 0.0 && lon == 0.0) return false;
+	static const double R_EARTH_M = 6371000.0;
+	double dLat = radians(config.homeLat - lat);
+	double dLon = radians(config.homeLon - lon);
+	double a = sin(dLat / 2) * sin(dLat / 2) +
+			   cos(radians(lat)) * cos(radians(config.homeLat)) * sin(dLon / 2) * sin(dLon / 2);
+	double distanceM = R_EARTH_M * 2 * atan2(sqrt(a), sqrt(1 - a));
+	return distanceM <= config.excludeRadiusM;
+}
+
+// WiGLE's own opt-out: an SSID ending in _nomap (or _optout) asks not to be
+// mapped, so the rig never logs or uploads it - matching the phone app.
+static bool isNoMapSsid(const String &ssid) {
+	String lower = ssid;
+	lower.toLowerCase();
+	return lower.endsWith("_nomap") || lower.endsWith("_optout");
+}
+
 static bool tryRecoverSd() {
 	SD.end();
 	bool ok = SD.begin(PIN_SD_CS, sdSPI);
@@ -2017,6 +2041,12 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			gpsFixKnown = true;
 			Serial.printf("[test] fake GPS %.6f,%.6f - logging to %s\n", lastKnownLat, lastKnownLon, TEST_SESSION_DIR);
 		}
+	} else if (line.startsWith("test:exclude ")) {
+		// "test:exclude <metres>" - set the exclusion zone at the current fake fix (USB test only).
+		config.homeLat = lastKnownLat;
+		config.homeLon = lastKnownLon;
+		config.excludeRadiusM = line.substring(13).toDouble();
+		Serial.printf("[test] exclusion zone %.0fm at %.6f,%.6f\n", config.excludeRadiusM, config.homeLat, config.homeLon);
 	} else if (line.startsWith("test:move ")) {
 		// "test:move <metres>" - shifts the fake fix north, to exercise the
 		// distance-based de-dup.
@@ -2177,6 +2207,9 @@ static void handleIncomingLine(const String &line) {
 		double alt = rest.substring(c9 + 1, c10).toDouble();
 		double acc = rest.substring(c10 + 1).toDouble();
 
+		if (inExclusionZone(lat, lon)) return; // home exclusion zone - never logged, uploaded or mirrored
+		if (isNoMapSsid(ssid)) return; // _nomap opt-out
+
 		// Shared dedup with this board's own sniffer (see cydApDedupState's
 		// own comment) - without this, an AP wifi_node just relayed and an
 		// AP this board's own sniffer separately caught would both write a
@@ -2222,6 +2255,7 @@ static void handleIncomingLine(const String &line) {
 		int c8 = rest.indexOf(',', c7 + 1);
 		double acc = c8 < 0 ? rest.substring(c7 + 1).toDouble() : rest.substring(c7 + 1, c8).toDouble();
 		String mfgHex = c8 < 0 ? "" : rest.substring(c8 + 1); // trailing field - only present now that wifi_node forwards ble_node's raw manufacturer data (see its handleBleLinkLine())
+		if (inExclusionZone(lat, lon)) return; // home exclusion zone
 		wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
 		bleCountThisRun++;
 		pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
@@ -2704,6 +2738,8 @@ void loop() {
 				pushApSighting(bssid, ssid, authMode, obs.rssi, false);
 				continue;
 			}
+			if (inExclusionZone(lastKnownLat, lastKnownLon)) continue; // home exclusion zone
+			if (isNoMapSsid(ssid)) continue; // _nomap opt-out
 			if (!cydShouldLogAp(obs.bssid, lastKnownLat, lastKnownLon)) {
 				pushApSighting(bssid, ssid, authMode, obs.rssi, true); // already logged at this spot - just refresh its row
 				continue;

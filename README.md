@@ -54,7 +54,7 @@ cd ../android && ./gradlew :app:assembleDebug        # the phone app
 
 ## Be responsible
 
-This rig only **listens** to broadcasts that devices send to everyone. It never connects to or attacks networks. Laws on collecting and publishing wireless data differ from country to country; check yours. The Wardrive Bridge app drops `_nomap` SSIDs, but the rig firmware doesn't filter them yet, so honour that opt-out yourself before sharing raw CSVs, and think twice before uploading data collected around private homes, including your own. See [Config → Keep it private](docs/CONFIG.md#keep-it-private).
+This rig only **listens** to broadcasts that devices send to everyone. It never connects to or attacks networks. Laws on collecting and publishing wireless data differ from country to country; check yours. Both the app and the rig drop `_nomap` SSIDs (WiGLE's opt-out convention), and both can exclude an area around home (the rig via `exclude_radius_m` in `config.cfg`). Still, think twice before uploading data collected around private homes, including your own. See [Config → Keep it private](docs/CONFIG.md#keep-it-private).
 
 ## Repository layout
 

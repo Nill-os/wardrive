@@ -28,6 +28,7 @@ bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 		else if (key == "home_lat") outCfg.homeLat = value.toDouble();
 		else if (key == "home_lon") outCfg.homeLon = value.toDouble();
 		else if (key == "home_radius_m") outCfg.homeRadiusM = value.toDouble();
+		else if (key == "exclude_radius_m") outCfg.excludeRadiusM = value.toDouble();
 		else if (key == "retention_days") outCfg.retentionDays = (uint32_t)value.toInt();
 		else if (key == "channel_hop_ms") {
 			uint32_t parsed = (uint32_t)value.toInt();

@@ -29,6 +29,11 @@
 // home_lat/home_lon/home_radius_m gate the automatic "dock mode" upload
 // check on GPS position, not just WiFi visibility - the board only attempts
 // to join wifi_ssid and upload when its last GPS fix is within
+// exclude_radius_m, if set, drops any sighting within that many meters of
+// (home_lat, home_lon) before it is written to the SD card or uploaded - the
+// rig's own version of the phone app's home exclusion zone (they are separate
+// settings; set both). It reuses home_lat/home_lon.
+//
 // home_radius_m meters of (home_lat, home_lon). Leave home_radius_m at 0 (or
 // unset) to disable the geofence and fall back to WiFi-visibility-only
 // gating. Double-click always uploads immediately regardless of location.
@@ -69,6 +74,7 @@ struct WardriveConfig {
 	double homeLat = 0.0;
 	double homeLon = 0.0;
 	double homeRadiusM = 0.0; // 0 = geofence disabled
+	double excludeRadiusM = 0.0; // drop sightings within this many m of home; 0 = off
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
 	uint32_t channelHopMs = 150;
 	bool pcapCaptureEnabled = false;

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<automotiveApp>
+    <!-- IOT is the closest fit Google's category list has for "vehicle
+         accessory / equipment status" apps that aren't navigation, parking,
+         charging, or media - this is a status readout for the wardrive rig,
+         not any of those. -->
+    <uses name="template" />
+</automotiveApp>

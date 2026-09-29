@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WardriveBridge" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/cyan_500</item>
+        <item name="colorPrimaryDark">@color/pure_black</item>
+        <item name="colorAccent">@color/cyan_500</item>
+        <item name="android:windowBackground">@color/background</item>
+        <!-- Strict monospace, applied once here rather than per-view - every
+             TextView/Button/EditText that doesn't set its own fontFamily
+             inherits this automatically. -->
+        <item name="android:textViewStyle">@style/TacticalTextView</item>
+        <item name="buttonStyle">@style/TacticalButton</item>
+        <item name="materialButtonStyle">@style/TacticalButton</item>
+        <item name="android:editTextStyle">@style/TacticalEditText</item>
+    </style>
+
+    <style name="TacticalTextView" parent="android:Widget.TextView">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
+    </style>
+
+    <!-- Outlined by default (transparent fill, thick cyan border, cyan
+         text), cyan ripple flash approximates the spec's "invert on press"
+         mechanical-key feel. A plain <Button> under Theme.MaterialComponents
+         inflates as MaterialButton, which ignores android:background/
+         buttonStyle in favor of its own app:stroke*/app:cornerRadius
+         attributes - hence this extends the OutlinedButton style instead of
+         fighting it with a raw drawable (that approach silently rendered
+         every button solid-filled with no way to see the border, since
+         MaterialButton's own background always wins). Set via
+         materialButtonStyle above so every plain <Button> in the app gets
+         this without individual edits. -->
+    <style name="TacticalButton" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/cyan_500</item>
+        <item name="strokeColor">@color/cyan_500</item>
+        <item name="strokeWidth">2dp</item>
+        <item name="cornerRadius">0dp</item>
+        <item name="rippleColor">@color/cyan_500</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <style name="TacticalEditText" parent="android:Widget.EditText">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorHint">@color/text_secondary</item>
+    </style>
+</resources>

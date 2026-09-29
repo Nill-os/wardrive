@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same fill as bg_pill_cyan - purple_500 now resolves to the cyan accent
+     (see colors.xml) since the tactical palette has one bright accent only.
+     Kept as its own file/resource name because many layouts and
+     MainActivity's nav-highlight logic already reference it by name. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/purple_500" />
+</shape>

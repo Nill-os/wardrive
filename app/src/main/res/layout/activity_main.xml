@@ -1,0 +1,1281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="&gt; WARDRIVE BRIDGE"
+            android:textColor="@color/cyan_500"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/headerConnectButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔌"
+            android:textSize="22sp"
+            android:padding="6dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/headerMapButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🗺"
+            android:textSize="22sp"
+            android:padding="6dp"
+            android:layout_marginStart="4dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/headerExportButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📤"
+            android:textSize="22sp"
+            android:padding="6dp"
+            android:layout_marginStart="4dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/headerSettingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚙️"
+            android:textSize="22sp"
+            android:padding="6dp"
+            android:layout_marginStart="4dp"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- ==================== DASHBOARD ==================== -->
+        <ScrollView
+            android:id="@+id/dashboardContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="16dp">
+
+                    <!-- Telemetry ticker: two compact rows of fixed-width
+                         status fields instead of a plain title bar, per the
+                         tactical cyberdeck spec. Row 1 is device/scan state;
+                         row 2 is the rig link, the one thing worth a colored
+                         status dot since it flips between three real states
+                         (down/connecting/up), not just on/off. -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/gpsDot"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="GPS: ---"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/telemetryChannel"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="CH: --"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/telemetryScanStatus"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="STATUS: STOPPED"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/telemetryPower"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="PWR: --%"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp"
+                            android:gravity="end" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="4dp">
+
+                        <TextView
+                            android:id="@+id/rigDot"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="●"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/telemetryLinkText"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text=" CYD: DOWN"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <!-- Whether cyd_node (the board the phone is USB-linked to, above) can
+                             itself reach the rest of the rig over its own mesh link - a third,
+                             previously invisible link distinct from both LINK above and
+                             STATUS:SCANNING/STOPPED. Only meaningful while LINK is UP; hidden the
+                             rest of the time so it doesn't show a stale/meaningless reading. -->
+                        <TextView
+                            android:id="@+id/meshDot"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="●"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp"
+                            android:layout_marginStart="8dp"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/telemetryMeshText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text=" RIG: DOWN"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp"
+                            android:layout_marginEnd="8dp"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/sessionStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text=""
+                            android:textColor="@color/cyan_500"
+                            android:textSize="11sp"
+                            android:gravity="end"
+                            android:visibility="gone" />
+                    </LinearLayout>
+
+                    <!-- Multimeter-style counter grid, fixed-width evenly
+                         spaced columns separated by divider lines - same
+                         WIGLE/WDGW/BT/CELL semantics as the rig's own CYD
+                         dashboard (WIGLE = unique WiFi APs, WDGW = the full
+                         WiFi+BLE take, BT = unique BLE devices), except CELL
+                         is real here - the phone has an actual cellular
+                         modem the rig's ESP32 boards don't. -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:background="@drawable/bg_card_rounded"
+                        android:layout_marginTop="14dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/wigleCountBig"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0"
+                                android:textColor="@color/cyan_500"
+                                android:textSize="32sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="WIGLE"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="1dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/text_secondary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/wdgwCountBig"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0"
+                                android:textColor="@color/cyan_500"
+                                android:textSize="32sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="WDGW"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="1dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/text_secondary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/btCountBig"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0"
+                                android:textColor="@color/cyan_500"
+                                android:textSize="32sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="BT"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="1dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/text_secondary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/cellCountBig"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0"
+                                android:textColor="@color/cyan_500"
+                                android:textSize="32sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="CELL"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Small print for anyone who wants the source breakdown - not the glance path -->
+                    <TextView
+                        android:id="@+id/countsStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="RIG WIFI 0 · RIG BLE 0 · PHONE WIFI 0 · PHONE BLE 0"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:gravity="center"
+                        android:alpha="0.6"
+                        android:layout_marginTop="6dp" />
+
+                    <!-- Grand total this run, including observations the
+                         home-exclusion/blacklist filter dropped - the
+                         numbers above never counted those at all. -->
+                    <TextView
+                        android:id="@+id/totalStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="TOTAL: 0"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:layout_marginTop="4dp" />
+
+                    <!-- Account-wide totals from wdgwars.pl/WiGLE themselves,
+                         not computed locally - refreshed on a timer, not
+                         per-observation (these are account totals, not
+                         session-live numbers). -->
+                    <TextView
+                        android:id="@+id/accountStatsStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:gravity="center"
+                        android:alpha="0.8"
+                        android:layout_marginTop="2dp"
+                        android:visibility="gone" />
+
+                    <Button
+                        android:id="@+id/startStopButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:text="&gt; START"
+                        android:textSize="16sp"
+                        android:layout_marginTop="14dp" />
+
+                    <!-- Only makes sense mid-run - hidden the rest of the
+                         time rather than shown disabled. -->
+                    <Button
+                        android:id="@+id/pauseResumeButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="&gt; PAUSE"
+                        android:textSize="14sp"
+                        android:layout_marginTop="8dp"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+
+                <!-- Speed/distance banner - live while a run is active, shows
+                     the idle "- / 0.0 mi" state otherwise so this slot is
+                     never empty (matches the reference layout's always-on
+                     banner instead of the old sessionStatus text that only
+                     appeared mid-run). -->
+                <LinearLayout
+                    android:id="@+id/speedBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="14dp"
+                    android:layout_marginTop="14dp">
+
+                    <TextView
+                        android:id="@+id/speedHeadingText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/speedValueText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="0 mph"
+                        android:textColor="@color/cyan_500"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
+
+                    <TextView
+                        android:id="@+id/distanceValueText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.0 mi"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <!-- Action list - full-width bordered rows instead of the old
+                     2x2 icon-tile Quick Actions grid, matching the reference
+                     layout's vertical button stack. View Map, Export and
+                     Settings moved to the header row above (see
+                     headerExportButton/headerSettingsButton) since the
+                     reference keeps this list to the 4 run-lifecycle actions
+                     it actually has real functionality for here (no
+                     Leaderboards - that needs a backend this app doesn't
+                     have). -->
+                <LinearLayout
+                    android:id="@+id/quickActionUpload"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="14dp"
+                    android:layout_marginTop="16dp"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="☁️" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="UPLOAD THIS RUN"
+                        android:textColor="@color/cyan_500"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="☁️" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/quickActionMyUploads"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="14dp"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✅" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="MY UPLOADS"
+                        android:textColor="@color/cyan_500"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✅" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/quickActionAnalytics"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="14dp"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📈" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="ANALYTICS"
+                        android:textColor="@color/purple_500"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📈" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/quickActionFieldReport"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="14dp"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📊" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="VIEW FIELD REPORT"
+                        android:textColor="@color/purple_500"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📊" />
+                </LinearLayout>
+
+                <!-- Real lifetime counters - runs/WiFi/BLE, not "Phone" vs
+                     "Unidentified" splits like the reference, since this app
+                     never persisted which radio (rig vs phone) found each
+                     device historically, only its type - showing a fake
+                     split would be worse than not having one. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp">
+
+                    <TextView
+                        android:id="@+id/lifetimeRunsChip"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_card_rounded"
+                        android:padding="10dp"
+                        android:text="0 RUNS"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:gravity="center"
+                        android:layout_marginEnd="4dp" />
+
+                    <TextView
+                        android:id="@+id/lifetimeWifiChip"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_card_rounded"
+                        android:padding="10dp"
+                        android:text="0 WIFI"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:gravity="center"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="4dp" />
+
+                    <TextView
+                        android:id="@+id/lifetimeBtChip"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_card_rounded"
+                        android:padding="10dp"
+                        android:text="0 BT"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:gravity="center"
+                        android:layout_marginStart="4dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="&gt; LOCAL STATS &lt;"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="20dp"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/bg_card_rounded"
+                    android:padding="16dp">
+
+                    <Button
+                        android:id="@+id/statsButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="&gt; SESSION STATS"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/allTimeStatsButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="&gt; ALL-TIME STATS"
+                        android:layout_marginStart="4dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="&gt; RECENT RUNS &lt;"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="20dp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/recentRunsEmptyText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="No past runs yet - they show up here after a scan."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recentRunsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:nestedScrollingEnabled="false" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="16dp" />
+
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ==================== WIFI TOOLS MENU ==================== -->
+        <!-- ScrollView carries the toggled id (MainActivity.showSection()
+             flips its visibility) since the row list outgrew one screen once
+             Pineapple Detection was added - the inner LinearLayout is just
+             its scrollable content now, no id needed on it. -->
+        <ScrollView
+            android:id="@+id/wifiMenuContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="&gt; WIFI TOOLS &lt;"
+                android:textColor="@color/text_primary"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <include
+                android:id="@+id/menuLiveWifi"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuWardriving"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuBrowseLogs"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuFloorPlan"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuPineapple"
+                layout="@layout/item_menu_row" />
+
+        </LinearLayout>
+        </ScrollView>
+
+        <!-- ==================== BLUETOOTH TOOLS MENU ==================== -->
+        <ScrollView
+            android:id="@+id/bluetoothMenuContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="&gt; BLUETOOTH TOOLS &lt;"
+                android:textColor="@color/text_primary"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <include
+                android:id="@+id/menuLiveBle"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuAirTag"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuFlipper"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuFlock"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuSkimmer"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuDrone"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuMeshRadio"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuAdultToy"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuGlasses"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuActionCam"
+                layout="@layout/item_menu_row" />
+
+            <include
+                android:id="@+id/menuPoliceCam"
+                layout="@layout/item_menu_row" />
+
+        </LinearLayout>
+        </ScrollView>
+
+        <!-- ==================== TERMINAL ==================== -->
+        <LinearLayout
+            android:id="@+id/terminalContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="&gt; TERMINAL &lt;"
+                    android:textColor="@color/cyan_500"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/clearTerminalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="&gt; CLEAR" />
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/terminalScroll"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@color/pure_black"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="16dp"
+                android:padding="12dp">
+
+                <TextView
+                    android:id="@+id/terminalLog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="AWAITING RIG TRAFFIC..."
+                    android:textColor="@color/cyan_500"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace" />
+            </ScrollView>
+        </LinearLayout>
+
+        <!-- ==================== DETAIL OVERLAY ==================== -->
+        <LinearLayout
+            android:id="@+id/detailContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="@color/background"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="12dp">
+
+                <Button
+                    android:id="@+id/detailBackButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="&lt; BACK" />
+
+                <TextView
+                    android:id="@+id/detailTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="&gt; DETAIL &lt;"
+                    android:textColor="@color/cyan_500"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="end"
+                    android:layout_marginStart="12dp" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <!-- Generic filtered live feed - Live WiFi / Live BLE / AirTag /
+                     Flipper / Flock / Skimmer detection all reuse this same view,
+                     just fed a different filter predicate. -->
+                <LinearLayout
+                    android:id="@+id/detailFeedContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Long-press a device to fox-hunt it"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="4dp" />
+
+                    <EditText
+                        android:id="@+id/detailSearchInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="Search by name or MAC"
+                        android:textColorHint="@color/text_secondary"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:singleLine="true"
+                        android:inputType="text"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="16dp"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:id="@+id/detailFeedEmptyText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Nothing detected yet."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:padding="16dp"
+                        android:visibility="gone" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/detailFeedList"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:id="@+id/mapTabContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone">
+
+                    <org.osmdroid.views.MapView
+                        android:id="@+id/mapView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <TextView
+                        android:id="@+id/mapStatusOverlay"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="top|center_horizontal"
+                        android:layout_margin="16dp"
+                        android:background="@drawable/bg_card_rounded"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="6dp"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        tools:text="OFF · WIGLE 0 · WDGW 0 · BT 0 · CYD ✗ · Rig ✗" />
+
+                    <Button
+                        android:id="@+id/heatmapToggleButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="bottom|start"
+                        android:layout_margin="16dp"
+                        android:text="HEATMAP: [OFF]" />
+
+                    <Button
+                        android:id="@+id/recenterMapButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="bottom|end"
+                        android:layout_margin="16dp"
+                        android:text="&gt; RECENTER" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:id="@+id/logsTabContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_margin="16dp">
+
+                        <Button
+                            android:id="@+id/viewAllLogsButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; VIEW ALL ON MAP"
+                            android:layout_marginEnd="4dp" />
+
+                        <Button
+                            android:id="@+id/browseAllButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; BROWSE ALL"
+                            android:layout_marginStart="4dp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="16dp"
+                        android:layout_marginBottom="8dp">
+
+                        <Button
+                            android:id="@+id/selectModeButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; SELECT"
+                            android:layout_marginEnd="4dp" />
+
+                        <Button
+                            android:id="@+id/deleteSelectedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; DELETE SELECTED"
+                            android:layout_marginStart="4dp"
+                            android:visibility="gone" />
+                    </LinearLayout>
+
+                    <EditText
+                        android:id="@+id/logsSearchInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="Search by name or MAC"
+                        android:textColorHint="@color/text_secondary"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:singleLine="true"
+                        android:inputType="text"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="16dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/logsEmptyText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="No past logs yet - they show up here after a run."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:padding="16dp"
+                        android:visibility="gone" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/logsList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/floorPlanTabContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_margin="16dp">
+
+                        <Button
+                            android:id="@+id/importFloorPlanButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; IMPORT PLAN"
+                            android:layout_marginEnd="4dp" />
+
+                        <Button
+                            android:id="@+id/switchFloorPlanButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; SWITCH PLAN"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginEnd="4dp" />
+
+                        <Button
+                            android:id="@+id/deleteFloorPlanButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="&gt; DELETE PLAN"
+                            android:layout_marginStart="4dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/floorPlanHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Tap the plan to drop a point. Tap an existing point to rename or remove it."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="8dp"
+                        android:visibility="gone" />
+
+                    <com.dreknil.wardrivebridge.FloorPlanView
+                        android:id="@+id/floorPlanView"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+                </LinearLayout>
+
+            </FrameLayout>
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- ==================== BOTTOM NAV ==================== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@color/surface"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <LinearLayout
+            android:id="@+id/navDashboard"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/navDashboardLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1. DASH"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:background="@drawable/bg_pill_purple" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navWifi"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/navWifiLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="2. WIFI"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navBluetooth"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/navBluetoothLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="3. BT"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navTerminal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/navTerminalLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="4. TRM"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navLogs"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/navLogsLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="5. LOG"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

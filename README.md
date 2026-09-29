@@ -24,7 +24,7 @@ It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth an
 
 ## Organic Maps overlay
 
-A lightly patched Organic Maps build (not published yet) can show this app's live status as an overlay on its map and in Android Auto, with a start/stop button in the car. It reads status from this app's `BridgeProvider` and never scans or talks to the rig itself, so the two apps don't compete for the rig. Only the Organic Maps build is allowed to read the provider; it's checked by package name and signing certificate.
+A lightly patched Organic Maps build ([wardrive-maps-overlay](https://github.com/Nill-os/wardrive-maps-overlay)) can show this app's live status as an overlay on its map and in Android Auto, with a start/stop button in the car. It reads status from this app's `BridgeProvider` and never scans or talks to the rig itself, so the two apps don't compete for the rig. Only the Organic Maps build is allowed to read the provider; it's checked by package name and signing certificate.
 
 To allow your own Organic Maps build, put its package name and the SHA-256 of its signing certificate in `ALLOWED` in `BridgeProvider.kt`.
 

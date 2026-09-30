@@ -76,6 +76,7 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 
 - **A different ESP32-S3 board:** change `board =` in `[env:wifi_node]` and `[env:ble_node]`. If your board has no RGB LED on GPIO48, change the LED pin in `firmware/src/wifi_node/main.cpp` and `firmware/src/ble_node/main.cpp`.
 - **A different CYD:** the display pin map is in `[env:cyd_node]` `build_flags`. A single-USB CYD with an **ILI9341** screen needs `ILI9341_DRIVER` in place of `ST7789_DRIVER`, and probably different inversion and rotation settings too (see [Design notes](DESIGN_NOTES.md#display-quirks)).
+- **More sniffer nodes:** flash each extra `wifi_node` board with its own `-D NODE_COUNT=<N> -D NODE_INDEX=<0..N-1>` and the firmware splits the 2.4 GHz channels across them automatically. The easiest way is the **desktop app's Flash tab**: set *Sniffer nodes* to `N`, pick this board's number, and flash - it injects those flags for you (no `platformio.ini` edit). Adding nodes also needs a transport decision (ESP-NOW is the recommended direction); see [Design notes → Scaling to more sniffer nodes](DESIGN_NOTES.md#scaling-to-more-sniffer-nodes).
 - **Quieter serial output:** set `WARDRIVE_DEBUG` to `false` in each `main.cpp` once the rig works.
 
 ## The desktop upload/organizer (optional)

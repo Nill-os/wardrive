@@ -620,10 +620,12 @@ def pio_exe():
     return shutil.which("pio") or shutil.which("platformio")
 
 
-def flash_board(env, port, host, password, on_line):
+def flash_board(env, port, host, password, on_line, build_flags=None):
     """Flash one board with PlatformIO, streaming output line by line. Returns
     the exit code (0 = success). `port` is used for USB envs, `host`/`password`
-    for the OTA env."""
+    for the OTA env. `build_flags` (a string of extra -D flags) is injected via
+    PLATFORMIO_BUILD_FLAGS - used to set the per-board channel split for a
+    multi-node rig (e.g. "-DNODE_COUNT=3 -DNODE_INDEX=1")."""
     pio = pio_exe()
     if not pio:
         raise ValueError("PlatformIO not found on PATH.\nInstall it:  pip install platformio")
@@ -635,10 +637,16 @@ def flash_board(env, port, host, password, on_line):
             cmd += ["--upload-flags", "--auth=" + password]
     elif port and port.strip().lower() != "auto":
         cmd += ["--upload-port", port.strip()]
+    run_env = os.environ.copy()
+    if build_flags:
+        # PlatformIO appends these to the env's own build_flags, so the -D here
+        # overrides the firmware's default NODE_COUNT/NODE_INDEX.
+        run_env["PLATFORMIO_BUILD_FLAGS"] = build_flags
+        on_line("$ PLATFORMIO_BUILD_FLAGS='" + build_flags + "'")
     on_line("$ cd firmware && " + " ".join(cmd))
     try:
         p = subprocess.Popen(cmd, cwd=firmware_dir(), stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True, bufsize=1)
+                             stderr=subprocess.STDOUT, text=True, bufsize=1, env=run_env)
     except Exception as e:
         raise ValueError("Couldn't start PlatformIO: " + str(e))
     for line in p.stdout:
@@ -822,6 +830,37 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
     port_menu = ttk_combo(prow, fport, mono)
     port_menu.pack(side="left", padx=(6, 6))
 
+    # Multi-node rig: how many WiFi sniffer nodes there are, and which one this
+    # board will be. The firmware splits the 2.4 GHz channels across them.
+    node_count = tk.IntVar(value=1)
+    node_index = tk.IntVar(value=0)
+    nrow = tk.Frame(tab, bg=BG); nrow.pack(fill="x", padx=6, pady=(0, 2))
+    tk.Label(nrow, text="Sniffer nodes:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    idx_menu = ttk_combo(nrow, node_index, mono, width=4)
+
+    def _on_count_change(*_):
+        n = max(1, node_count.get())
+        vals = [str(i) for i in range(n)]
+        idx_menu["values"] = vals
+        if str(node_index.get()) not in vals:
+            node_index.set(0)
+        # the index picker only matters when there's more than one node
+        if n > 1:
+            idx_menu.configure(state="readonly")
+        else:
+            node_index.set(0); idx_menu.configure(state="disabled")
+
+    count_menu = ttk_combo(nrow, node_count, mono, width=4)
+    count_menu["values"] = [str(i) for i in range(1, 9)]
+    count_menu.pack(side="left", padx=(6, 10))
+    node_count.trace_add("write", _on_count_change)
+    tk.Label(nrow, text="this wifi_node is #", font=mono, bg=BG, fg=DIM).pack(side="left")
+    idx_menu.pack(side="left", padx=(6, 0))
+    _on_count_change()
+    tk.Label(tab, text="1 node = channels 1/6/11. More nodes split channels 1-13 across them (flash each\n"
+                       "wifi_node with its own #). Wiring more nodes in needs a transport change - see Design notes.",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(0, 6))
+
     out = _log_area(tab, mono, 12)
     out.pack(fill="both", expand=True, padx=6, pady=(6, 8))
 
@@ -846,9 +885,18 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
         if env.endswith("_ota"):
             append("(rig must be in service mode; using " + host_var.get() + ")", "dim")
 
+        # For a multi-node rig, tell wifi_node how many sniffers there are and
+        # which one this board is, so the firmware picks this node's channels.
+        build_flags = None
+        if env == "wifi_node" and node_count.get() > 1:
+            n, i = node_count.get(), node_index.get()
+            build_flags = f"-DNODE_COUNT={n} -DNODE_INDEX={i}"
+            append(f"(node {i} of {n} - this board takes its slice of channels 1-13)", "dim")
+
         def worker():
             try:
-                rc = flash_board(env, fport.get(), host_var.get(), pass_var.get(), lambda l: append("  " + l))
+                rc = flash_board(env, fport.get(), host_var.get(), pass_var.get(),
+                                 lambda l: append("  " + l), build_flags=build_flags)
                 append("> SUCCESS" if rc == 0 else f"> FAILED (exit {rc})", "ok" if rc == 0 else "err")
             except Exception as e:
                 append("ERROR: " + str(e), "err")

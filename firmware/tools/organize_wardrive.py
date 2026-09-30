@@ -31,8 +31,10 @@ import os
 import re
 import shutil
 import string
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -40,7 +42,7 @@ import urllib.request
 import tkinter as tk
 import tkinter.font as tkfont
 from datetime import datetime
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 
 import pandas as pd
 
@@ -600,6 +602,51 @@ def write_summary(out_dir, source, stats):
         f.write("\n".join(lines) + "\n")
 
 
+# ---------- flashing the ESP boards (PlatformIO) ----------
+BOARDS = [
+    ("wifi_node", "WiFi sniffer + GPS (ESP32-S3)", "usb"),
+    ("ble_node", "BLE scanner (ESP32-S3)", "usb"),
+    ("cyd_node", "Screen / storage / uploads (CYD) - USB", "usb"),
+    ("cyd_node_ota", "Screen board - over-the-air (rig in service mode)", "ota"),
+]
+
+
+def firmware_dir():
+    # tools/ lives inside firmware/, which is the PlatformIO project root.
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def pio_exe():
+    return shutil.which("pio") or shutil.which("platformio")
+
+
+def flash_board(env, port, host, password, on_line):
+    """Flash one board with PlatformIO, streaming output line by line. Returns
+    the exit code (0 = success). `port` is used for USB envs, `host`/`password`
+    for the OTA env."""
+    pio = pio_exe()
+    if not pio:
+        raise ValueError("PlatformIO not found on PATH.\nInstall it:  pip install platformio")
+    cmd = [pio, "run", "-e", env, "-t", "upload"]
+    if env.endswith("_ota"):
+        if host and host.strip():
+            cmd += ["--upload-port", host.strip()]
+        if password:
+            cmd += ["--upload-flags", "--auth=" + password]
+    elif port and port.strip().lower() != "auto":
+        cmd += ["--upload-port", port.strip()]
+    on_line("$ cd firmware && " + " ".join(cmd))
+    try:
+        p = subprocess.Popen(cmd, cwd=firmware_dir(), stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, bufsize=1)
+    except Exception as e:
+        raise ValueError("Couldn't start PlatformIO: " + str(e))
+    for line in p.stdout:
+        on_line(line.rstrip("\n"))
+    p.wait()
+    return p.returncode
+
+
 # ---------- Tactical Tk UI (matches the app's cyberdeck theme) ----------
 BG = "#000000"; PANEL = "#080C10"; CYAN = "#00F0FF"; DIM = "#4A607A"
 PURPLE = "#9D00FF"; GREEN = "#22C55E"; RED = "#FF3333"
@@ -614,10 +661,27 @@ def _tactical_button(parent, text, command, font, accent=CYAN):
     return border, btn
 
 
+def ttk_combo(parent, var, mono, width=18):
+    return ttk.Combobox(parent, textvariable=var, font=mono, width=width, state="readonly")
+
+
+def _themed_entry(parent, var, mono, width, show=None):
+    return tk.Entry(parent, textvariable=var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN,
+                    relief="flat", highlightbackground="#33334d", highlightthickness=1, width=width, show=show)
+
+
+def _log_area(parent, mono, height):
+    t = tk.Text(parent, height=height, font=mono, bg=PANEL, fg=CYAN, insertbackground=CYAN,
+                relief="flat", wrap="word", highlightbackground=DIM, highlightthickness=1, padx=12, pady=10)
+    t.tag_config("dim", foreground=DIM); t.tag_config("ok", foreground=GREEN)
+    t.tag_config("err", foreground=RED); t.tag_config("accent", foreground=CYAN)
+    return t
+
+
 def main():
     root = tk.Tk()
     root.title("Nill OS - Wardriver")
-    root.geometry("680x700")
+    root.geometry("720x720")
     root.configure(bg=BG)
     root.resizable(False, False)
 
@@ -625,41 +689,56 @@ def main():
     mono_b = mono.copy(); mono_b.configure(weight="bold")
     title_f = mono.copy(); title_f.configure(size=18, weight="bold")
 
-    tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
-    tk.Label(root, text="UPLOAD & FIELD REPORT", font=mono, bg=BG, fg=DIM, anchor="w").pack(fill="x", padx=20, pady=(0, 10))
-    tk.Label(root, text="Get the logs off the rig three ways: the SD card, over the CYD's\n"
-                        "USB cable (no card removal), or over WiFi with the rig in service\n"
-                        "mode. Either way it builds an interactive field report (map +\n"
-                        "browse / filter / search, with Flock/Flipper/skimmer detection)\n"
-                        "under ~/Wardrive_Reports. Nothing is deleted from the card.",
-             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=20, pady=(0, 10))
+    style = ttk.Style()
+    try: style.theme_use("clam")
+    except Exception: pass
+    style.configure("TNotebook", background=BG, borderwidth=0)
+    style.configure("TNotebook.Tab", background=PANEL, foreground=DIM, padding=(16, 7), font=mono_b, borderwidth=0)
+    style.map("TNotebook.Tab", background=[("selected", BG)], foreground=[("selected", CYAN)])
 
-    # rig address + service password (for GET FROM RIG)
-    row = tk.Frame(root, bg=BG); row.pack(fill="x", padx=20, pady=(0, 6))
-    tk.Label(row, text="Rig:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(fill="x", padx=20, pady=(16, 6))
+
+    # Shared across tabs: rig address / password (WiFi + OTA) and USB port.
     host_var = tk.StringVar(value="nillos-wardriver.local")
-    tk.Entry(row, textvariable=host_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN,
-             relief="flat", highlightbackground="#33334d", highlightthickness=1, width=22).pack(side="left", padx=(6, 10))
-    tk.Label(row, text="Pass:", font=mono, bg=BG, fg=DIM).pack(side="left")
     pass_var = tk.StringVar()
-    tk.Entry(row, textvariable=pass_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN, show="*",
-             relief="flat", highlightbackground="#33334d", highlightthickness=1, width=14).pack(side="left", padx=(6, 0))
-    row2 = tk.Frame(root, bg=BG); row2.pack(fill="x", padx=20, pady=(0, 4))
-    tk.Label(row2, text="USB port:", font=mono, bg=BG, fg=DIM).pack(side="left")
     port_var = tk.StringVar(value="auto")
-    tk.Entry(row2, textvariable=port_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN,
-             relief="flat", highlightbackground="#33334d", highlightthickness=1, width=22).pack(side="left", padx=(6, 0))
 
-    status = tk.Text(root, height=7, font=mono, bg=PANEL, fg=CYAN, insertbackground=CYAN,
-                     relief="flat", wrap="word", highlightbackground=DIM, highlightthickness=1, padx=12, pady=10)
-    status.pack(fill="both", expand=True, padx=20, pady=(6, 10))
-    status.tag_config("dim", foreground=DIM); status.tag_config("ok", foreground=GREEN)
-    status.tag_config("err", foreground=RED); status.tag_config("accent", foreground=CYAN)
+    nb = ttk.Notebook(root)
+    report_tab = tk.Frame(nb, bg=BG)
+    flash_tab = tk.Frame(nb, bg=BG)
+    manage_tab = tk.Frame(nb, bg=BG)
+    nb.add(report_tab, text="  Logs & Report  ")
+    nb.add(flash_tab, text="  Flash  ")
+    nb.add(manage_tab, text="  Manage  ")
+    nb.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+
+    _build_report_tab(report_tab, mono, mono_b, host_var, pass_var, port_var)
+    _build_flash_tab(flash_tab, mono, mono_b, root, host_var, pass_var, port_var)
+    _build_manage_tab(manage_tab, mono, mono_b, root, port_var)
+
+    root.mainloop()
+
+
+def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
+    tk.Label(tab, text="Get the logs off the rig three ways - SD card, USB cable, or WiFi\n"
+                       "(rig in service mode) - and build an interactive field report (map +\n"
+                       "browse / filter / search, with Flock/Flipper/skimmer detection).",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 8))
+
+    row = tk.Frame(tab, bg=BG); row.pack(fill="x", padx=6, pady=(0, 4))
+    tk.Label(row, text="Rig:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    _themed_entry(row, host_var, mono, 22).pack(side="left", padx=(6, 10))
+    tk.Label(row, text="Pass:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    _themed_entry(row, pass_var, mono, 12, show="*").pack(side="left", padx=(6, 10))
+    tk.Label(row, text="USB:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    _themed_entry(row, port_var, mono, 12).pack(side="left", padx=(6, 0))
+
+    status = _log_area(tab, mono, 8)
+    status.pack(fill="both", expand=True, padx=6, pady=(6, 8))
 
     def log(text="", tag=None):
-        status.configure(state="normal")
-        status.insert("end", text + "\n", (tag,) if tag else ())
-        status.see("end"); status.configure(state="disabled"); root.update_idletasks()
+        status.configure(state="normal"); status.insert("end", text + "\n", (tag,) if tag else ())
+        status.see("end"); status.configure(state="disabled"); tab.update_idletasks()
 
     def clear():
         status.configure(state="normal"); status.delete("1.0", "end"); status.configure(state="disabled")
@@ -667,14 +746,12 @@ def main():
     state = {"report": None, "out": None}
 
     def _process(folder):
-        """Organize a folder of session CSVs and show the result."""
         log("Building from " + folder, "accent")
         try:
             out_dir, st = organize(folder, progress=lambda s: log("  " + s, "dim"))
         except Exception as e:
             log("ERROR: " + str(e), "err"); return
-        state["out"] = out_dir
-        state["report"] = os.path.join(out_dir, "report.html")
+        state["out"], state["report"] = out_dir, os.path.join(out_dir, "report.html")
         log("")
         log(f"  unique devices : {st['unique_devices']}  (WiFi {st['wifi']}, BLE {st['ble']}, cell {st['cell']})")
         log(f"  notable        : {st['notable']}  (Flock / Flipper / skimmer / Pineapple / ...)",
@@ -683,14 +760,12 @@ def main():
         if st["unique_devices"] == 0:
             log("No logged devices in these files (bench-test / no GPS fix yet).", "dim")
         else:
-            log("field report + organized folders in:", "dim")
-            log("  " + out_dir, "accent")
-            log("> DONE", "ok")
-            report_border.pack(pady=(0, 8))
-        folder_border.pack(pady=(0, 14))
+            log("field report + organized folders in:", "dim"); log("  " + out_dir, "accent"); log("> DONE", "ok")
+            report_border.pack(pady=(0, 6))
+        folder_border.pack(pady=(0, 10))
 
     def _busy(on):
-        for b in (sd_btn, wifi_btn, usb_btn):
+        for b in (sd_btn, usb_btn, wifi_btn):
             b.configure(state="disabled" if on else "normal")
 
     def do_sd():
@@ -705,42 +780,175 @@ def main():
 
     def do_wifi():
         _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
-        host = host_var.get().strip()
-        if not host:
-            log("Enter the rig's address (e.g. nillos-wardriver.local or its IP).", "err"); _busy(False); return
-        tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_dl")
-        shutil.rmtree(tmp, ignore_errors=True)
+        if not host_var.get().strip():
+            log("Enter the rig's address on the field above.", "err"); _busy(False); return
+        tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_dl"); shutil.rmtree(tmp, ignore_errors=True)
         try:
-            n = download_from_rig(host, pass_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
-            log(f"  downloaded {n} file(s) from the rig", "dim")
+            n = download_from_rig(host_var.get(), pass_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
+            log(f"  downloaded {n} file(s) over WiFi", "dim")
         except Exception as e:
             log("ERROR: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)
 
     def do_usb():
         _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
-        tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_usb")
-        shutil.rmtree(tmp, ignore_errors=True)
+        tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_usb"); shutil.rmtree(tmp, ignore_errors=True)
         try:
             n = read_from_cyd_serial(port_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
-            log(f"  read {n} file(s) from the rig over USB", "dim")
+            log(f"  read {n} file(s) over USB", "dim")
         except Exception as e:
             log("ERROR: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)
 
-    sd_border, sd_btn = _tactical_button(root, "> GET FROM SD CARD", do_sd, mono_b)
-    sd_border.pack(pady=(0, 6))
-    usb_border, usb_btn = _tactical_button(root, "> GET FROM RIG (USB)", do_usb, mono_b)
-    usb_border.pack(pady=(0, 6))
-    wifi_border, wifi_btn = _tactical_button(root, "> GET FROM RIG (WIFI)", do_wifi, mono_b, accent=PURPLE)
-    wifi_border.pack(pady=(0, 6))
-    report_border, _rb = _tactical_button(root, "> VIEW FIELD REPORT",
-                                          lambda: state["report"] and open_path(state["report"]), mono_b)
-    folder_border, _fb = _tactical_button(root, "> OPEN FOLDER",
-                                          lambda: state["out"] and open_path(state["out"]), mono_b, accent=PURPLE)
-
+    sd_border, sd_btn = _tactical_button(tab, "> GET FROM SD CARD", lambda: threading.Thread(target=do_sd, daemon=True).start(), mono_b)
+    sd_border.pack(pady=(0, 5))
+    usb_border, usb_btn = _tactical_button(tab, "> GET FROM RIG (USB)", lambda: threading.Thread(target=do_usb, daemon=True).start(), mono_b)
+    usb_border.pack(pady=(0, 5))
+    wifi_border, wifi_btn = _tactical_button(tab, "> GET FROM RIG (WIFI)", lambda: threading.Thread(target=do_wifi, daemon=True).start(), mono_b, accent=PURPLE)
+    wifi_border.pack(pady=(0, 5))
+    report_border, _rb = _tactical_button(tab, "> VIEW FIELD REPORT", lambda: state["report"] and open_path(state["report"]), mono_b)
+    folder_border, _fb = _tactical_button(tab, "> OPEN FOLDER", lambda: state["out"] and open_path(state["out"]), mono_b, accent=PURPLE)
     log("Ready. SD card, USB cable, or WiFi (rig in service mode).", "dim")
-    root.mainloop()
+
+
+def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
+    tk.Label(tab, text="Flash firmware to a board over USB (or the CYD over the air). Uses\n"
+                       "PlatformIO from the firmware/ project. Pick a port, then a board.",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 8))
+
+    prow = tk.Frame(tab, bg=BG); prow.pack(fill="x", padx=6, pady=(0, 6))
+    tk.Label(prow, text="USB port:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    fport = tk.StringVar(value="auto")
+    port_menu = ttk_combo(prow, fport, mono)
+    port_menu.pack(side="left", padx=(6, 6))
+
+    out = _log_area(tab, mono, 12)
+    out.pack(fill="both", expand=True, padx=6, pady=(6, 8))
+
+    def append(text, tag=None):
+        root.after(0, lambda: (out.configure(state="normal"), out.insert("end", text + "\n", (tag,) if tag else ()),
+                               out.see("end"), out.configure(state="disabled")))
+
+    def refresh_ports():
+        ports = ["auto"] + _serial_ports()
+        port_menu["values"] = ports
+        if fport.get() not in ports: fport.set("auto")
+    refresh_ports()
+
+    buttons = {}
+
+    def do_flash(env):
+        if not pio_exe():
+            append("PlatformIO not found. Install it:  pip install platformio", "err"); return
+        for b in buttons.values(): b.configure(state="disabled")
+        out.configure(state="normal"); out.delete("1.0", "end"); out.configure(state="disabled")
+        append(f"Flashing {env}...", "accent")
+        if env.endswith("_ota"):
+            append("(rig must be in service mode; using " + host_var.get() + ")", "dim")
+
+        def worker():
+            try:
+                rc = flash_board(env, fport.get(), host_var.get(), pass_var.get(), lambda l: append("  " + l))
+                append("> SUCCESS" if rc == 0 else f"> FAILED (exit {rc})", "ok" if rc == 0 else "err")
+            except Exception as e:
+                append("ERROR: " + str(e), "err")
+            finally:
+                root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()])
+        threading.Thread(target=worker, daemon=True).start()
+
+    tk.Button(prow, text="refresh", command=refresh_ports, font=mono, bg=PANEL, fg=CYAN,
+              relief="flat", padx=8, cursor="hand2").pack(side="left")
+
+    for env, desc, kind in BOARDS:
+        f = tk.Frame(tab, bg=BG); f.pack(fill="x", padx=6, pady=2)
+        border, btn = _tactical_button(f, "> FLASH " + env.upper(), (lambda e=env: do_flash(e)), mono_b,
+                                       accent=(PURPLE if kind == "ota" else CYAN))
+        border.pack(side="left")
+        buttons[env] = btn
+        tk.Label(f, text=desc, font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 0))
+
+
+def _build_manage_tab(tab, mono, mono_b, root, port_var):
+    tk.Label(tab, text="Live serial console to the CYD: send commands and watch the rig.\n"
+                       "Quick actions cover the common ones. (Type 'help' - or any cfg/rig\n"
+                       "command - in the box.)",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 6))
+
+    prow = tk.Frame(tab, bg=BG); prow.pack(fill="x", padx=6, pady=(0, 6))
+    tk.Label(prow, text="Port:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    mport = tk.StringVar(value="auto")
+    pm = ttk_combo(prow, mport, mono); pm.pack(side="left", padx=(6, 6))
+    tk.Button(prow, text="refresh", command=lambda: pm.configure(values=["auto"] + _serial_ports()),
+              font=mono, bg=PANEL, fg=CYAN, relief="flat", padx=8, cursor="hand2").pack(side="left")
+    pm.configure(values=["auto"] + _serial_ports())
+
+    con = {"ser": None, "stop": False}
+    out = _log_area(tab, mono, 11); out.pack(fill="both", expand=True, padx=6, pady=(6, 6))
+
+    def append(text, tag=None):
+        root.after(0, lambda: (out.configure(state="normal"), out.insert("end", text + "\n", (tag,) if tag else ()),
+                               out.see("end"), out.configure(state="disabled")))
+
+    def reader():
+        s = con["ser"]
+        while not con["stop"] and s and s.is_open:
+            try:
+                line = s.readline().decode("utf-8", "replace").rstrip("\r\n")
+            except Exception:
+                break
+            if line:
+                append(line, "err" if "[ALERT]" in line or "FAIL" in line else None)
+
+    def connect():
+        if con["ser"]:
+            con["stop"] = True
+            try: con["ser"].close()
+            except Exception: pass
+            con["ser"] = None; connect_btn.configure(text="> CONNECT"); append("disconnected.", "dim"); return
+        try:
+            serial = _import_serial()
+            port = mport.get()
+            if port == "auto":
+                port = next((p for p in _serial_ports() if _probe_is_cyd(serial, p)), None)
+                if not port:
+                    append("Couldn't find the rig on a serial port.", "err"); return
+            con["ser"] = _open_cyd(serial, port); con["stop"] = False
+            connect_btn.configure(text="> DISCONNECT")
+            append(f"connected to {port}", "accent")
+            threading.Thread(target=reader, daemon=True).start()
+        except Exception as e:
+            append("ERROR: " + str(e), "err")
+
+    def send(cmd):
+        if not con["ser"]:
+            append("Not connected.", "err"); return
+        try:
+            con["ser"].write((cmd + "\n").encode()); con["ser"].flush()
+            append("> " + cmd, "accent")
+        except Exception as e:
+            append("write failed: " + str(e), "err")
+
+    connect_border, connect_btn = _tactical_button(prow, "> CONNECT", connect, mono_b)
+    connect_border.pack(side="left", padx=(10, 0))
+
+    # command entry
+    crow = tk.Frame(tab, bg=BG); crow.pack(fill="x", padx=6, pady=(0, 6))
+    cmd_var = tk.StringVar()
+    ce = _themed_entry(crow, cmd_var, mono, 40); ce.pack(side="left", fill="x", expand=True)
+    def send_typed(*_):
+        c = cmd_var.get().strip()
+        if c: send(c); cmd_var.set("")
+    ce.bind("<Return>", send_typed)
+    tk.Button(crow, text="send", command=send_typed, font=mono_b, bg=PANEL, fg=CYAN,
+              relief="flat", padx=10, cursor="hand2").pack(side="left", padx=(6, 0))
+
+    # quick actions
+    qrow = tk.Frame(tab, bg=BG); qrow.pack(fill="x", padx=6, pady=(0, 8))
+    for label, cmd in [("Service ON", "rig service on"), ("Service OFF", "rig service off"),
+                       ("List logs", "sd list"), ("Status", "wdstream status")]:
+        tk.Button(qrow, text=label, command=(lambda c=cmd: send(c)), font=mono, bg=PANEL, fg=CYAN,
+                  relief="flat", padx=8, pady=4, cursor="hand2").pack(side="left", padx=(0, 6))
+    append("Pick a port and press CONNECT. Opening the port won't disturb a run.", "dim")
 
 
 if __name__ == "__main__":

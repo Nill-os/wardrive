@@ -77,6 +77,11 @@
             android:exported="false"
             android:label="Analytics" />
 
+        <activity
+            android:name=".AntennaActivity"
+            android:exported="false"
+            android:label="Antenna check" />
+
         <service
             android:name=".ScanService"
             android:exported="false"

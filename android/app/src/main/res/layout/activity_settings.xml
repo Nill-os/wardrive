@@ -22,6 +22,30 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:text="&gt; TOOLS"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <Button
+            android:id="@+id/antennaCheckButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&gt; ANTENNA CHECK"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Pick a target and compare antennas by its live signal (peak + A/B capture)."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:paddingBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:text="&gt; RIG PAIRING"
             android:textColor="@color/cyan_500"
             android:textSize="14sp"

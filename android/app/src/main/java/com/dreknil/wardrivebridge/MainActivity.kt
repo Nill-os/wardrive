@@ -48,7 +48,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private val expandedHistGroups = mutableMapOf<String, Boolean>()
     private val uploadManager by lazy { UploadManager(applicationContext) }
     private var huntDialog: HuntDialog? = null
-    private var antennaDialog: AntennaCheckDialog? = null
     private val dao: WardriveDao by lazy { AppDatabase.get(applicationContext).dao() }
 
     // ---- Navigation shell (Dashboard/WiFi/Bluetooth/Terminal bottom nav +
@@ -497,7 +496,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     override fun onDestroy() {
         super.onDestroy()
         huntDialog?.dismiss() // avoid a WindowLeaked crash if the app closes mid-hunt
-        antennaDialog?.dismiss()
         // Deliberately does NOT stop the run - the whole point of
         // ScanService is that closing this Activity (screen lock, app
         // switch, task swipe) must not interrupt an active run.
@@ -627,7 +625,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     override fun onObservation(tagged: Observation) {
         huntDialog?.let { if (it.matches(tagged.mac)) it.onSample(tagged) }
-        antennaDialog?.let { if (it.matches(tagged.mac)) it.onSample(tagged) }
         mapManager.upsertLive(tagged)
         refreshDetailFeedIfShown()
         updateStatusText()
@@ -856,12 +853,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     }
 
     private fun startAntennaCheck(obs: Observation) {
-        antennaDialog?.dismiss()
-        val dialog = AntennaCheckDialog(this, obs.mac, obs.label)
-        dialog.setOnDismissListener { antennaDialog = null }
-        antennaDialog = dialog
-        dialog.show()
-        dialog.onSample(obs)
+        startActivity(AntennaActivity.intent(this, obs.mac))
     }
 
     // Tap a row for the full picture on one device - everything the live

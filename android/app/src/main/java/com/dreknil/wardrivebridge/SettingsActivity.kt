@@ -105,6 +105,7 @@ class SettingsActivity : AppCompatActivity() {
                 finish() // back to the dashboard, where the URL dialog appears
             }
         }
+        binding.antennaCheckButton.setOnClickListener { startActivity(AntennaActivity.intent(this)) }
         binding.batteryOptButton.setOnClickListener { requestIgnoreBatteryOptimizations() }
         refreshBatteryOptButton()
 

@@ -458,7 +458,17 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     // (a real run drives them itself, and nothing should scan with no tool open).
     private fun syncPreviewScanning() {
         val s = scanService ?: return
-        if (currentDetailKind == DetailKind.FEED && !s.running) s.startPreview() else s.stopPreview()
+        if (currentDetailKind == DetailKind.FEED && !s.running) {
+            // Only power up the radio the open tool actually needs, so it
+            // "searches for the selected tool" - a WiFi tool doesn't spin up BLE.
+            val src = detailFeedSources
+            val wifi = Source.PHONE_WIFI in src || Source.RIG_WIFI in src
+            val ble = Source.PHONE_BLE in src || Source.RIG_BLE in src
+            val cell = Source.PHONE_CELL in src
+            s.startPreview(wifi = wifi, ble = ble, cell = cell)
+        } else {
+            s.stopPreview()
+        }
     }
 
     private fun refreshDetailFeedIfShown() {
@@ -466,7 +476,19 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         val list = buildGroupedFeed(detailFeedSources, detailFeedExtra)
         adapter.submitList(list)
         binding.detailFeedEmptyText.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+        if (list.isEmpty()) {
+            val s = scanService
+            binding.detailFeedEmptyText.text = when {
+                s == null -> "Starting up…"
+                !hasLocationPermission() -> "Grant Location to this app so it can scan, then reopen this tool."
+                s.running || s.previewing -> "Searching… long-press a result to fox-hunt it."
+                else -> "Nothing detected yet."
+            }
+        }
     }
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun refreshRecentRuns() {
         Thread {

@@ -106,6 +106,9 @@ class ScanService : Service(), RigLinkManager.Listener {
     // "Pineapple Detection" etc. actually show something when you open them
     // without first starting a full drive. A real run always takes precedence.
     var previewing = false; private set
+    private var previewWifi = false
+    private var previewBle = false
+    private var previewCell = false
     var rigConnected = false; private set
     var meshLinkState = RigLinkManager.MeshLinkState.DISCONNECTED; private set
     // Parsed out of the rig's own periodic "WD:STATUS ... ch=N ..." line (see
@@ -478,13 +481,19 @@ class ScanService : Service(), RigLinkManager.Listener {
     // DB rows (currentRunId stays null, so onObservation never writes), no
     // foreground service. A real run always wins: if one is active this is a
     // no-op and the run's own scanning already feeds the same tools.
-    fun startPreview() {
-        if (running || previewing) return
+    // wifi/ble/cell pick which radios to power up - a WiFi tool doesn't need
+    // the BLE radio and vice-versa, so opening "Live WiFi" only turns on WiFi
+    // scanning ("search for the selected tool"). If the open tool changes type,
+    // MainActivity restarts preview with the new set.
+    fun startPreview(wifi: Boolean = true, ble: Boolean = true, cell: Boolean = false) {
+        if (running) return
+        if (previewing) stopPreview() // switching tool type: drop the old radio set first
         previewing = true
+        previewWifi = wifi; previewBle = ble; previewCell = cell
         groups.values.forEach { it.clear() }
-        if (hasLocationPermission()) wifiScanner.start()
-        if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
-        if (hasCellPermission()) cellScanner.start()
+        if (wifi && hasLocationPermission()) wifiScanner.start()
+        if (ble && hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
+        if (cell && hasCellPermission()) cellScanner.start()
         updateExternalUi(force = true)
     }
 
@@ -492,9 +501,10 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (!previewing) return
         previewing = false
         if (running) return // a run took over the radios; leave them on for it
-        wifiScanner.stop()
-        bleScanner.stop()
-        cellScanner.stop()
+        if (previewWifi) wifiScanner.stop()
+        if (previewBle) bleScanner.stop()
+        if (previewCell) cellScanner.stop()
+        previewWifi = false; previewBle = false; previewCell = false
     }
 
     fun currentRunId(): Long? = currentRunId

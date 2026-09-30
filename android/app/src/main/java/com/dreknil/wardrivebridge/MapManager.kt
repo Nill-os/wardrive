@@ -128,6 +128,20 @@ class MapManager(
         mapView.controller.setCenter(GeoPoint(lat, lon))
     }
 
+    /** True once the map has been centered on real data (a marker, a trail
+     *  point, or an explicit recenter) - lets the caller supply a fallback
+     *  center only when there's nothing else to show. */
+    fun isCentered(): Boolean = hasCentered
+
+    /** Center on this point only if nothing has centered the map yet, so the
+     *  live map opens on the user's location instead of Null Island (0,0)
+     *  when there's no active run or GPS fix to center on. */
+    fun ensureCentered(lat: Double, lon: Double) {
+        if (hasCentered) return
+        mapView.controller.setCenter(GeoPoint(lat, lon))
+        hasCentered = true
+    }
+
     fun showHistorical(points: List<HistoricalPoint>) {
         clearHistorical()
         for (p in points) {

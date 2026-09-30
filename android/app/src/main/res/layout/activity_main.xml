@@ -15,57 +15,13 @@
         android:padding="16dp">
 
         <TextView
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:text="&gt; NILL OS - WARDRIVER"
             android:textColor="@color/cyan_500"
-            android:textSize="18sp"
+            android:textSize="20sp"
             android:maxLines="1"
             android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/headerConnectButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🔌"
-            android:textSize="22sp"
-            android:padding="6dp"
-            android:clickable="true"
-            android:focusable="true" />
-
-        <TextView
-            android:id="@+id/headerMapButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🗺"
-            android:textSize="22sp"
-            android:padding="6dp"
-            android:layout_marginStart="4dp"
-            android:clickable="true"
-            android:focusable="true" />
-
-        <TextView
-            android:id="@+id/headerExportButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="📤"
-            android:textSize="22sp"
-            android:padding="6dp"
-            android:layout_marginStart="4dp"
-            android:clickable="true"
-            android:focusable="true" />
-
-        <TextView
-            android:id="@+id/headerSettingsButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="⚙️"
-            android:textSize="22sp"
-            android:padding="6dp"
-            android:layout_marginStart="4dp"
-            android:clickable="true"
-            android:focusable="true" />
     </LinearLayout>
 
     <FrameLayout
@@ -394,6 +350,16 @@
                         android:text="&gt; START"
                         android:textSize="16sp"
                         android:layout_marginTop="14dp" />
+
+                    <!-- Connect / re-link to the rig - was the plug icon in the
+                         old top bar, now a full button under START. -->
+                    <Button
+                        android:id="@+id/linkButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="&gt; LINK RIG"
+                        android:textSize="14sp"
+                        android:layout_marginTop="8dp" />
 
                     <!-- Only makes sense mid-run - hidden the rest of the
                          time rather than shown disabled. -->
@@ -1285,6 +1251,31 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="5. LOG"
+                android:maxLines="1"
+                android:ellipsize="none"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navSettings"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/navSettingsLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="6. SET"
                 android:maxLines="1"
                 android:ellipsize="none"
                 android:textColor="@color/text_secondary"

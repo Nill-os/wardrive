@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         binding.detailFeedList.layoutManager = LinearLayoutManager(this)
         binding.detailFeedList.adapter = adapter
 
-        binding.headerConnectButton.setOnClickListener {
+        binding.linkButton.setOnClickListener {
             requestNeededPermissions()
             scanService?.connectRig()
         }
@@ -182,10 +182,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             true
         }
 
-        binding.headerMapButton.setOnClickListener { showDetail(DetailKind.MAP, "Wardriving") }
-        binding.headerExportButton.setOnClickListener { showExportMenu() }
         binding.rigHealthText.setOnClickListener { confirmRigUpload() }
-        binding.headerSettingsButton.setOnClickListener {
+        binding.navSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         binding.quickActionUpload.setOnClickListener { uploadCsv() }
@@ -422,6 +420,18 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             // kicks a fresh draw pass.
             DetailKind.MAP -> binding.mapView.post {
                 binding.mapView.onResume()
+                // If there's no run data or GPS fix to center on, fall back to the
+                // phone's last known location, then the configured home, so the
+                // live map opens on a real place instead of a blank ocean (0,0).
+                if (!mapManager.isCentered()) {
+                    val loc = scanService?.locationTracker?.lastLocation
+                    if (loc != null) {
+                        mapManager.ensureCentered(loc.latitude, loc.longitude)
+                    } else {
+                        val s = AppSettings(this)
+                        if (s.homeLat != 0.0 || s.homeLon != 0.0) mapManager.ensureCentered(s.homeLat, s.homeLon)
+                    }
+                }
                 binding.mapView.invalidate()
             }
             else -> {}

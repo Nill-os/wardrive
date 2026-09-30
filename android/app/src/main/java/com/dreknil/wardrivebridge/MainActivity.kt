@@ -1074,10 +1074,12 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 val sd = if (health.sdOk) "SD OK" else "SD FAIL"
                 val sdFree = health.sdFreeMB?.takeIf { it >= 0 }?.let { " (${fmtStorage(it)} FREE)" } ?: ""
                 val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD (TAP)" else ""
-                // Second telemetry line: wifi_node link, free RAM. Only shown on
+                // Second telemetry line: main node link, free RAM. Only shown on
                 // firmware new enough to report them, so older rigs read unchanged.
+                // "Main node" is wifi_node #0 - the aggregator that carries GPS and
+                // the wired link to the CYD (see docs/SCALING.md).
                 val nodeBits = mutableListOf<String>()
-                health.wifiNodeUp?.let { nodeBits.add(if (it) "WIFI NODE UP" else "WIFI NODE DOWN") }
+                health.wifiNodeUp?.let { nodeBits.add(if (it) "MAIN NODE UP" else "MAIN NODE DOWN") }
                 health.freeHeapKB?.let { nodeBits.add("RAM ${it}K") }
                 val telemetry = if (nodeBits.isNotEmpty()) "\n${nodeBits.joinToString(" · ")}" else ""
                 binding.rigHealthText.text = "$gps · $sd$sdFree$pend$telemetry"

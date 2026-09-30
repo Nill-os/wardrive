@@ -4,6 +4,16 @@ Android companion app for the wardriving rig in [`../firmware`](../firmware).
 
 It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth and cell sightings, logs every run, and uploads to WiGLE and wdgwars.
 
+## Screenshots
+
+<p align="center">
+  <img src="../docs/screenshots/phone-dashboard.png" width="205" alt="Dashboard">
+  <img src="../docs/screenshots/phone-wifi-tools.png" width="205" alt="WiFi tools">
+  <img src="../docs/screenshots/phone-bluetooth-tools.png" width="205" alt="Bluetooth tools">
+  <img src="../docs/screenshots/phone-settings.png" width="205" alt="Settings">
+</p>
+<p align="center"><em>Dashboard, WiFi &amp; Bluetooth tools, and settings. (Account totals and map hidden here for privacy.)</em></p>
+
 ## What it does
 
 - **Rig link:** connects to the CYD board over BLE (primary, paired and encrypted), with USB-OTG serial as a fallback. Reconnects on its own after a drop, and only ever to the rig it's paired with.

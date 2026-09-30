@@ -1099,6 +1099,76 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
             buttons[env] = btn
             tk.Label(f, text=desc, font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 0))
 
+    # ---- Bulk flash: detect every connected board and reflash each with the
+    # matching firmware in one go, keeping the node number it already reports. ----
+    def flash_all():
+        if not pio_exe():
+            append("PlatformIO not found. Install it:  pip install platformio", "err"); return
+        ports = _serial_ports()
+        if not ports:
+            append("No serial ports found. Plug the boards in first.", "err"); return
+        for b in buttons.values(): b.configure(state="disabled")
+        out.configure(state="normal"); out.delete("1.0", "end"); out.configure(state="disabled")
+        append("Bulk flash: detecting boards...", "accent")
+
+        def flags_for(role, info):
+            # Prefer the number the board already reports; fall back to the UI.
+            if role == "wifi":
+                n = info.get("count") or node_count.get()
+                i = info.get("index") if info.get("index") is not None else node_index.get()
+                return f"-DNODE_COUNT={n} -DNODE_INDEX={i}" if n and n > 1 else None
+            if role == "ble":
+                n = info.get("count") or ble_count.get()
+                i = info.get("index") if info.get("index") is not None else ble_index.get()
+                return f"-DBLE_NODE_COUNT={n} -DBLE_NODE_INDEX={i}" if n and n > 1 else None
+            return None
+
+        def worker():
+            try:
+                serial = _import_serial()
+            except Exception as e:
+                append("ERROR: " + str(e), "err")
+                root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()]); return
+            descriptions = _port_descriptions()
+            # role -> PlatformIO env to flash it with (BLE uses the picked board)
+            env_for = {"wifi": "wifi_node", "ble": ble_env_of[ble_choice.get()], "cyd": "cyd_node"}
+            plan = []
+            for port in ports:
+                info = detect_board(serial, port)
+                role = info.get("role")
+                append(f"  {port}  ->  {describe_board(info, descriptions)}",
+                       "ok" if role in _ROLE_LABEL else "dim")
+                if role in env_for:
+                    plan.append((port, role, info))
+            if not plan:
+                append("Nothing to flash - no wardrive boards recognized. Flash blank boards "
+                       "individually so you can assign each a type and number.", "err")
+                root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()]); return
+            append(f"Flashing {len(plan)} board(s) in sequence...", "accent")
+            ok = 0
+            for port, role, info in plan:
+                env = env_for[role]
+                append(f"--- {env} on {port} ---", "accent")
+                try:
+                    rc = flash_board(env, port, host_var.get(), pass_var.get(),
+                                     lambda l: append("  " + l), build_flags=flags_for(role, info))
+                    if rc == 0:
+                        ok += 1; append(f"> {env} OK", "ok")
+                    else:
+                        append(f"> {env} FAILED (exit {rc})", "err")
+                except Exception as e:
+                    append(f"> {env} ERROR: {e}", "err")
+            append(f"Bulk flash done: {ok}/{len(plan)} succeeded.", "ok" if ok == len(plan) else "err")
+            root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()])
+        threading.Thread(target=worker, daemon=True).start()
+
+    af = tk.Frame(tab, bg=BG); af.pack(fill="x", padx=6, pady=(8, 2))
+    all_border, all_btn = _tactical_button(af, "> FLASH ALL", flash_all, mono_b, accent=GREEN)
+    all_border.pack(side="left")
+    buttons["_flashall"] = all_btn
+    tk.Label(af, text="detect every connected board and reflash each, keeping its number",
+             font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 0))
+
 
 def _build_manage_tab(tab, mono, mono_b, root, port_var):
     tk.Label(tab, text="Live serial console to the CYD: send commands and watch the rig.\n"

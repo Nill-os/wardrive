@@ -346,16 +346,25 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
             next = writeQueue.poll() ?: return
             writeInFlight = true
         }
-        val ok = if (Build.VERSION.SDK_INT >= 33) {
-            g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-                BluetoothGatt.GATT_SUCCESS
-        } else {
-            @Suppress("DEPRECATION")
-            c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            @Suppress("DEPRECATION")
-            c.value = next
-            @Suppress("DEPRECATION")
-            g.writeCharacteristic(c)
+        // writeCharacteristic can throw DeadObjectException/RemoteException if
+        // the BLE stack or the rig went away between the null-check and here
+        // (e.g. the rig rebooted for an OTA/flash). Treat that as a failed
+        // write and let the reconnect logic recover, rather than crashing.
+        val ok = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
+                    BluetoothGatt.GATT_SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                @Suppress("DEPRECATION")
+                c.value = next
+                @Suppress("DEPRECATION")
+                g.writeCharacteristic(c)
+            }
+        } catch (e: Exception) {
+            callbacks.onBleLog("[ble] write threw ${e.javaClass.simpleName} - link lost")
+            false
         }
         if (!ok) {
             synchronized(writeQueue) { writeInFlight = false }

@@ -365,6 +365,24 @@
             android:hint="Service-mode password (OTA + log server)" android:textColorHint="@color/text_secondary"
             android:textColor="@color/text_primary" android:inputType="textPassword" android:singleLine="true" />
 
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="&gt; DETECTION ALERTS" android:textColor="@color/cyan_500"
+            android:textSize="14sp" android:textStyle="bold" android:paddingTop="20dp" android:paddingBottom="4dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary" android:textSize="12sp"
+            android:text="Announce (spoken + vibrate on the phone, and a banner + LED flash on the rig) the first time each of these is seen in a run. Sent to the rig too, so alerts work with or without the phone." />
+        <CheckBox android:id="@+id/alertFlockCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Flock cameras (ALPR)" />
+        <CheckBox android:id="@+id/alertPoliceCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Police body/fleet cameras" />
+        <CheckBox android:id="@+id/alertSkimmerCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Possible BLE card skimmers" />
+        <CheckBox android:id="@+id/alertFlipperCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Flipper Zero" />
+        <CheckBox android:id="@+id/alertDroneCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Drones (Remote ID) - phone only" />
+        <CheckBox android:id="@+id/alertMeshCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Meshtastic radios - phone only" />
+        <CheckBox android:id="@+id/alertGlassesCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Smart glasses" />
+        <CheckBox android:id="@+id/alertActionCamCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Action cameras" />
+        <CheckBox android:id="@+id/alertPineappleCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="WiFi Pineapple (rogue AP)" />
+
         <Button
             android:id="@+id/saveSettingsButton"
             android:layout_width="match_parent"

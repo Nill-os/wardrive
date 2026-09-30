@@ -33,6 +33,15 @@ class SettingsActivity : AppCompatActivity() {
         if (settings.maxHdop != 0.0) binding.maxHdopInput.setText(settings.maxHdop.toString())
         if (settings.spokenUpdateMinutes > 0) binding.spokenMinutesInput.setText(settings.spokenUpdateMinutes.toString())
         binding.spokenTrackerCheck.isChecked = settings.spokenTrackerAlerts
+        binding.alertFlockCheck.isChecked = settings.alertFlock
+        binding.alertPoliceCheck.isChecked = settings.alertPolice
+        binding.alertSkimmerCheck.isChecked = settings.alertSkimmer
+        binding.alertFlipperCheck.isChecked = settings.alertFlipper
+        binding.alertDroneCheck.isChecked = settings.alertDrone
+        binding.alertMeshCheck.isChecked = settings.alertMesh
+        binding.alertGlassesCheck.isChecked = settings.alertGlasses
+        binding.alertActionCamCheck.isChecked = settings.alertActionCam
+        binding.alertPineappleCheck.isChecked = settings.alertPineapple
         binding.autoUploadCheck.isChecked = settings.autoUploadOnWifi
         binding.tripModeCheck.isChecked = settings.tripMode
 
@@ -142,6 +151,23 @@ class SettingsActivity : AppCompatActivity() {
         Toast.makeText(this, "Sent ${fields.size} network setting(s) to the rig", Toast.LENGTH_SHORT).show()
     }
 
+    /** Push the detection-alert toggles to the rig so its own on-screen/LED
+     *  alerts match the phone's. Silently no-ops if the rig isn't connected -
+     *  they're saved on the phone and (re)pushed on the next connected save. */
+    private fun pushRigAlertSettings() {
+        val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+        if (link == null || ScanService.instance?.rigConnected != true) return
+        fun b(v: Boolean) = if (v) "1" else "0"
+        link.sendRaw("cfg alert_flock ${b(settings.alertFlock)}")
+        link.sendRaw("cfg alert_police ${b(settings.alertPolice)}")
+        link.sendRaw("cfg alert_skimmer ${b(settings.alertSkimmer)}")
+        link.sendRaw("cfg alert_flipper ${b(settings.alertFlipper)}")
+        link.sendRaw("cfg alert_glasses ${b(settings.alertGlasses)}")
+        link.sendRaw("cfg alert_actioncam ${b(settings.alertActionCam)}")
+        link.sendRaw("cfg alert_pineapple ${b(settings.alertPineapple)}")
+        // drone + mesh are phone-only (need BLE service UUIDs the rig doesn't relay).
+    }
+
     private fun showPairedRig() {
         val addr = settings.pairedRigAddress
         binding.pairedRigText.text = if (addr.isEmpty()) {
@@ -186,6 +212,16 @@ class SettingsActivity : AppCompatActivity() {
         settings.maxHdop = binding.maxHdopInput.text.toString().toDoubleOrNull() ?: 0.0
         settings.spokenUpdateMinutes = binding.spokenMinutesInput.text.toString().toIntOrNull()?.coerceIn(0, 120) ?: 0
         settings.spokenTrackerAlerts = binding.spokenTrackerCheck.isChecked
+        settings.alertFlock = binding.alertFlockCheck.isChecked
+        settings.alertPolice = binding.alertPoliceCheck.isChecked
+        settings.alertSkimmer = binding.alertSkimmerCheck.isChecked
+        settings.alertFlipper = binding.alertFlipperCheck.isChecked
+        settings.alertDrone = binding.alertDroneCheck.isChecked
+        settings.alertMesh = binding.alertMeshCheck.isChecked
+        settings.alertGlasses = binding.alertGlassesCheck.isChecked
+        settings.alertActionCam = binding.alertActionCamCheck.isChecked
+        settings.alertPineapple = binding.alertPineappleCheck.isChecked
+        pushRigAlertSettings()
         settings.autoUploadOnWifi = binding.autoUploadCheck.isChecked
         settings.rigLedBrightness = binding.rigLedBrightnessInput.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: settings.rigLedBrightness
         settings.rigScreenBrightness = binding.rigScreenBrightnessInput.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: settings.rigScreenBrightness

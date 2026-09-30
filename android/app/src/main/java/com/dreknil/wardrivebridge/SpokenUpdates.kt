@@ -76,6 +76,14 @@ class SpokenUpdates(
         say("Warning. A tracker may be following you.")
     }
 
+    /** Speak a one-off detection alert (e.g. "Heads up. Flock camera nearby.").
+     *  The caller decides whether the category's alert toggle is on and
+     *  de-duplicates per device, so this just speaks. */
+    fun detectionAlert(what: String) {
+        ensureTts()
+        say("Heads up. $what nearby.")
+    }
+
     fun shutdown() {
         handler.removeCallbacksAndMessages(null)
         tts?.shutdown()

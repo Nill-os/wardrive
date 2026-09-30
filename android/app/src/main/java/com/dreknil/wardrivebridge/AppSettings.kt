@@ -65,6 +65,20 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("spoken_tracker_alerts", true)
         set(value) = prefs.edit().putBoolean("spoken_tracker_alerts", value).apply()
 
+    // Per-category "heads up, X nearby" alerts (spoken + vibrate) the first
+    // time each device is seen in a run. Off by default - opt in per type.
+    private fun alertPref(key: String) = prefs.getBoolean(key, false)
+    private fun setAlertPref(key: String, v: Boolean) = prefs.edit().putBoolean(key, v).apply()
+    var alertFlock: Boolean get() = alertPref("alert_flock"); set(v) = setAlertPref("alert_flock", v)
+    var alertPolice: Boolean get() = alertPref("alert_police"); set(v) = setAlertPref("alert_police", v)
+    var alertSkimmer: Boolean get() = alertPref("alert_skimmer"); set(v) = setAlertPref("alert_skimmer", v)
+    var alertFlipper: Boolean get() = alertPref("alert_flipper"); set(v) = setAlertPref("alert_flipper", v)
+    var alertDrone: Boolean get() = alertPref("alert_drone"); set(v) = setAlertPref("alert_drone", v)
+    var alertMesh: Boolean get() = alertPref("alert_mesh"); set(v) = setAlertPref("alert_mesh", v)
+    var alertGlasses: Boolean get() = alertPref("alert_glasses"); set(v) = setAlertPref("alert_glasses", v)
+    var alertActionCam: Boolean get() = alertPref("alert_actioncam"); set(v) = setAlertPref("alert_actioncam", v)
+    var alertPineapple: Boolean get() = alertPref("alert_pineapple"); set(v) = setAlertPref("alert_pineapple", v)
+
     /** Upload each run as soon as it stops, if the phone is on WiFi. */
     var autoUploadOnWifi: Boolean
         get() = prefs.getBoolean("auto_upload_wifi", false)

@@ -138,6 +138,8 @@ class ScanService : Service(), RigLinkManager.Listener {
     // publish-once reference swap, but needs the visibility guarantee.
     @Volatile private var historicalIndex: Map<String, HistoricalPoint> = emptyMap()
     private val alertedTrackers = mutableSetOf<String>()
+    // "category|mac" already alerted this run, so each notable device speaks once.
+    private val alertedDetections = mutableSetOf<String>()
 
     // Per-run dedup, one map per source, keyed by MAC (or the synthetic cell
     // identity string) - see MainActivity's old comment history for why:
@@ -359,6 +361,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         lastFixForDistance = null
         excludedCount = 0
         alertedTrackers.clear()
+        alertedDetections.clear()
         groups.values.forEach { it.clear() }
         loggedWifiMacsThisRun.clear()
         loggedBleMacsThisRun.clear()
@@ -560,8 +563,43 @@ class ScanService : Service(), RigLinkManager.Listener {
             }
         }
 
+        maybeDetectionAlert(tagged2)
         listener?.onObservation(tagged2)
         updateExternalUi()
+    }
+
+    // Per-category "heads up, X nearby" alert (spoken + vibrate), once per
+    // device per run, gated on each category's own toggle. These fire on the
+    // phone; the rig raises its own on-screen/LED alert from the same toggles
+    // (pushed to it as cfg alert_* keys) so you're covered with or without the
+    // phone in hand.
+    private fun maybeDetectionAlert(o: Observation) {
+        val hits = buildList {
+            if (appSettings.alertFlock && o.isFlockCamera) add("Flock camera")
+            if (appSettings.alertPolice && o.isPoliceCam) add("police camera")
+            if (appSettings.alertSkimmer && o.isSkimmer) add("possible skimmer")
+            if (appSettings.alertFlipper && o.isFlipperZero) add("Flipper Zero")
+            if (appSettings.alertDrone && o.isDrone) add("drone")
+            if (appSettings.alertMesh && o.isMeshRadio) add("mesh radio")
+            if (appSettings.alertGlasses && o.isGlasses) add("smart glasses")
+            if (appSettings.alertActionCam && o.isActionCam) add("action camera")
+            if (appSettings.alertPineapple && o.isPineapple) add("WiFi Pineapple")
+        }
+        for (what in hits) {
+            if (alertedDetections.add("$what|${o.mac}")) {
+                spoken.detectionAlert(what)
+                vibrateAlert()
+            }
+        }
+    }
+
+    private fun vibrateAlert() {
+        try {
+            val v = getSystemService(VIBRATOR_SERVICE) as? android.os.Vibrator ?: return
+            if (android.os.Build.VERSION.SDK_INT >= 26)
+                v.vibrate(android.os.VibrationEffect.createOneShot(250, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            else @Suppress("DEPRECATION") v.vibrate(250)
+        } catch (_: Exception) {}
     }
 
     // Privacy filters, checked after GPS tagging so the exclusion zone uses

@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
 """
-Nill OS Wardriver - Upload & Organize (one-button PC tool).
+Nill OS Wardriver - Upload & Field Report (one-button PC tool).
 
 Plug the rig's microSD card into the PC, open this, click **Upload**. It pulls
-every session file off the card and sorts everything into a tidy, dated folder
-tree under ~/Wardrive_Reports, so nothing stays as a loose pile of CSVs:
+every session file off the card, de-duplicates, and builds a full field report
+under ~/Wardrive_Reports:
 
-  ~/Wardrive_Reports/upload_<date>_<time>/
-    sessions/                 raw session files copied off the card,
-      2026-09-29/               grouped into one folder per drive date
-        wifi_20260929_143416.csv
-        ble_20260929_143416.csv
-    combined/
-      all_networks.wigle.csv  every unique device, WigleWifi-1.6 format,
-                                ready to hand to WiGLE's web uploader
-      wifi_only.csv           just the WiFi APs (same format)
-      ble_only.csv            just the BLE/other devices
-      all_devices.xlsx        the master spreadsheet, with a TimesSeen column
+  ~/Wardrive_Reports/report_<date>_<time>/
+    report.html               interactive field report - browse, filter,
+                                search and view every device on a map
+    sessions/2026-09-29/...   raw session files, grouped by drive date
+    by-type/     wifi.csv  ble.csv  cell.csv
+    by-band/     2.4GHz.csv  5GHz.csv  6GHz.csv
+    by-security/ OPEN.csv  WEP.csv  WPA2.csv  WPA3.csv ...
+    combined/    all_networks.wigle.csv (WiGLE-ready)  all_devices.xlsx
     summary.txt
 
-Nothing is deleted from the card - it only ever copies off it. The rig still
-does its own automatic WiGLE / wdgwars uploads; this is for organizing and
-keeping your own copy.
+Nothing is deleted from the card. The rig still does its own automatic WiGLE /
+wdgwars uploads; this is for keeping, organizing and exploring your own copy.
 
 Run it: tools/venv/bin/python3 tools/organize_wardrive.py
 (or double-click run.sh in the same folder)
 """
 
+import base64
 import glob
+import html
+import json
 import os
 import re
 import shutil
 import string
 import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 import tkinter as tk
 import tkinter.font as tkfont
 from datetime import datetime
@@ -45,56 +48,78 @@ WIGLE_COLUMNS = [
     "RSSI", "CurrentLatitude", "CurrentLongitude", "AltitudeMeters",
     "AccuracyMeters", "Type",
 ]
-
-# First line of a WigleWifi-1.6 file - WiGLE's web uploader reads this to know
-# the format. The rig and app write their own; we write a generic one here for
-# the combined outputs so they upload cleanly as one merged file.
 WIGLE_HEADER = ("WigleWifi-1.6,appRelease=NillOSWardriver,model=Rig,release=1.0,"
                 "device=ESP32,display=none,board=ESP32,brand=NillOS")
-
 OUTPUT_ROOT = os.path.expanduser("~/Wardrive_Reports")
-
-# Pulls the YYYYMMDD date out of a session filename like wifi_20260929_143416.csv
-# or phone_20260929_100129.csv, so files get grouped by the day they were driven.
 DATE_IN_NAME = re.compile(r"(\d{4})(\d{2})(\d{2})_\d{6}")
 
 
+# ---------- SD discovery ----------
 def find_session_folder():
-    """Look for a mounted SD card's wardrive/ folder automatically across
-    Linux, macOS and Windows. Returns the path if exactly one candidate is
-    found, otherwise None (the caller falls back to letting the user pick)."""
-    candidates = []
-    # Linux (udisks) and macOS.
-    candidates += glob.glob("/media/*/*/wardrive") + glob.glob("/run/media/*/*/wardrive")
+    """Find a mounted SD card's wardrive/ folder (Linux, macOS, Windows).
+    Returns the path if exactly one candidate is found, else None."""
+    candidates = glob.glob("/media/*/*/wardrive") + glob.glob("/run/media/*/*/wardrive")
     candidates += glob.glob("/Volumes/*/wardrive")
-    # Windows: a wardrive folder at the root of any drive letter.
     if os.name == "nt":
         for letter in string.ascii_uppercase:
             p = f"{letter}:\\wardrive"
             if os.path.isdir(p):
                 candidates.append(p)
-    candidates = [c for c in candidates if os.path.isdir(c)]
-    # De-dup while preserving order.
     seen, unique = set(), []
     for c in candidates:
-        if c not in seen:
+        if os.path.isdir(c) and c not in seen:
             seen.add(c)
             unique.append(c)
     return unique[0] if len(unique) == 1 else None
 
 
 def date_for_file(path):
-    """The drive date (YYYY-MM-DD) for a session file, from its name if it has
-    a timestamp, else from the file's own modified time as a fallback."""
     m = DATE_IN_NAME.search(os.path.basename(path))
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     return datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d")
 
 
+# ---------- download over WiFi (no SD-card removal) ----------
+def download_from_rig(host, password, dest, progress=lambda s: None):
+    """Pull every session CSV off the rig over its service-mode web server, so
+    you never have to remove the SD card. The rig must be in service mode
+    (Settings -> RIG SERVICE MODE in the app, or CFG -> NETWORK & DEBUG on the
+    rig). Returns the number of files downloaded. Raises on connection failure."""
+    base = "http://" + host.strip().rstrip("/")
+
+    def _get(url):
+        req = urllib.request.Request(url)
+        if password:
+            tok = base64.b64encode(("wardrive:" + password).encode()).decode()
+            req.add_header("Authorization", "Basic " + tok)
+        return urllib.request.urlopen(req, timeout=12)
+
+    progress(f"Connecting to {host}...")
+    try:
+        index = _get(base + "/").read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise ValueError("The rig needs the service-mode password (set it in the box above).")
+        raise ValueError(f"The rig answered HTTP {e.code}. Is it in service mode?")
+    except Exception as e:
+        raise ValueError(f"Couldn't reach the rig at {host}.\nStart service mode on the rig first.\n\n({e})")
+
+    names = sorted(set(re.findall(r"dl\?f=([^'\"<> ]+\.csv)", index)))
+    if not names:
+        raise ValueError("Connected, but the rig has no session CSVs to download yet.")
+    os.makedirs(dest, exist_ok=True)
+    for i, name in enumerate(names, 1):
+        progress(f"Downloading {name} ({i}/{len(names)})...")
+        safe = os.path.basename(name)  # never let a path escape dest
+        data = _get(base + "/dl?f=" + urllib.parse.quote(name)).read()
+        with open(os.path.join(dest, safe), "wb") as f:
+            f.write(data)
+    return len(names)
+
+
+# ---------- CSV load + dedup ----------
 def load_one_csv(path):
-    """Reads a single WigleWifi-1.6 session file: line 1 is metadata (not a
-    header), line 2 is the real column header, the rest is data."""
     df = pd.read_csv(path, skiprows=1, dtype=str, keep_default_na=False)
     if list(df.columns) != WIGLE_COLUMNS:
         return None
@@ -105,55 +130,295 @@ def load_one_csv(path):
 
 
 def dedupe(frames):
-    """Combine session frames and collapse to one row per device (MAC), keeping
-    the earliest sighting and a TimesSeen count. Returns (unique_df, stats)."""
     combined = pd.concat(frames, ignore_index=True)
-    raw_row_count = len(combined)
-
+    raw = len(combined)
     combined = combined.drop_duplicates(
-        subset=[c for c in combined.columns if c != "SourceFile"], keep="first"
-    )
-    after_exact_dedup = len(combined)
+        subset=[c for c in combined.columns if c != "SourceFile"], keep="first")
+    after = len(combined)
     combined = combined.sort_values("FirstSeen", kind="stable")
-
-    times_seen = combined.groupby("MAC").size().rename("TimesSeen")
-    unique = combined.drop_duplicates(subset=["MAC"], keep="first").merge(
-        times_seen, on="MAC", how="left"
-    )
+    times = combined.groupby("MAC").size().rename("TimesSeen")
+    unique = combined.drop_duplicates(subset=["MAC"], keep="first").merge(times, on="MAC", how="left")
     unique = unique.sort_values("FirstSeen", kind="stable").reset_index(drop=True)
-
-    stats = {
-        "raw_rows": raw_row_count,
-        "after_exact_dedup": after_exact_dedup,
-        "unique_devices": len(unique),
-    }
-    return unique, stats
+    return unique, {"raw_rows": raw, "after_exact_dedup": after, "unique_devices": len(unique)}
 
 
 def write_wigle_csv(df, path):
-    """Write a DataFrame's WIGLE_COLUMNS as a WigleWifi-1.6 file WiGLE accepts."""
+    if df.empty:
+        return
     with open(path, "w", newline="", encoding="utf-8") as f:
         f.write(WIGLE_HEADER + "\n")
         df[WIGLE_COLUMNS].to_csv(f, index=False)
 
 
-def organize(folder):
-    """Copy every session CSV off the card into a dated folder tree and write
-    the combined outputs. Returns (output_dir, stats)."""
+# ---------- categorization ----------
+def band_of(freq_str):
+    try:
+        f = int(float(freq_str))
+    except (ValueError, TypeError):
+        return None
+    if 2400 <= f <= 2500:
+        return "2.4GHz"
+    if 4900 <= f <= 5900:
+        return "5GHz"
+    if f > 5900:
+        return "6GHz"
+    return None
+
+
+def security_of(auth):
+    a = (auth or "").upper()
+    if "WPA3" in a:
+        return "WPA3"
+    if "WPA2" in a:
+        return "WPA2"
+    if "WPA" in a:
+        return "WPA"
+    if "WEP" in a:
+        return "WEP"
+    if "OWE" in a:
+        return "OWE"
+    if a in ("", "OPEN", "[ESS]", "NONE"):
+        return "OPEN"
+    return None  # BLE / cell etc.
+
+
+# Notable-device detection, ported from the phone app's DeviceSignatureDetection
+# for the fields a session CSV actually carries: the MAC (OUI prefix) and the
+# name/SSID. The app's live scan can also use BLE manufacturer IDs and service
+# UUIDs (companyId 0x09C8 for Flock, Remote ID / Meshtastic UUIDs) which aren't
+# in the CSV, so those extra signals only fire on the phone - but the MAC-OUI
+# and name signals below catch Flock cameras, Flipper Zeros, skimmers and the
+# rest straight from the rig's own logs, even when no phone was connected.
+_FLOCK_MAC = ("B4:1E:52", "00:03:7F")
+_FLIPPER_MAC = ("0C:FA:22", "80:E1:26", "80:E1:27")
+_SKIMMER_NAMES = {"HC-05", "HC-06", "HC-08", "HC-03", "FREE2MOVE"}
+
+
+def detection_of(mac, name, typ):
+    """Return a human label for a notable device, or None."""
+    m = (mac or "").upper()
+    n = (name or "").strip()
+    nl = n.lower()
+    if typ == "WIFI":
+        return "WiFi Pineapple" if "pineapple" in nl else None
+    # BLE / other radios:
+    if m.startswith(_FLOCK_MAC) or nl.startswith("penguin-") or nl in ("fs battery", "dfutarg"):
+        return "Flock camera"
+    if m.startswith(_FLIPPER_MAC) or nl.startswith("flipper"):
+        return "Flipper Zero"
+    if n.upper() in _SKIMMER_NAMES:
+        return "BLE skimmer"
+    if nl.startswith("ray-ban") or nl.startswith("meta"):
+        return "Smart glasses"
+    if nl.startswith("gopro") or nl.startswith("insta360"):
+        return "Action camera"
+    if nl.startswith("axon"):
+        return "Police camera"
+    return None
+
+
+# ---------- interactive HTML field report ----------
+def build_report(unique, out_dir, stats):
+    """Write a self-contained interactive field report: a Leaflet map of every
+    located device plus a searchable, filterable, sortable table."""
+    records = []
+    for _, r in unique.iterrows():
+        try:
+            lat = float(r["CurrentLatitude"]); lon = float(r["CurrentLongitude"])
+        except (ValueError, TypeError):
+            lat = lon = 0.0
+        typ = r["Type"] or "?"
+        records.append({
+            "mac": r["MAC"], "ssid": r["SSID"], "type": typ,
+            "sec": security_of(r["AuthMode"]) or ("BLE" if typ == "BLE" else "-"),
+            "band": band_of(r["Frequency"]) or "-",
+            "ch": r["Channel"], "rssi": r["RSSI"],
+            "lat": round(lat, 6), "lon": round(lon, 6),
+            "seen": int(r["TimesSeen"]) if str(r["TimesSeen"]).isdigit() else 1,
+            "first": r["FirstSeen"],
+            "det": detection_of(r["MAC"], r["SSID"], typ) or "",
+        })
+
+    wifi = sum(1 for x in records if x["type"] == "WIFI")
+    ble = sum(1 for x in records if x["type"] == "BLE")
+    cell = sum(1 for x in records if x["type"] not in ("WIFI", "BLE"))
+    located = sum(1 for x in records if x["lat"] or x["lon"])
+    dets = sorted({x["det"] for x in records if x["det"]})
+    det_count = sum(1 for x in records if x["det"])
+    det_opts = "".join(f"<option>{html.escape(d)}</option>" for d in dets)
+
+    data_json = json.dumps(records, separators=(",", ":"))
+    html_doc = _REPORT_TEMPLATE
+    html_doc = html_doc.replace("/*__DATA__*/", data_json)
+    html_doc = html_doc.replace("__WIFI__", str(wifi)).replace("__BLE__", str(ble))
+    html_doc = html_doc.replace("__CELL__", str(cell)).replace("__LOCATED__", str(located))
+    html_doc = html_doc.replace("__TOTAL__", str(len(records)))
+    html_doc = html_doc.replace("__DETCOUNT__", str(det_count))
+    html_doc = html_doc.replace("<!--__DETOPTS__-->", det_opts)
+    html_doc = html_doc.replace("__WHEN__", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    path = os.path.join(out_dir, "report.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+    return path
+
+
+# The report page. Leaflet + markercluster from cdnjs (needs internet for the
+# map tiles, like any web map); the device data is embedded so the file works
+# offline for browsing/filtering. Table rendering is capped so even tens of
+# thousands of devices stay responsive.
+_REPORT_TEMPLATE = r"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nill OS - Wardriver field report</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css">
+<style>
+:root{--bg:#0A0A12;--panel:#12121c;--cyan:#00F0FF;--purple:#9D00FF;--dim:#7A7A92;--green:#22C55E;--red:#FF3333;--amber:#F59E0B}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#E8E8F0;font-family:ui-monospace,Menlo,Consolas,monospace}
+h1{color:var(--cyan);font-size:20px;margin:0 0 2px}
+header{padding:14px 18px;border-bottom:1px solid #23233a}
+.sub{color:var(--dim);font-size:12px}
+.cards{display:flex;flex-wrap:wrap;gap:10px;padding:12px 18px}
+.card{background:var(--panel);border:1px solid #23233a;border-radius:6px;padding:8px 14px;min-width:110px}
+.card .n{font-size:22px;color:var(--cyan)} .card.p .n{color:var(--purple)} .card.d .n{color:var(--amber)} .card .l{color:var(--dim);font-size:11px}
+.det{color:var(--amber);font-weight:bold}
+#map{height:340px;margin:0 18px;border:1px solid #23233a;border-radius:6px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px}
+input,select{background:var(--panel);color:#E8E8F0;border:1px solid #33334d;border-radius:5px;padding:7px 9px;font:inherit;font-size:13px}
+input#q{flex:1;min-width:180px}
+.wrap{padding:0 18px 24px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #1c1c2c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+th{color:var(--cyan);cursor:pointer;position:sticky;top:0;background:var(--bg)}
+th:hover{color:#fff}
+tr:hover td{background:#15151f}
+.count{color:var(--dim);font-size:12px;padding:6px 18px}
+.badge{padding:1px 6px;border-radius:4px;font-size:11px}
+.WIFI{color:var(--cyan)} .BLE{color:var(--purple)} .CELL{color:var(--amber)}
+a{color:var(--cyan)}
+</style></head><body>
+<header>
+  <h1>&gt; NILL OS - WARDRIVER</h1>
+  <div class="sub">Field report &middot; __WHEN__ &middot; local, nothing uploaded from this page</div>
+</header>
+<div class="cards">
+  <div class="card"><div class="n">__TOTAL__</div><div class="l">DEVICES</div></div>
+  <div class="card"><div class="n">__WIFI__</div><div class="l">WIFI</div></div>
+  <div class="card p"><div class="n">__BLE__</div><div class="l">BLUETOOTH</div></div>
+  <div class="card"><div class="n">__CELL__</div><div class="l">CELL</div></div>
+  <div class="card"><div class="n">__LOCATED__</div><div class="l">ON MAP</div></div>
+  <div class="card d"><div class="n">__DETCOUNT__</div><div class="l">NOTABLE</div></div>
+</div>
+<div id="map"></div>
+<div class="controls">
+  <input id="q" placeholder="Search SSID or MAC...">
+  <select id="ft"><option value="">All types</option><option>WIFI</option><option>BLE</option><option>CELL</option></select>
+  <select id="fb"><option value="">All bands</option><option>2.4GHz</option><option>5GHz</option><option>6GHz</option></select>
+  <select id="fs"><option value="">All security</option><option>OPEN</option><option>WEP</option><option>WPA</option><option>WPA2</option><option>WPA3</option><option>OWE</option></select>
+  <select id="fd"><option value="">All devices</option><option value="__ANY__">Notable only</option><!--__DETOPTS__--></select>
+</div>
+<div class="count" id="count"></div>
+<div class="wrap"><table id="tbl"><thead><tr>
+  <th data-k="ssid">SSID</th><th data-k="mac">MAC</th><th data-k="type">Type</th>
+  <th data-k="sec">Security</th><th data-k="band">Band</th><th data-k="ch">Ch</th>
+  <th data-k="rssi">RSSI</th><th data-k="seen">Seen</th><th data-k="det">Notable</th><th data-k="first">First seen</th>
+</tr></thead><tbody id="tb"></tbody></table></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script>
+var DATA=/*__DATA__*/;
+var CAP=1000; // max table rows drawn at once, for responsiveness
+var sortK="seen", sortDir=-1;
+
+// ---- map ----
+var located=DATA.filter(function(d){return d.lat||d.lon});
+var map=L.map('map',{preferCanvas:true});
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);
+var color={WIFI:'#00F0FF',BLE:'#9D00FF',CELL:'#F59E0B'};
+var cluster=L.markerClusterGroup({chunkedLoading:true,maxClusterRadius:50});
+located.forEach(function(d){
+  var notable=!!d.det;
+  var c=notable?'#F59E0B':(color[d.type]||'#22C55E');
+  var m=L.circleMarker([d.lat,d.lon],{radius:notable?8:5,color:notable?'#F59E0B':'#fff',weight:notable?2:1,fillColor:c,fillOpacity:.85});
+  var extra=notable?'<br><b style="color:#F59E0B">'+esc(d.det)+'</b>':'';
+  m.bindPopup('<b>'+esc(d.ssid||'(hidden)')+'</b><br>'+d.mac+'<br>'+d.type+' &middot; '+d.sec+' &middot; '+d.band+'<br>ch '+d.ch+' &middot; '+d.rssi+' dBm &middot; seen '+d.seen+extra);
+  // Notable devices go on their own always-visible layer so they never hide inside a cluster.
+  if(notable){m.addTo(map);}else{cluster.addLayer(m);}
+});
+map.addLayer(cluster);
+if(located.length){map.fitBounds(L.latLngBounds(located.map(function(d){return [d.lat,d.lon];})).pad(0.1));}else{map.setView([20,0],2);}
+
+function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+// ---- table ----
+function filtered(){
+  var q=document.getElementById('q').value.toLowerCase();
+  var ft=document.getElementById('ft').value, fb=document.getElementById('fb').value;
+  var fs=document.getElementById('fs').value, fd=document.getElementById('fd').value;
+  var out=DATA.filter(function(d){
+    if(ft && d.type!==ft) return false;
+    if(fb && d.band!==fb) return false;
+    if(fs && d.sec!==fs) return false;
+    if(fd==='__ANY__' && !d.det) return false;
+    if(fd && fd!=='__ANY__' && d.det!==fd) return false;
+    if(q && (d.ssid||'').toLowerCase().indexOf(q)<0 && d.mac.toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  out.sort(function(a,b){
+    var x=a[sortK],y=b[sortK];
+    if(typeof x==='number'&&typeof y==='number') return (x-y)*sortDir;
+    return String(x).localeCompare(String(y))*sortDir;
+  });
+  return out;
+}
+function render(){
+  var rows=filtered();
+  var tb=document.getElementById('tb'); tb.innerHTML='';
+  var frag=document.createDocumentFragment();
+  rows.slice(0,CAP).forEach(function(d){
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td>'+esc(d.ssid||'(hidden)')+'</td><td>'+d.mac+'</td>'
+      +'<td class="'+d.type+'">'+d.type+'</td><td>'+d.sec+'</td><td>'+d.band+'</td>'
+      +'<td>'+d.ch+'</td><td>'+d.rssi+'</td><td>'+d.seen+'</td>'
+      +'<td class="det">'+esc(d.det)+'</td><td>'+esc(d.first)+'</td>';
+    frag.appendChild(tr);
+  });
+  tb.appendChild(frag);
+  document.getElementById('count').textContent=
+    'Showing '+Math.min(rows.length,CAP)+' of '+rows.length+' matching device(s)'+(rows.length>CAP?' (refine filters to see the rest)':'');
+}
+['q','ft','fb','fs','fd'].forEach(function(id){document.getElementById(id).addEventListener('input',render);});
+document.querySelectorAll('th').forEach(function(th){th.addEventListener('click',function(){
+  var k=th.getAttribute('data-k'); sortDir=(sortK===k)?-sortDir:1; sortK=k; render();
+});});
+render();
+</script></body></html>"""
+
+
+# ---------- orchestration ----------
+def open_path(path):
+    if sys.platform.startswith("linux"):
+        os.system(f'xdg-open "{path}" &')
+    elif sys.platform == "darwin":
+        os.system(f'open "{path}"')
+    else:
+        os.startfile(path)  # Windows
+
+
+def organize(folder, progress=lambda s: None):
     files = sorted(glob.glob(os.path.join(folder, "*.csv")))
     if not files:
         raise ValueError(f"No .csv files found in:\n{folder}")
 
-    out_dir = os.path.join(OUTPUT_ROOT, "upload_" + datetime.now().strftime("%Y-%m-%d_%H%M"))
+    out_dir = os.path.join(OUTPUT_ROOT, "report_" + datetime.now().strftime("%Y-%m-%d_%H%M"))
     sessions_dir = os.path.join(out_dir, "sessions")
-    combined_dir = os.path.join(out_dir, "combined")
-    os.makedirs(sessions_dir, exist_ok=True)
-    os.makedirs(combined_dir, exist_ok=True)
+    for sub in ("sessions", "by-type", "by-band", "by-security", "combined"):
+        os.makedirs(os.path.join(out_dir, sub), exist_ok=True)
 
+    progress("Organizing session files...")
     frames, skipped, copied = [], [], 0
     for path in files:
-        # Copy the raw file into sessions/<date>/, regardless of whether it has
-        # usable rows - it's still part of the record of that drive.
         day_dir = os.path.join(sessions_dir, date_for_file(path))
         os.makedirs(day_dir, exist_ok=True)
         try:
@@ -164,30 +429,53 @@ def organize(folder):
             continue
         try:
             df = load_one_csv(path)
-            if df is None or df.empty:
-                continue
-            frames.append(df)
+            if df is not None and not df.empty:
+                frames.append(df)
         except Exception as e:
             skipped.append(f"{os.path.basename(path)} ({e})")
 
-    stats = {"files_copied": copied, "files_skipped": skipped,
-             "raw_rows": 0, "after_exact_dedup": 0, "unique_devices": 0,
-             "wifi": 0, "ble": 0}
+    stats = {"files_copied": copied, "files_skipped": skipped, "raw_rows": 0,
+             "after_exact_dedup": 0, "unique_devices": 0, "wifi": 0, "ble": 0, "cell": 0, "notable": 0}
 
     if frames:
+        progress("De-duplicating...")
         unique, dstats = dedupe(frames)
         stats.update(dstats)
         wifi = unique[unique["Type"] == "WIFI"]
-        ble = unique[unique["Type"] != "WIFI"]
-        stats["wifi"], stats["ble"] = len(wifi), len(ble)
+        ble = unique[unique["Type"] == "BLE"]
+        cell = unique[~unique["Type"].isin(["WIFI", "BLE"])]
+        stats["wifi"], stats["ble"], stats["cell"] = len(wifi), len(ble), len(cell)
 
-        write_wigle_csv(unique, os.path.join(combined_dir, "all_networks.wigle.csv"))
-        if not wifi.empty:
-            write_wigle_csv(wifi, os.path.join(combined_dir, "wifi_only.csv"))
-        if not ble.empty:
-            write_wigle_csv(ble, os.path.join(combined_dir, "ble_only.csv"))
-        unique.to_excel(os.path.join(combined_dir, "all_devices.xlsx"),
-                        index=False, sheet_name="Wardrive Devices")
+        progress("Writing categorized CSVs...")
+        write_wigle_csv(unique, os.path.join(out_dir, "combined", "all_networks.wigle.csv"))
+        write_wigle_csv(wifi, os.path.join(out_dir, "by-type", "wifi.csv"))
+        write_wigle_csv(ble, os.path.join(out_dir, "by-type", "ble.csv"))
+        write_wigle_csv(cell, os.path.join(out_dir, "by-type", "cell.csv"))
+        # by band
+        bands = unique["Frequency"].map(band_of)
+        for b in ["2.4GHz", "5GHz", "6GHz"]:
+            write_wigle_csv(unique[bands == b], os.path.join(out_dir, "by-band", b + ".csv"))
+        # by security (WiFi only)
+        secs = wifi["AuthMode"].map(security_of)
+        for s in ["OPEN", "WEP", "WPA", "WPA2", "WPA3", "OWE"]:
+            write_wigle_csv(wifi[secs == s], os.path.join(out_dir, "by-security", s + ".csv"))
+        # notable devices (Flock cameras, Flipper Zeros, skimmers, Pineapples, ...)
+        det = unique.apply(lambda r: detection_of(r["MAC"], r["SSID"], r["Type"]), axis=1)
+        notable = unique[det.notna()]
+        stats["notable"] = len(notable)
+        if not notable.empty:
+            os.makedirs(os.path.join(out_dir, "notable"), exist_ok=True)
+            for label in sorted(det.dropna().unique()):
+                safe = re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_")
+                write_wigle_csv(unique[det == label], os.path.join(out_dir, "notable", safe + ".csv"))
+        try:
+            unique.to_excel(os.path.join(out_dir, "combined", "all_devices.xlsx"),
+                            index=False, sheet_name="Wardrive Devices")
+        except Exception:
+            pass  # openpyxl missing - the CSVs and report still get written
+
+        progress("Building the field report...")
+        build_report(unique, out_dir, stats)
 
     write_summary(out_dir, folder, stats)
     return out_dir, stats
@@ -195,16 +483,15 @@ def organize(folder):
 
 def write_summary(out_dir, source, stats):
     lines = [
-        "Nill OS Wardriver - upload summary",
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "",
+        "Nill OS Wardriver - field report", datetime.now().strftime("%Y-%m-%d %H:%M"), "",
         f"Source card folder: {source}",
         f"Session files copied: {stats['files_copied']}",
-        f"Files skipped (empty/bad format): {len(stats['files_skipped'])}",
-        "",
+        f"Files skipped: {len(stats['files_skipped'])}", "",
         f"Raw observations: {stats['raw_rows']}",
-        f"After removing exact duplicates: {stats['after_exact_dedup']}",
-        f"Unique devices: {stats['unique_devices']}  (WiFi {stats['wifi']}, BLE/other {stats['ble']})",
+        f"Unique devices: {stats['unique_devices']}  "
+        f"(WiFi {stats['wifi']}, BLE {stats['ble']}, cell {stats['cell']})",
+        f"Notable devices (Flock/Flipper/skimmer/Pineapple/...): {stats['notable']}", "",
+        "Open report.html for the interactive map + browsable/filterable list.",
     ]
     if stats["files_skipped"]:
         lines += ["", "Skipped:"] + [f"  - {s}" for s in stats["files_skipped"]]
@@ -212,36 +499,16 @@ def write_summary(out_dir, source, stats):
         f.write("\n".join(lines) + "\n")
 
 
-def open_path(path):
-    if sys.platform.startswith("linux"):
-        os.system(f'xdg-open "{path}" &')
-    elif sys.platform == "darwin":
-        os.system(f'open "{path}"')
-    else:
-        os.startfile(path)  # Windows
-
-
-# ---- Tactical UI - matches the phone app's "cyberdeck" theme (see the app's
-# res/values/colors.xml and themes.xml): black ground, one bright cyan accent,
-# a purple secondary, monospace everything, and outlined "> LABEL" buttons. ----
-BG = "#000000"       # background
-PANEL = "#080C10"    # surface
-CYAN = "#00F0FF"     # primary accent
-DIM = "#4A607A"      # text_secondary
-PURPLE = "#9D00FF"   # secondary accent
-GREEN = "#22C55E"    # ok
-RED = "#FF3333"      # error
+# ---------- Tactical Tk UI (matches the app's cyberdeck theme) ----------
+BG = "#000000"; PANEL = "#080C10"; CYAN = "#00F0FF"; DIM = "#4A607A"
+PURPLE = "#9D00FF"; GREEN = "#22C55E"; RED = "#FF3333"
 
 
 def _tactical_button(parent, text, command, font, accent=CYAN):
-    """An outlined function-key button like the app's: a 2px accent border
-    around a black button with accent text that inverts on press."""
     border = tk.Frame(parent, bg=accent, padx=2, pady=2)
-    btn = tk.Button(
-        border, text=text, command=command, font=font,
-        bg=BG, fg=accent, activebackground=accent, activeforeground=BG,
-        disabledforeground=DIM, relief="flat", bd=0, padx=22, pady=10, cursor="hand2",
-    )
+    btn = tk.Button(border, text=text, command=command, font=font, bg=BG, fg=accent,
+                    activebackground=accent, activeforeground=BG, disabledforeground=DIM,
+                    relief="flat", bd=0, padx=22, pady=10, cursor="hand2")
     btn.pack(fill="both", expand=True)
     return border, btn
 
@@ -249,97 +516,111 @@ def _tactical_button(parent, text, command, font, accent=CYAN):
 def main():
     root = tk.Tk()
     root.title("Nill OS - Wardriver")
-    root.geometry("640x560")
+    root.geometry("660x620")
     root.configure(bg=BG)
     root.resizable(False, False)
 
-    mono = tkfont.nametofont("TkFixedFont").copy()
-    mono.configure(size=11)
+    mono = tkfont.nametofont("TkFixedFont").copy(); mono.configure(size=11)
     mono_b = mono.copy(); mono_b.configure(weight="bold")
     title_f = mono.copy(); title_f.configure(size=18, weight="bold")
 
-    tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN,
-             anchor="w").pack(fill="x", padx=20, pady=(20, 2))
-    tk.Label(root, text="UPLOAD & ORGANIZE", font=mono, bg=BG, fg=DIM,
-             anchor="w").pack(fill="x", padx=20, pady=(0, 14))
-    tk.Label(
-        root,
-        text="Plug in the rig's SD card and press > UPLOAD. Every session\n"
-             "file is copied off and sorted into dated folders under\n"
-             "~/Wardrive_Reports, with a combined WiGLE-ready CSV.\n"
-             "Nothing is deleted from the card.",
-        font=mono, bg=BG, fg=DIM, justify="left", anchor="w",
-    ).pack(fill="x", padx=20, pady=(0, 14))
+    tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
+    tk.Label(root, text="UPLOAD & FIELD REPORT", font=mono, bg=BG, fg=DIM, anchor="w").pack(fill="x", padx=20, pady=(0, 10))
+    tk.Label(root, text="Get the logs off the rig two ways: plug in the SD card and press\n"
+                        "GET FROM SD CARD, or - without removing the card - put the rig in\n"
+                        "service mode and press GET FROM RIG (WIFI). Either way it builds an\n"
+                        "interactive field report (map + browse / filter / search) under\n"
+                        "~/Wardrive_Reports. Nothing is deleted from the card.",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=20, pady=(0, 10))
 
-    status = tk.Text(root, height=11, font=mono, bg=PANEL, fg=CYAN,
-                     insertbackground=CYAN, relief="flat", wrap="word",
-                     highlightbackground=DIM, highlightthickness=1, padx=12, pady=10)
-    status.pack(fill="both", expand=True, padx=20, pady=(0, 14))
-    status.tag_config("dim", foreground=DIM)
-    status.tag_config("ok", foreground=GREEN)
-    status.tag_config("err", foreground=RED)
-    status.tag_config("accent", foreground=CYAN)
+    # rig address + service password (for GET FROM RIG)
+    row = tk.Frame(root, bg=BG); row.pack(fill="x", padx=20, pady=(0, 6))
+    tk.Label(row, text="Rig:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    host_var = tk.StringVar(value="nillos-wardriver.local")
+    tk.Entry(row, textvariable=host_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN,
+             relief="flat", highlightbackground="#33334d", highlightthickness=1, width=22).pack(side="left", padx=(6, 10))
+    tk.Label(row, text="Pass:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    pass_var = tk.StringVar()
+    tk.Entry(row, textvariable=pass_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN, show="*",
+             relief="flat", highlightbackground="#33334d", highlightthickness=1, width=14).pack(side="left", padx=(6, 0))
+
+    status = tk.Text(root, height=8, font=mono, bg=PANEL, fg=CYAN, insertbackground=CYAN,
+                     relief="flat", wrap="word", highlightbackground=DIM, highlightthickness=1, padx=12, pady=10)
+    status.pack(fill="both", expand=True, padx=20, pady=(6, 10))
+    status.tag_config("dim", foreground=DIM); status.tag_config("ok", foreground=GREEN)
+    status.tag_config("err", foreground=RED); status.tag_config("accent", foreground=CYAN)
 
     def log(text="", tag=None):
         status.configure(state="normal")
         status.insert("end", text + "\n", (tag,) if tag else ())
-        status.see("end")
-        status.configure(state="disabled")
-        root.update_idletasks()
+        status.see("end"); status.configure(state="disabled"); root.update_idletasks()
 
     def clear():
-        status.configure(state="normal")
-        status.delete("1.0", "end")
-        status.configure(state="disabled")
+        status.configure(state="normal"); status.delete("1.0", "end"); status.configure(state="disabled")
 
-    state = {"out_dir": None}
+    state = {"report": None, "out": None}
 
-    def do_upload():
-        upload_btn.configure(state="disabled")
-        open_border.pack_forget()
-        clear()
+    def _process(folder):
+        """Organize a folder of session CSVs and show the result."""
+        log("Building from " + folder, "accent")
+        try:
+            out_dir, st = organize(folder, progress=lambda s: log("  " + s, "dim"))
+        except Exception as e:
+            log("ERROR: " + str(e), "err"); return
+        state["out"] = out_dir
+        state["report"] = os.path.join(out_dir, "report.html")
+        log("")
+        log(f"  unique devices : {st['unique_devices']}  (WiFi {st['wifi']}, BLE {st['ble']}, cell {st['cell']})")
+        log(f"  notable        : {st['notable']}  (Flock / Flipper / skimmer / Pineapple / ...)",
+            "accent" if st["notable"] else "dim")
+        log("")
+        if st["unique_devices"] == 0:
+            log("No logged devices in these files (bench-test / no GPS fix yet).", "dim")
+        else:
+            log("field report + organized folders in:", "dim")
+            log("  " + out_dir, "accent")
+            log("> DONE", "ok")
+            report_border.pack(pady=(0, 8))
+        folder_border.pack(pady=(0, 14))
+
+    def _busy(on):
+        for b in (sd_btn, wifi_btn):
+            b.configure(state="disabled" if on else "normal")
+
+    def do_sd():
+        _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
         folder = find_session_folder()
         if not folder:
             log("No SD card auto-detected - pick the 'wardrive' folder...", "dim")
             folder = filedialog.askdirectory(title="Select the 'wardrive' folder on the rig's SD card")
             if not folder:
-                log("Cancelled.", "dim")
-                upload_btn.configure(state="normal")
-                return
-        log("Reading " + folder, "accent")
+                log("Cancelled.", "dim"); _busy(False); return
+        _process(folder); _busy(False)
+
+    def do_wifi():
+        _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
+        host = host_var.get().strip()
+        if not host:
+            log("Enter the rig's address (e.g. nillos-wardriver.local or its IP).", "err"); _busy(False); return
+        tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_dl")
+        shutil.rmtree(tmp, ignore_errors=True)
         try:
-            out_dir, stats = organize(folder)
+            n = download_from_rig(host, pass_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
+            log(f"  downloaded {n} file(s) from the rig", "dim")
         except Exception as e:
-            log("ERROR: " + str(e), "err")
-            upload_btn.configure(state="normal")
-            return
-        state["out_dir"] = out_dir
-        log()
-        log(f"  session files copied : {stats['files_copied']}")
-        log(f"  raw observations     : {stats['raw_rows']}")
-        log(f"  unique devices       : {stats['unique_devices']}   (WiFi {stats['wifi']}, BLE/other {stats['ble']})")
-        if stats["files_skipped"]:
-            log(f"  skipped              : {len(stats['files_skipped'])} file(s)", "dim")
-        log()
-        if stats["unique_devices"] == 0:
-            log("No logged devices in these files (bench-test / no GPS fix yet).", "dim")
-        else:
-            log("organized into:", "dim")
-            log("  " + out_dir, "accent")
-            log("> DONE", "ok")
-        open_border.pack(pady=(0, 20))
-        upload_btn.configure(state="normal")
+            log("ERROR: " + str(e), "err"); _busy(False); return
+        _process(tmp); _busy(False)
 
-    def do_open():
-        if state["out_dir"]:
-            open_path(state["out_dir"])
+    sd_border, sd_btn = _tactical_button(root, "> GET FROM SD CARD", do_sd, mono_b)
+    sd_border.pack(pady=(0, 8))
+    wifi_border, wifi_btn = _tactical_button(root, "> GET FROM RIG (WIFI)", do_wifi, mono_b, accent=PURPLE)
+    wifi_border.pack(pady=(0, 8))
+    report_border, _rb = _tactical_button(root, "> VIEW FIELD REPORT",
+                                          lambda: state["report"] and open_path(state["report"]), mono_b)
+    folder_border, _fb = _tactical_button(root, "> OPEN FOLDER",
+                                          lambda: state["out"] and open_path(state["out"]), mono_b, accent=PURPLE)
 
-    upload_border, upload_btn = _tactical_button(root, "> UPLOAD", do_upload, mono_b)
-    upload_border.pack(pady=(0, 10))
-    open_border, _open_btn = _tactical_button(root, "> OPEN FOLDER", do_open, mono_b, accent=PURPLE)
-    # open_border stays hidden until a successful upload reveals it.
-
-    log("Ready. Plug in the rig's SD card, then press > UPLOAD.", "dim")
+    log("Ready. Use SD card, or put the rig in service mode and GET FROM RIG.", "dim")
     root.mainloop()
 
 

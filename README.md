@@ -34,8 +34,11 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 </p>
 <p align="center"><em>The Nill OS - Wardriver phone app: live dashboard, WiFi &amp; Bluetooth tools, and rig customization. (Account totals and map are hidden here for privacy.)</em></p>
 
-<p align="center"><img src="docs/screenshots/desktop-uploader.png" width="440" alt="Desktop upload & organize tool"></p>
-<p align="center"><em>The desktop upload &amp; organize tool: plug in the SD card, click Upload, and it sorts every log into dated folders.</em></p>
+<p align="center">
+  <img src="docs/screenshots/desktop-uploader.png" width="360" alt="Desktop tool">
+  <img src="docs/screenshots/desktop-field-report.png" width="440" alt="Field report">
+</p>
+<p align="center"><em>The desktop tool pulls logs off the SD card <b>or</b> over WiFi (rig in service mode, no card removal), sorts them into folders (by date, band, security, and notable devices), and builds an interactive field report: map, search, filters, and Flock/Flipper/skimmer/Pineapple detection. (Map data above is demo data, not a real drive.)</em></p>
 
 ## Get started
 

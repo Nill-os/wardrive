@@ -80,18 +80,23 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 
 ## The desktop upload/organizer (optional)
 
-`firmware/tools/organize_wardrive.py` is a small desktop GUI. Plug the rig's microSD card into the PC, open it, and click **Upload**. It finds the card automatically (Linux, macOS or Windows), copies every session file off it, and sorts everything into a dated folder tree under `~/Wardrive_Reports`:
+`firmware/tools/organize_wardrive.py` is a small desktop GUI that pulls the rig's logs, organizes them, and builds an **interactive field report**. Two ways to get the logs:
+
+- **GET FROM SD CARD** - plug the card into the PC (auto-detected on Linux, macOS, Windows).
+- **GET FROM RIG (WIFI)** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs-update-firmware), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
+
+Either way it writes, under `~/Wardrive_Reports/report_<date>_<time>/`:
 
 ```
-~/Wardrive_Reports/upload_<date>_<time>/
-  sessions/2026-09-29/…        raw session files, one folder per drive date
-  combined/all_networks.wigle.csv   every unique device, WigleWifi format, WiGLE-ready
-  combined/wifi_only.csv  ble_only.csv
-  combined/all_devices.xlsx    master spreadsheet with a TimesSeen column
-  summary.txt
+report.html                interactive field report - map + search + filters,
+                             flags Flock cameras, Flipper Zeros, skimmers, Pineapples
+sessions/2026-09-29/…      raw session files, one folder per drive date
+by-type/  by-band/  by-security/  notable/    the same devices, grouped
+combined/all_networks.wigle.csv (WiGLE-ready)  all_devices.xlsx
+summary.txt
 ```
 
-Nothing is deleted from the card - it only copies off it. (The rig still does its own automatic WiGLE / wdgwars uploads; this is for keeping and organizing your own copy.)
+Nothing is deleted from the card. (The rig still does its own automatic WiGLE / wdgwars uploads; this is for keeping, organizing and exploring your own copy.)
 
 ```
 cd firmware

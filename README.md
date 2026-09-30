@@ -64,7 +64,7 @@ docs/                    guides for the whole system (start here) + wiring and t
 firmware/                the three ESP32 boards - PlatformIO project
   src/wifi_node/  src/ble_node/  src/cyd_node/      one firmware per board
   lib/WardriveShared/    CSV writer, uploader, config parser, BLE link
-  tools/                 BLE link tester, SD-card CSV organizer
+  tools/                 BLE link tester, desktop upload/organizer
   config.cfg.example     template for the SD card
 android/                 Nill OS - Wardriver - the Android app (Gradle project)
 organic-maps-overlay/    patch that adds the status overlay to Organic Maps + apply script

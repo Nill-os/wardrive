@@ -78,9 +78,20 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 - **A different CYD:** the display pin map is in `[env:cyd_node]` `build_flags`. A single-USB CYD with an **ILI9341** screen needs `ILI9341_DRIVER` in place of `ST7789_DRIVER`, and probably different inversion and rotation settings too (see [Design notes](DESIGN_NOTES.md#display-quirks)).
 - **Quieter serial output:** set `WARDRIVE_DEBUG` to `false` in each `main.cpp` once the rig works.
 
-## The SD-card organizer (optional)
+## The desktop upload/organizer (optional)
 
-`firmware/tools/organize_wardrive.py` is a small desktop GUI. It merges every session CSV on the SD card into one de-duplicated spreadsheet in `~/Wardrive_Reports`.
+`firmware/tools/organize_wardrive.py` is a small desktop GUI. Plug the rig's microSD card into the PC, open it, and click **Upload**. It finds the card automatically (Linux, macOS or Windows), copies every session file off it, and sorts everything into a dated folder tree under `~/Wardrive_Reports`:
+
+```
+~/Wardrive_Reports/upload_<date>_<time>/
+  sessions/2026-09-29/…        raw session files, one folder per drive date
+  combined/all_networks.wigle.csv   every unique device, WigleWifi format, WiGLE-ready
+  combined/wifi_only.csv  ble_only.csv
+  combined/all_devices.xlsx    master spreadsheet with a TimesSeen column
+  summary.txt
+```
+
+Nothing is deleted from the card - it only copies off it. (The rig still does its own automatic WiGLE / wdgwars uploads; this is for keeping and organizing your own copy.)
 
 ```
 cd firmware

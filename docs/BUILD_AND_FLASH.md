@@ -83,6 +83,7 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 `firmware/tools/organize_wardrive.py` is a small desktop GUI that pulls the rig's logs, organizes them, and builds an **interactive field report**. Two ways to get the logs:
 
 - **GET FROM SD CARD** - plug the card into the PC (auto-detected on Linux, macOS, Windows).
+- **GET FROM RIG (USB)** - *without removing the card*: plug the CYD in over USB; it reads the logs straight off the card over the serial cable (`sd list` / `sd get`), no WiFi needed.
 - **GET FROM RIG (WIFI)** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs-update-firmware), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
 
 Either way it writes, under `~/Wardrive_Reports/report_<date>_<time>/`:

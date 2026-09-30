@@ -168,6 +168,81 @@ def _probe_is_cyd(serial, port):
         s.close()
 
 
+def _port_descriptions():
+    """Map port path -> USB description/hwid (from pyserial), used as a chip
+    hint for a board that isn't running wardrive firmware yet."""
+    try:
+        from serial.tools import list_ports
+        out = {}
+        for p in list_ports.comports():
+            bits = [b for b in (getattr(p, "description", ""), getattr(p, "hwid", "")) if b and b != "n/a"]
+            out[p.device] = " ".join(bits)
+        return out
+    except Exception:
+        return {}
+
+
+_WD_ID_RE = re.compile(r"WD:ID\s+role=(\w+)\s+idx=(\d+)\s+n=(\d+)")
+_ROLE_LABEL = {"wifi": "WiFi sniffer", "ble": "BLE scanner", "cyd": "CYD screen board"}
+
+
+def detect_board(serial, port, seconds=4.0):
+    """Listen on a port for a board's WD:ID identity line (its role and which
+    node it is) and return a dict describing it. Falls back to the older boot
+    banners / status line. role is None if nothing identifiable was heard."""
+    info = {"port": port, "role": None, "index": None, "count": None}
+    try:
+        # Default open (no forced DTR/RTS) as with the CYD; if a board does
+        # reset on open it just reprints its banner, which we still catch.
+        s = serial.Serial(port, 115200, timeout=1)
+    except Exception as e:
+        info["error"] = str(e)
+        return info
+    try:
+        time.sleep(0.3)
+        s.reset_input_buffer()
+        end = time.time() + seconds
+        while time.time() < end:
+            line = s.readline().decode("utf-8", "replace").strip()
+            if not line:
+                continue
+            m = _WD_ID_RE.search(line)
+            if m:
+                info["role"], info["index"], info["count"] = m.group(1), int(m.group(2)), int(m.group(3))
+                return info
+            low = line.lower()
+            if "wifi_node ready" in low:
+                info["role"] = "wifi"
+            elif "ble_node ready" in low:
+                info["role"] = "ble"
+            elif line.startswith("WD:STATUS"):
+                info["role"] = "cyd"
+        return info
+    except Exception as e:
+        info["error"] = str(e)
+        return info
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def describe_board(info, descriptions):
+    """Human one-liner for a detect_board() result."""
+    role = info.get("role")
+    if role in _ROLE_LABEL:
+        label = _ROLE_LABEL[role]
+        if role in ("wifi", "ble") and info.get("count"):
+            n = info["count"]
+            label += (f", node {info['index']} of {n}" if n > 1 else " (single node)")
+        return label
+    if info.get("error"):
+        return "couldn't open (" + info["error"] + ")"
+    hint = descriptions.get(info["port"], "")
+    return "not running wardrive firmware" + (f" [{hint}]" if hint else "")
+
+
 def read_from_cyd_serial(port, dest, progress=lambda s: None):
     """Pull every session CSV off the rig over the CYD's USB serial cable - no
     WiFi, no SD-card removal. `port` may be a device path or 'auto'."""
@@ -829,7 +904,8 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
 
 def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
     tk.Label(tab, text="Flash firmware to a board over USB (or the CYD over the air). Uses\n"
-                       "PlatformIO from the firmware/ project. Pick a port, then a board.",
+                       "PlatformIO from the firmware/ project. Hit DETECT to see what's plugged\n"
+                       "in and its node number, or pick a port and board yourself.",
              font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 8))
 
     prow = tk.Frame(tab, bg=BG); prow.pack(fill="x", padx=6, pady=(0, 6))
@@ -949,6 +1025,55 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
 
     tk.Button(prow, text="refresh", command=refresh_ports, font=mono, bg=PANEL, fg=CYAN,
               relief="flat", padx=8, cursor="hand2").pack(side="left")
+
+    def detect_boards():
+        refresh_ports()
+        ports = _serial_ports()
+        if not ports:
+            append("No serial ports found. Plug a board in and hit detect.", "err"); return
+        for b in buttons.values(): b.configure(state="disabled")
+        out.configure(state="normal"); out.delete("1.0", "end"); out.configure(state="disabled")
+        append("Detecting boards on " + str(len(ports)) + " port(s)...", "accent")
+
+        def worker():
+            try:
+                serial = _import_serial()
+            except Exception as e:
+                append("ERROR: " + str(e), "err")
+                root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()]); return
+            descriptions = _port_descriptions()
+            found = []
+            for port in ports:
+                info = detect_board(serial, port)
+                role = info.get("role")
+                append(f"  {port}  ->  {describe_board(info, descriptions)}",
+                       "ok" if role in _ROLE_LABEL else "dim")
+                if role in _ROLE_LABEL:
+                    found.append((port, info))
+            if not found:
+                append("No wardrive boards recognized. A blank board still flashes fine - "
+                       "pick its port and choose a type/number.", "dim")
+            else:
+                port, info = found[0]
+
+                def apply():
+                    if port in port_menu["values"]:
+                        fport.set(port)
+                    if info["role"] == "wifi" and info.get("count"):
+                        node_count.set(info["count"])
+                        if info.get("index") is not None: node_index.set(info["index"])
+                    elif info["role"] == "ble" and info.get("count"):
+                        ble_count.set(info["count"])
+                        if info.get("index") is not None: ble_index.set(info["index"])
+                root.after(0, apply)
+                append(f"Aimed the flasher at {port} ({_ROLE_LABEL[info['role']]}). "
+                       "Change the type/number above to reassign it, then flash.", "accent")
+            root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()])
+        threading.Thread(target=worker, daemon=True).start()
+
+    detect_border, detect_btn = _tactical_button(prow, "> DETECT", detect_boards, mono_b, accent=GREEN)
+    detect_border.pack(side="left", padx=(10, 0))
+    buttons["_detect"] = detect_btn
 
     # Which board the BLE scanner is flashed to (default the ESP32-S3 DevKitC).
     ble_labels = [lbl for lbl, _env in BLE_BOARDS]

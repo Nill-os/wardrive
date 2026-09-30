@@ -403,6 +403,9 @@ void setup() {
 	pBLEScan->setMaxResults(0);
 
 	Serial.println("ble_node ready");
+	// Identity line the desktop app reads to recognize this board - see the same
+	// line in wifi_node. Always emitted (not gated by WARDRIVE_DEBUG).
+	Serial.printf("WD:ID role=ble idx=%d n=%d\n", (int)BLE_NODE_INDEX, (int)BLE_NODE_COUNT);
 }
 
 void loop() {
@@ -413,6 +416,12 @@ void loop() {
 	}
 
 	serviceErrorBlink();
+
+	static uint32_t lastIdMs = 0;
+	if (millis() - lastIdMs > 2000) {
+		lastIdMs = millis();
+		Serial.printf("WD:ID role=ble idx=%d n=%d\n", (int)BLE_NODE_INDEX, (int)BLE_NODE_COUNT);
+	}
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();

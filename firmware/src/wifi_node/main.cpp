@@ -815,6 +815,10 @@ void setup() {
 	// authoritative state arrives over the wired link (see handleCydLinkLine())
 	// - no local button/NVS-driven resume anymore, see this file's header.
 	Serial.println("wifi_node ready");
+	// Identity line the desktop app reads to recognize this board (role + which
+	// node it is). Emitted at boot and again on a timer below, always - not
+	// gated by WARDRIVE_DEBUG - so "Detect boards" works even in a quiet build.
+	Serial.printf("WD:ID role=wifi idx=%d n=%d\n", (int)NODE_INDEX, (int)NODE_COUNT);
 }
 
 void loop() {
@@ -825,6 +829,12 @@ void loop() {
 	}
 
 	serviceErrorBlink();
+
+	static uint32_t lastIdMs = 0;
+	if (millis() - lastIdMs > 2000) {
+		lastIdMs = millis();
+		Serial.printf("WD:ID role=wifi idx=%d n=%d\n", (int)NODE_INDEX, (int)NODE_COUNT);
+	}
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();

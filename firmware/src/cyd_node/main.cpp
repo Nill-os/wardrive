@@ -3334,6 +3334,15 @@ uint32_t lastTouchDispatchMs = 0;
 static const uint32_t TOUCH_DISPATCH_COOLDOWN_MS = 400;
 
 void loop() {
+	// Identity line the desktop app's "Detect boards" reads to recognize the
+	// CYD. Written straight to USB (not phonePrintf, which is gated on recent
+	// USB activity) so it announces itself unprompted, on a 2 s timer.
+	static uint32_t lastIdMs = 0;
+	if (millis() - lastIdMs > 2000) {
+		lastIdMs = millis();
+		Serial.println("WD:ID role=cyd idx=0 n=1");
+	}
+
 	// Pump OTA + the log web server while parked in service mode. The rest of
 	// loop() still runs (BLE poll, the wired link, command handling) so the
 	// phone can show the URL and send "rig service off"; the scanning and

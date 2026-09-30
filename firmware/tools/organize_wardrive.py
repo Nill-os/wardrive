@@ -110,7 +110,7 @@ def download_from_rig(host, password, dest, progress=lambda s: None):
 
     names = sorted(set(re.findall(r"dl\?f=([^'\"<> ]+\.csv)", index)))
     if not names:
-        raise ValueError("Connected, but the rig has no session CSVs to download yet.")
+        return 0  # connected fine, but nothing logged yet - the caller shows a friendly note, not an error
     os.makedirs(dest, exist_ok=True)
     for i, name in enumerate(names, 1):
         progress(f"Downloading {name} ({i}/{len(names)})...")
@@ -270,7 +270,7 @@ def read_from_cyd_serial(port, dest, progress=lambda s: None):
             elif line == "SDLISTEND":
                 break
         if not names:
-            raise ValueError("Connected, but the card has no session CSVs.")
+            return 0  # connected fine, but nothing logged yet - the caller shows a friendly note, not an error
         os.makedirs(dest, exist_ok=True)
         for i, nm in enumerate(names, 1):
             progress(f"Reading {nm} ({i}/{len(names)})...")
@@ -899,7 +899,18 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
     def clear():
         status.configure(state="normal"); status.delete("1.0", "end"); status.configure(state="disabled")
 
+    def _no_logs():
+        # Not an error - the rig just hasn't logged any GPS-fixed drives yet.
+        log("")
+        log("Connected fine - but there are no logged drives to pull yet.", "accent")
+        log("The rig only saves sightings once it has a GPS fix, so a bench test", "dim")
+        log("or a drive with no clear sky view logs nothing. Take it for a drive", "dim")
+        log("with a good view of the sky, then pull the logs again.", "dim")
+
     def _process(folder):
+        import glob as _g
+        if not _g.glob(os.path.join(folder, "*.csv")):
+            _no_logs(); return
         log("Building your report from " + folder, "accent")
         try:
             out_dir, st = organize(folder, progress=lambda s: log("  " + s, "dim"))
@@ -937,7 +948,8 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
             tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_auto"); shutil.rmtree(tmp, ignore_errors=True)
             try:
                 n = read_from_cyd_serial(val, tmp, progress=lambda s: log("  " + s, "dim"))
-                log(f"  read {n} file(s)", "dim"); _process(tmp)
+                if n: log(f"  read {n} file(s)", "dim")
+                _process(tmp)
             except Exception as e:
                 log("Couldn't read over USB: " + str(e), "err")
         else:
@@ -966,7 +978,7 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
         tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_dl"); shutil.rmtree(tmp, ignore_errors=True)
         try:
             n = download_from_rig(host_var.get(), pass_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
-            log(f"  downloaded {n} file(s)", "dim")
+            if n: log(f"  downloaded {n} file(s)", "dim")
         except Exception as e:
             log("Couldn't reach the rig over WiFi: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)
@@ -976,7 +988,7 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
         tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_usb"); shutil.rmtree(tmp, ignore_errors=True)
         try:
             n = read_from_cyd_serial(port_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
-            log(f"  read {n} file(s)", "dim")
+            if n: log(f"  read {n} file(s)", "dim")
         except Exception as e:
             log("Couldn't read over USB: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)

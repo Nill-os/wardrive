@@ -39,8 +39,8 @@ Both board-to-board links run at 460800 8N1 with 4–8 KB UART buffers, one `\n`
 
 - **Repeat filter in the sniffer callback:** a 512-slot cache drops a BSSID heard in the last 500 ms before it's queued, so repeated beacons can't crowd new APs out of the 128-slot queue. `frames`, `queued` and `qdrop` in wifi_node's heartbeat (and `qdrop` on the CYD) show how it's doing.
 - **Channel plan:** wifi_node (which has the external antenna) hops the three non-overlapping, most-used channels **1, 6, 11**, so it revisits each about every 450 ms and catches the bulk of APs on a single pass. The CYD's own sniffer sweeps the full **1–11**, covering the less-common channels. Both hop at `channel_hop_ms` (150 ms, just over one beacon interval).
-- **GPS at 5 Hz:** wifi_node sends u-blox UBX commands at boot to set 5 fixes a second and turn off the NMEA sentences it doesn't use. `gga=` in the heartbeat climbs about 5 per second once that has taken. This needs the GPS RX wire; without it the module stays at 1 Hz.
-- **Positions to the CYD every 250 ms**, so the CYD's own catches are tagged with a fresh position.
+- **GPS at the module's default 1 Hz** (9600 baud, standard NMEA). An earlier build sent u-blox UBX commands at boot to raise this to 5 Hz, but at 9600 the extra config traffic overran the line and the module never got a clean fix, so it was removed - plain factory-default NMEA is what actually works here. `gga=` in the heartbeat climbs about once a second once there's a fix. No fix indoors is normal; it needs sky/antenna.
+- **Positions to the CYD every 500 ms**, so the CYD's own catches are tagged with a recent position.
 - **No sightings lost before the first fix:** ble_node only sends (and marks as seen) while wifi_node reports a fix (`GPSFIX:1`), and the BLE controller's duplicate filter is off. Before this, every BLE device heard before the first fix of a run was never logged.
 - **USB mirroring only when used:** the CYD copies phone lines to its USB port only while something has sent a USB command in the last 15 s.
 
@@ -82,7 +82,7 @@ These are for the dual-USB CYD with an ST7789 panel:
 - `rotation(0)` is landscape on this panel. `runRotationDebug()` in `firmware/src/cyd_node/main.cpp` helps you re-derive it on a different panel.
 - The XPT2046 touch controller is bit-banged on its own pins (IRQ 36, MISO 39, MOSI 32, CLK 25, CS 33).
 - The display pin map is set entirely by `build_flags` in `[env:cyd_node]` (`USER_SETUP_LOADED`), so updating the library won't overwrite it.
-- The board is built as the generic `esp32dev` target with 4 MB flash and the `huge_app.csv` partition layout, which gives one ~3 MB app partition and no OTA.
+- The board is built as the generic `esp32dev` target with 4 MB flash and the `min_spiffs.csv` partition layout: two ~1.9 MB app slots (the ~1.4 MB app fits with room) so the CYD can take over-the-air updates in [service mode](USING_THE_RIG.md#service-mode-download-logs-update-firmware). The SPIFFS partition is left tiny since the CYD keeps everything on the SD card.
 
 ## Testing without GPS
 

@@ -108,6 +108,14 @@ tools/run.sh
 
 It needs Tk (`sudo apt install python3-tk` on Debian/Ubuntu).
 
+To add it to your applications menu (and Desktop) with an icon:
+
+```
+tools/install-desktop.sh
+```
+
+Then launch **Nill OS - Wardriver** like any app - `run.sh` sets up its Python environment on first run.
+
 ## Over-the-air updates (cyd_node)
 
 The CYD can be reflashed over WiFi, so you don't have to pull it out of the car and plug in a cable for every firmware change. The two node boards (wifi_node, ble_node) are still flashed over USB - they spend their time in scan modes that don't hold a normal WiFi connection.

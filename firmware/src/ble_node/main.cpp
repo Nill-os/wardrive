@@ -15,6 +15,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <unordered_set>
+#include "WardriveEspNow.h"
 
 // Flip to false once the rig is proven out - see wifi_node/main.cpp for why.
 static constexpr bool WARDRIVE_DEBUG = true;
@@ -320,6 +321,27 @@ static void sendObservation(const uint8_t *mac, int rssi, const std::string &raw
 	name.replace("\n", " ");
 	name.replace("\r", " ");
 
+#if defined(WARDRIVE_ESPNOW)
+	// Satellite BLE node: broadcast the sighting to the aggregator over ESP-NOW
+	// instead of down a wire. A ble_node's WiFi radio is otherwise free, so this
+	// is the low-risk wireless path. The aggregator reconstructs the same
+	// "MAC,RSSI,NAME,MFG_HEX" line and geotags it.
+	EspNowSighting s;
+	memset(&s, 0, sizeof(s));
+	s.magic = ESPNOW_MAGIC;
+	s.version = ESPNOW_PROTO_VERSION;
+	s.type = ESPNOW_TYPE_BLE;
+	s.nodeId = (uint8_t)BLE_NODE_INDEX;
+	memcpy(s.mac, mac, 6);
+	s.rssi = (int8_t)rssi;
+	s.channel = 0;
+	strncpy(s.name, name.c_str(), sizeof(s.name) - 1);
+	s.mfgLen = (uint8_t)(mfgData.size() < sizeof(s.mfg) ? mfgData.size() : sizeof(s.mfg));
+	memcpy(s.mfg, mfgData.data(), s.mfgLen);
+	espnowSend(s);
+	observationsSent++;
+	return;
+#else
 	char mfgHex[64];
 	hexEncode(reinterpret_cast<const uint8_t *>(mfgData.data()), mfgData.size(), mfgHex, sizeof(mfgHex));
 
@@ -327,6 +349,7 @@ static void sendObservation(const uint8_t *mac, int rssi, const std::string &raw
 	snprintf(line, sizeof(line), "%s,%d,%s,%s", macStr, rssi, name.c_str(), mfgHex);
 	LinkSerial.println(line);
 	observationsSent++;
+#endif
 }
 
 class WardriveScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
@@ -401,6 +424,15 @@ void setup() {
 	// would otherwise leak one allocation per MAC until the heap is exhausted - a crash, watchdog
 	// reset, or BLE stack hang mid-drive, independent of any phone-side wdstream issue.
 	pBLEScan->setMaxResults(0);
+
+#if defined(WARDRIVE_ESPNOW)
+	// Satellite mode: bring up ESP-NOW (WiFi radio is otherwise idle here) so
+	// sightings broadcast to the aggregator instead of down the wire.
+	if (espnowBeginSender(ESPNOW_CHANNEL, /*bringUpWifi=*/true))
+		Serial.printf("[espnow] BLE satellite ready on channel %d\n", ESPNOW_CHANNEL);
+	else
+		Serial.println("[espnow] init FAILED");
+#endif
 
 	Serial.println("ble_node ready");
 	// Identity line the desktop app reads to recognize this board - see the same

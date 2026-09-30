@@ -65,13 +65,21 @@ broadcasts its sightings over the air to the aggregator (`wifi_node #0` or the
 CYD), which funnels everything to the one board with the SD card and uploader.
 No wires run between nodes — each one just needs power.
 
-> **Status:** the per-node **channel split, MAC split, numbering and DETECT are
-> implemented** today. The **ESP-NOW transport that carries extra nodes' data to
-> the aggregator is not built yet** — so right now a second `wifi_node` sniffs
-> its own channel slice correctly but has no path to deliver it to the SD card.
-> Until ESP-NOW lands, the rig runs as the wired three-board chain. Flashing
-> nodes with their numbers now means they're ready the moment that transport is
-> added. ESP-NOW is the recommended next step — see the design notes.
+> **Status:** the per-node channel split, MAC split, numbering and DETECT are
+> implemented, and the **ESP-NOW transport is now implemented too**, behind the
+> `WARDRIVE_ESPNOW` build flag (off by default, so a normal rig is byte-for-byte
+> the wired three-board chain). Node 0 acts as the aggregator (GPS + ESP-NOW
+> receiver + wired uplink to the CYD); higher-numbered `wifi_node`/`ble_node`
+> boards are satellites that broadcast to it. The clean path — extra **BLE**
+> nodes, whose WiFi radio is otherwise free — has no radio conflict. The WiFi
+> satellite path works around the sniff-vs-receive conflict by having satellites
+> hop to the ESP-NOW channel only to transmit; for the most reliable reception
+> build the aggregator with `-D WARDRIVE_ESPNOW_DEDICATED` so it stops sniffing
+> and dedicates its radio to receiving.
+>
+> This transport is **compile-verified but not yet hardware-validated on a
+> multi-node rig** — treat it as experimental until you've run it on real extra
+> boards. A single-node rig built without the flag is unaffected.
 
 ## Power
 

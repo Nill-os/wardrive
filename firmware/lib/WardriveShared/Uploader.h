@@ -56,6 +56,10 @@ public:
 	// Unix time of the last upload that sent at least one file (0 = never,
 	// or never with a GPS clock).
 	uint32_t lastUploadEpoch();
+	// Record an upload time from outside the uploader - used when the phone app
+	// uploads a session on the rig's behalf, so the "last upload" age still
+	// resets. Takes the phone's wall-clock epoch (seconds).
+	void setLastUploadEpoch(uint32_t epoch);
 	bool autoUploadDue(uint32_t nowEpoch);
 	bool configValid() const { return _cfg.valid; }
 
@@ -77,6 +81,4 @@ private:
 
 	bool alreadyUploaded(const String &filePath);
 	void markUploaded(const String &filePath, uint32_t nowEpoch);
-
-	void setLastUploadEpoch(uint32_t epoch);
 };

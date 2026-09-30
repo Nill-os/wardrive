@@ -178,7 +178,13 @@ class RigUploadRelay(
             val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk)
             handler.post {
                 if (allOk) {
-                    send("rig ack $name")          // rig marks it .uploaded, won't resend
+                    // Include the phone's wall-clock epoch (seconds) so the rig can
+                    // reset its "last upload" age even with no GPS time of its own -
+                    // otherwise the CYD kept showing the age since its last self-upload
+                    // (e.g. "12d ago") after every phone upload. Rig tolerates the
+                    // epoch being absent (older firmware).
+                    send("rig ack $name ${System.currentTimeMillis() / 1000}")  // rig marks it .uploaded, won't resend
+
                     uploadedThisRun++
                     log("[relay] $name uploaded")
                 } else {

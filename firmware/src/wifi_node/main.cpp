@@ -36,6 +36,7 @@
 #include <freertos/task.h>
 
 #include "TimeUtils.h"
+#include "WardriveEspNow.h"
 
 
 // No local scanning-intent persistence on this board anymore - it's no
@@ -771,6 +772,54 @@ static void handleCydLinkLine(const String &line) {
 TinyGPSCustom ggaFixQuality(gps, "GPGGA", 6);
 uint32_t ggaCount = 0;
 
+#if defined(WARDRIVE_ESPNOW)
+// This board is the aggregator when it's node 0, otherwise a wireless satellite.
+static const bool ESPNOW_IS_AGGREGATOR = (NODE_INDEX == 0);
+
+// Sightings arrive in the ESP-NOW receive callback (kept short); they're parked
+// in this ring and drained in loop() where touching the CYD link and GPS is safe.
+static volatile int espnowHead = 0, espnowTail = 0;
+static EspNowSighting espnowRing[32];
+
+static void onEspNowSighting(const EspNowSighting &s) {
+	int next = (espnowHead + 1) % 32;
+	if (next == espnowTail) return; // ring full - drop rather than block the WiFi task
+	espnowRing[espnowHead] = s;
+	espnowHead = next;
+}
+
+static void drainEspNow() {
+	while (espnowTail != espnowHead) {
+		EspNowSighting s = espnowRing[espnowTail];
+		espnowTail = (espnowTail + 1) % 32;
+		s.name[sizeof(s.name) - 1] = '\0';
+		if (s.type == ESPNOW_TYPE_BLE) {
+			// Rebuild the same line a wired ble_node sends and reuse the geotag path.
+			static const char *hexDigits = "0123456789ABCDEF";
+			char mfgHex[2 * sizeof(s.mfg) + 1];
+			size_t n = 0;
+			for (uint8_t i = 0; i < s.mfgLen && i < sizeof(s.mfg); i++) {
+				mfgHex[n++] = hexDigits[(s.mfg[i] >> 4) & 0xF];
+				mfgHex[n++] = hexDigits[s.mfg[i] & 0xF];
+			}
+			mfgHex[n] = '\0';
+			String line = macToString(s.mac) + "," + String((int)s.rssi) + "," + String(s.name) + "," + String(mfgHex);
+			handleBleLinkLine(line);
+		} else { // ESPNOW_TYPE_WIFI
+			double lat, lon, alt, acc;
+			if (!getLoggablePosition(lat, lon, alt, acc)) continue;
+			if (!shouldLogAp(s.mac, lat, lon)) continue;
+			String ssid(s.name);
+			ssid.replace(",", " ");
+			cydLinkSendf("W,%s,%s,%s,%s,%u,%d,%d,%.6f,%.6f,%.1f,%.1f",
+						 macToString(s.mac).c_str(), ssid.c_str(), s.auth,
+						 isoTimestamp().c_str(), (unsigned)s.channel, channelToFreqMHz(s.channel),
+						 (int)s.rssi, lat, lon, alt, acc);
+		}
+	}
+}
+#endif // WARDRIVE_ESPNOW
+
 void setup() {
 	Serial.begin(115200);
 	buildChannelPlan(); // this node's share of the WiFi channels (see NODE_INDEX/NODE_COUNT)
@@ -811,6 +860,23 @@ void setup() {
 	wifi_promiscuous_filter_t promFilter = {.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT};
 	esp_wifi_set_promiscuous_filter(&promFilter);
 
+#if defined(WARDRIVE_ESPNOW)
+	// Node 0 aggregates the wireless nodes; higher indices are satellites that
+	// broadcast to it. See docs/SCALING.md. All of this is compiled out unless
+	// the rig is built with -D WARDRIVE_ESPNOW.
+	if (ESPNOW_IS_AGGREGATOR) {
+		if (espnowBeginReceiver(ESPNOW_CHANNEL, onEspNowSighting, /*bringUpWifi=*/false))
+			Serial.printf("[espnow] aggregator receiving on channel %d\n", ESPNOW_CHANNEL);
+		else
+			Serial.println("[espnow] receiver init FAILED");
+	} else {
+		if (espnowBeginSender(ESPNOW_CHANNEL, /*bringUpWifi=*/false))
+			Serial.printf("[espnow] WiFi satellite %d ready on channel %d\n", (int)NODE_INDEX, ESPNOW_CHANNEL);
+		else
+			Serial.println("[espnow] sender init FAILED");
+	}
+#endif
+
 	// scanningActive starts false and stays that way until cyd_node's own
 	// authoritative state arrives over the wired link (see handleCydLinkLine())
 	// - no local button/NVS-driven resume anymore, see this file's header.
@@ -829,6 +895,10 @@ void loop() {
 	}
 
 	serviceErrorBlink();
+
+#if defined(WARDRIVE_ESPNOW)
+	if (ESPNOW_IS_AGGREGATOR) drainEspNow(); // forward sightings received from satellites
+#endif
 
 	static uint32_t lastIdMs = 0;
 	if (millis() - lastIdMs > 2000) {
@@ -945,6 +1015,27 @@ void loop() {
 			if (apSeenThisRunForLed.insert(macToKey(obs.bssid)).second) {
 				flashLed(255, 0, 255); // purple - only for a genuinely new AP this run, independent of whether it can be logged
 			}
+
+#if defined(WARDRIVE_ESPNOW)
+			if (!ESPNOW_IS_AGGREGATOR) {
+				// A satellite has no GPS of its own - broadcast the raw sighting to
+				// the aggregator, which geotags and de-duplicates it there.
+				EspNowSighting s;
+				memset(&s, 0, sizeof(s));
+				s.magic = ESPNOW_MAGIC;
+				s.version = ESPNOW_PROTO_VERSION;
+				s.type = ESPNOW_TYPE_WIFI;
+				s.nodeId = (uint8_t)NODE_INDEX;
+				memcpy(s.mac, obs.bssid, 6);
+				s.rssi = (int8_t)obs.rssi;
+				s.channel = obs.channel;
+				strncpy(s.name, obs.ssid, sizeof(s.name) - 1);
+				String auth = authModeStr(obs.authMode, obs.pmfCapable, obs.pmfRequired);
+				strncpy(s.auth, auth.c_str(), sizeof(s.auth) - 1);
+				espnowSend(s);
+				continue;
+			}
+#endif
 
 			double lat, lon, alt, acc;
 			if (!getLoggablePosition(lat, lon, alt, acc)) continue; // no usable position, live or recent

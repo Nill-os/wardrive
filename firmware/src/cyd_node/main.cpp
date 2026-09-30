@@ -2511,16 +2511,27 @@ static void relayBroadcastLedColors() {
 	wifiLinkSend(c);
 }
 
-static void relayMarkUploaded(const String &name) {
+static void relayMarkUploaded(const String &name, uint32_t ackEpoch = 0) {
 	if (!relaySafeName(name)) return;
 	String path = String(sessionDir()) + "/" + name;
 	if (!SD.exists(path)) return;
+	// Prefer the phone's wall clock (ackEpoch) for the marker and the last-upload
+	// time; fall back to the rig's own GPS-derived clock.
+	uint32_t stamp = ackEpoch != 0 ? ackEpoch : (uint32_t)lastKnownEpoch;
 	File f = SD.open(path + ".uploaded", FILE_WRITE);
 	if (f) {
-		f.println((uint32_t)lastKnownEpoch);
+		f.println(stamp);
 		f.close();
 	}
 	if (uploader) pendingUploadFiles = uploader->pendingCount(sessionDir());
+	// A phone upload counts exactly like the rig's own upload, so reset the
+	// "last upload OK" age the screen shows instead of leaving it stuck at the
+	// time of the rig's last self-upload.
+	if (stamp != 0 && uploader) {
+		uploader->setLastUploadEpoch(stamp);
+		lastUploadOkEpoch = stamp;
+		lastUploadProblem = "";
+	}
 	logEvent(String("phone uploaded ") + name, COLOR_GREEN);
 }
 
@@ -2639,7 +2650,17 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		if (sp > 0) applyConfigSetting(rest.substring(0, sp), rest.substring(sp + 1));
 		else if (rest.length() > 0) applyConfigSetting(rest, ""); // "cfg <key>" with no value clears it
 	} else if (line.startsWith("rig ack ")) {
-		relayMarkUploaded(line.substring(8));
+		// "rig ack <name>" or "rig ack <name> <epoch>" - the trailing epoch is the
+		// phone's wall clock at upload time (newer app), used to reset the last-
+		// upload age even when the rig has no GPS time of its own.
+		String rest = line.substring(8);
+		int sp = rest.lastIndexOf(' ');
+		uint32_t ackEpoch = 0;
+		if (sp > 0) {
+			uint32_t maybe = (uint32_t)rest.substring(sp + 1).toInt();
+			if (maybe > 1600000000UL) { ackEpoch = maybe; rest = rest.substring(0, sp); }
+		}
+		relayMarkUploaded(rest, ackEpoch);
 	} else if (line == "rig service on") {
 		startServiceMode();
 	} else if (line == "rig service off") {

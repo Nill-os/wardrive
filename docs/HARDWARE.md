@@ -29,7 +29,7 @@ Pins are named the way they are printed on each board. On every serial link, **T
 | VCC | 3V3 |
 | GND | GND |
 | TX | **GPIO18** (ESP32 RX) |
-| RX | GPIO17 (ESP32 TX). Recommended: the firmware uses it to switch the GPS to 5 fixes a second. Without it the GPS runs at 1 fix a second. |
+| RX | GPIO17 (ESP32 TX). Optional, and currently unused - the GPS runs at its default 1 fix a second (an earlier 5-fixes-a-second config was removed because it overran the 9600-baud line). Safe to leave unconnected. |
 
 ### ble_node ↔ wifi_node (460800 baud)
 

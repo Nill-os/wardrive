@@ -561,12 +561,13 @@ class ScanService : Service(), RigLinkManager.Listener {
             Source.RIG_BLE, Source.PHONE_BLE -> noFixBleMacsThisRun
             Source.PHONE_CELL -> noFixCellIdsThisRun
         }
-        val newToDb: Boolean = when {
-            loggedSet.add(tagged2.mac) -> { if (!hasPosition) noFixSet.add(tagged2.mac); true } // first sighting this run
-            hasPosition && noFixSet.remove(tagged2.mac) -> true                                  // upgrade a fix-less row now we have a position
-            else -> false
-        }
-        if (newToDb && !historicalIndex.containsKey(tagged2.mac)) newThisRunCount++
+        val firstLog = loggedSet.add(tagged2.mac)                                   // first time this MAC is logged this run
+        if (firstLog && !hasPosition) noFixSet.add(tagged2.mac)                      // remember it was logged fix-less
+        val upgrade = !firstLog && hasPosition && noFixSet.remove(tagged2.mac)       // now we have a position for a fix-less MAC
+        val newToDb = firstLog || upgrade
+        // Count a "new find" only on the genuine first sighting, never again on the
+        // fix-less -> positioned upgrade (that's the same device, a second row).
+        if (firstLog && !historicalIndex.containsKey(tagged2.mac)) newThisRunCount++
         if (newToDb && runId != null) {
             val entity = tagged2.toEntity(runId)
             dbExecutor.execute {

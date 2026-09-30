@@ -78,9 +78,9 @@ struct WardriveConfig {
 	bool screenKeepOnScanning = true; // don't blank while a run is active
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
 	uint32_t channelHopMs = 150;
-	// Password for service mode (OTA firmware updates + the log web server).
-	// When set, an OTA push and every web request must supply it; when empty,
-	// service mode is open to anyone on the same WiFi (see docs/SECURITY.md).
+	// Password for service mode's log web server. When set, every web request
+	// must supply it; when empty, service mode is open to anyone on the same
+	// WiFi (see docs/SECURITY.md). Firmware is flashed over USB - no OTA.
 	String servicePassword;
 	// Per-category detection alerts on the CYD (banner + LED flash the first
 	// time each notable device is seen in a run). Off by default; the phone app

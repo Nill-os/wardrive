@@ -26,8 +26,7 @@ led_color_ok=00FF00
 led_color_fail=FF0000
 retention_days=0
 channel_hop_ms=150
-# Password for service mode (over-the-air firmware updates + the log web
-# server). Strongly recommended: when set, an OTA push needs --auth=<this> and
+# Password for service mode's log web server. Strongly recommended: when set,
 # the web page/downloads need this password. Left blank, service mode is open
 # to anyone on the same WiFi while it's running - only fine on a trusted network.
 service_password=

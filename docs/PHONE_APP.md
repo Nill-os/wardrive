@@ -6,6 +6,7 @@ The rig works on its own, and **the phone is optional**. With the phone you get:
 - the phone's own WiFi, BLE and cell scanning, merged in
 - tracker and skimmer detection alerts
 - start/stop from the phone, the map and the car screen
+- an **antenna checker** (Settings → Antenna check) that reads a chosen device's live signal, with peak hold and A/B capture, so you can swap antennas and see which pulls it in strongest
 
 ## Nill OS - Wardriver (Android)
 
@@ -26,8 +27,10 @@ You need JDK 17 and the Android SDK. Android Studio installs both; `local.proper
 
 ### First run
 
-1. Grant **Location** ("Allow all the time" if you want it scanning with the screen off), **Nearby devices** (Bluetooth) and **Notifications**.
+1. Grant **Location** (choose **Precise** - Bluetooth scanning withholds results with only Approximate, and select "Allow all the time" if you want it scanning with the screen off), **Nearby devices** (Bluetooth) and **Notifications**.
 2. Open **Settings**:
+   - **Background:** tap **ALLOW BACKGROUND USAGE** so Android's battery optimizer doesn't pause scanning when the screen is off or the app is backgrounded.
+   - **Tools → Antenna check:** compare antennas on a live signal (needs a run active - it can start scanning itself).
    - **Upload credentials:** your WiGLE "Encoded for use" token and your wdgwars API key. These are only needed if the phone should upload its own logs.
    - **Trip mode** (off by default): for trips away from home WiFi. While on, the phone pulls the rig's own log files over the Bluetooth link and uploads them with your keys over whatever connection the phone has (cell or WiFi); the rig holds off its own upload, so nothing is sent twice. Off = the rig uploads over its own WiFi (`config.cfg`) as usual.
    - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is dropped completely.
@@ -51,6 +54,7 @@ If Bluetooth isn't available, plug the phone into the CYD's USB port with a USB-
 - The home exclusion zone and blacklists apply to everything the **app** shows, logs and uploads, from both the rig and the phone.
 - SSIDs ending in `_nomap` are always dropped.
 - The rig's own SD logs and uploads **do not** use the app's exclusion zone. See [Config → Keep it private](CONFIG.md#keep-it-private).
+- **No GPS fix:** devices are still gathered (the dashboard shows an amber `NO GPS FIX` warning), but saved without a position and **never uploaded or exported**, so nothing lands at 0,0. If a device is seen again once there's a fix, it's re-logged with a real position and that row is what uploads.
 
 ## Organic Maps overlay (optional)
 

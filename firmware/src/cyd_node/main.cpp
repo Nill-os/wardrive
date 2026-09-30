@@ -124,7 +124,7 @@ volatile bool scanningActive = false;
 volatile bool uploadRequested = false;
 bool wasScanning = false;
 bool sdOk = false;
-// True while parked in service mode (OTA + log web server own the WiFi radio).
+// True while parked in service mode (the log web server owns the WiFi radio).
 // Declared here, ahead of doUpload(), which checks it; the rest of the service
 // state and its functions live further down (see "Service mode").
 bool serviceModeActive = false;
@@ -1917,7 +1917,7 @@ static void stopScanning() {
 }
 
 static UploadResult doUpload(bool force) {
-	// Service mode owns the WiFi radio (OTA + log server); an upload here would
+	// Service mode owns the WiFi radio (the log server); an upload here would
 	// tear its connection down mid-session. Skip - the user can upload normally
 	// after leaving service mode.
 	if (serviceModeActive) return UploadResult::Skipped;
@@ -2472,7 +2472,7 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "led_color_ble") { config.ledColorBle = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
 	else if (key == "led_color_ok") { config.ledColorOk = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
 	else if (key == "led_color_fail") { config.ledColorFail = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
-	else if (key == "service_password") config.servicePassword = value; // protects OTA + the log server
+	else if (key == "service_password") config.servicePassword = value; // protects the log server
 	else if (key == "wifi_ssid") config.wifiSsid = value;
 	else if (key == "wifi_pass") config.wifiPass = value;
 	else if (key == "backup_wifi_ssid") config.backupWifiSsid = value;
@@ -3353,7 +3353,7 @@ void loop() {
 		Serial.println("WD:ID role=cyd idx=0 n=1");
 	}
 
-	// Pump OTA + the log web server while parked in service mode. The rest of
+	// Pump the log web server while parked in service mode. The rest of
 	// loop() still runs (BLE poll, the wired link, command handling) so the
 	// phone can show the URL and send "rig service off"; the scanning and
 	// auto-upload paths below are inert because scanningActive is false and

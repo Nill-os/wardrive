@@ -109,6 +109,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     private var previewWifi = false
     private var previewBle = false
     private var previewCell = false
+    private var previewOwnsRigScan = false // preview told the rig to scan; stop it when preview ends
     var rigConnected = false; private set
     var meshLinkState = RigLinkManager.MeshLinkState.DISCONNECTED; private set
     // Parsed out of the rig's own periodic "WD:STATUS ... ch=N ..." line (see
@@ -382,6 +383,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         running = true
         paused = false
         previewing = false // a real run supersedes any live-preview scanning
+        previewOwnsRigScan = false // the run now owns the rig's scan state
         runStartMs = System.currentTimeMillis()
         totalDistanceMeters = 0.0
         lastFixForDistance = null
@@ -485,6 +487,13 @@ class ScanService : Service(), RigLinkManager.Listener {
     // the BLE radio and vice-versa, so opening "Live WiFi" only turns on WiFi
     // scanning ("search for the selected tool"). If the open tool changes type,
     // MainActivity restarts preview with the new set.
+    //
+    // The rig is also asked to scan (if connected) so its sightings stream into
+    // the same tools, not just the phone's. The rig only emits WD:AP/WD:BLE
+    // while it's scanning, so we start it here and stop it in stopPreview - but
+    // WITHOUT it turning into a phone run (onRigScanStateChanged skips its
+    // auto-start-run while previewing). If the rig were already scanning on its
+    // own, the phone would already be in a run and this whole path is skipped.
     fun startPreview(wifi: Boolean = true, ble: Boolean = true, cell: Boolean = false) {
         if (running) return
         if (previewing) stopPreview() // switching tool type: drop the old radio set first
@@ -494,6 +503,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (wifi && hasLocationPermission()) wifiScanner.start()
         if (ble && hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
         if (cell && hasCellPermission()) cellScanner.start()
+        if (rigConnected && (wifi || ble)) { rigLink.sendScanStart(); previewOwnsRigScan = true }
         updateExternalUi(force = true)
     }
 
@@ -501,6 +511,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (!previewing) return
         previewing = false
         if (running) return // a run took over the radios; leave them on for it
+        if (previewOwnsRigScan) { rigLink.sendScanStop(); previewOwnsRigScan = false }
         if (previewWifi) wifiScanner.stop()
         if (previewBle) bleScanner.stop()
         if (previewCell) cellScanner.stop()
@@ -754,6 +765,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             // already true just re-flashes its LED), and corrects the state proactively rather than
             // passively accepting a stale one on any real reconnect.
             if (running) rigLink.sendScanStart()
+            else if (previewing) { rigLink.sendScanStart(); previewOwnsRigScan = true } // keep the rig feeding an open live tool across a reconnect
             listener?.onRigConnected()
         }
     }
@@ -808,7 +820,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             // Join a run the rig is already in (it resumed when the car started, say). Only ever
             // starts: if the phone is mid-run and the rig isn't, onRigConnected() already told the
             // rig to join the phone instead.
-            if (active && !running) startRun(notifyRig = false, reason = "joined the rig's run")
+            if (active && !running && !previewing) startRun(notifyRig = false, reason = "joined the rig's run")
         }
     }
 
@@ -820,7 +832,9 @@ class ScanService : Service(), RigLinkManager.Listener {
             // itself, so it works correctly even while the phone's screen
             // is locked and no Activity is bound - notifyRig=false since
             // the rig already knows its own state.
-            if (active && !running) startRun(notifyRig = false, reason = "rig reported scanning")
+            // While previewing, the rig scanning is us feeding the live tools -
+            // don't let it escalate into a full logged phone run.
+            if (active && !running && !previewing) startRun(notifyRig = false, reason = "rig reported scanning")
             else if (!active && running) stopRun(notifyRig = false, reason = "rig reported stopped")
         }
     }

@@ -84,11 +84,11 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 
 ## The desktop upload/organizer (optional)
 
-`firmware/tools/organize_wardrive.py` is a small desktop GUI that pulls the rig's logs, organizes them, and builds an **interactive field report**. Two ways to get the logs:
+`firmware/tools/organize_wardrive.py` is a small desktop GUI that pulls the rig's logs, organizes them, and builds an **interactive field report**. Usually you just plug in the SD card *or* the rig's USB cable and click the big **GET MY LOGS** button - it finds the source automatically and opens the report in your browser. If you'd rather choose, the three sources are:
 
-- **GET FROM SD CARD** - plug the card into the PC (auto-detected on Linux, macOS, Windows).
-- **GET FROM RIG (USB)** - *without removing the card*: plug the CYD in over USB; it reads the logs straight off the card over the serial cable (`sd list` / `sd get`), no WiFi needed.
-- **GET FROM RIG (WIFI)** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
+- **From SD card** - plug the card into the PC (auto-detected on Linux, macOS, Windows).
+- **From USB** - *without removing the card*: plug the CYD in over USB; it reads the logs straight off the card over the serial cable (`sd list` / `sd get`), no WiFi needed.
+- **From WiFi** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
 
 Either way it writes, under `~/Wardrive_Reports/report_<date>_<time>/`:
 

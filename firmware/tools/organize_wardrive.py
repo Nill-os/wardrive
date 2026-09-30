@@ -296,6 +296,24 @@ def read_from_cyd_serial(port, dest, progress=lambda s: None):
         s.close()
 
 
+def smart_get_source():
+    """Pick the easiest available log source for the one-click 'get my logs'
+    button, so the user doesn't have to know which of SD/USB/WiFi to use.
+    Returns ("sd", folder) or ("usb", port), or (None, None) if neither is
+    plugged in (WiFi still needs a manual address, so it's not auto-picked)."""
+    folder = find_session_folder()
+    if folder:
+        return ("sd", folder)
+    try:
+        serial = _import_serial()
+        for p in _serial_ports():
+            if _probe_is_cyd(serial, p):
+                return ("usb", p)
+    except Exception:
+        pass
+    return (None, None)
+
+
 # ---------- CSV load + dedup ----------
 def load_one_csv(path):
     df = pd.read_csv(path, skiprows=1, dtype=str, keep_default_na=False)
@@ -767,12 +785,49 @@ def _log_area(parent, mono, height):
     return t
 
 
+HELP_TEXT = """> NILL OS - WARDRIVER  (desktop tool)
+
+Three things this app does, one per tab:
+
+1 - LOGS & REPORT
+   Plug in the rig's SD card, OR plug the rig into USB, then click
+   GET MY LOGS. It pulls the logs and builds an interactive map/report
+   (opens in your browser). No SD-card removal needed for USB.
+   'From WiFi' works too when the rig is in service mode.
+
+2 - FLASH BOARDS
+   Plug a board into USB and click DETECT to see what it is and its
+   node number. FLASH ALL reflashes every connected board. Pick a
+   board type (incl. Seeed XIAO) and node number for multi-node rigs.
+
+3 - CONSOLE
+   A live serial console to the rig. CONNECT, then use the quick
+   buttons or type a command (try 'help').
+
+Needs PlatformIO on your PATH for flashing (pip install platformio).
+Reports are saved under ~/Wardrive_Reports.
+Full guides: github.com/Nill-os/wardrive/tree/main/docs
+"""
+
+
+def _show_help(root, mono, mono_b, title_f):
+    win = tk.Toplevel(root); win.title("Help"); win.configure(bg=BG)
+    win.geometry("640x560"); win.transient(root)
+    tk.Label(win, text="Help", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(fill="x", padx=18, pady=(14, 6))
+    t = tk.Text(win, font=mono, bg=PANEL, fg="#E8E8F0", relief="flat", wrap="word",
+                highlightbackground=DIM, highlightthickness=1, padx=14, pady=12)
+    t.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+    t.insert("1.0", HELP_TEXT); t.configure(state="disabled")
+    border, _ = _tactical_button(win, "> GOT IT", win.destroy, mono_b)
+    border.pack(pady=(0, 14))
+
+
 def main():
     root = tk.Tk()
     root.title("Nill OS - Wardriver")
-    root.geometry("720x720")
+    root.geometry("760x760")
     root.configure(bg=BG)
-    root.resizable(False, False)
+    root.minsize(700, 640)   # resizable, but never so small the buttons get clipped
 
     mono = tkfont.nametofont("TkFixedFont").copy(); mono.configure(size=11)
     mono_b = mono.copy(); mono_b.configure(weight="bold")
@@ -785,9 +840,12 @@ def main():
     style.configure("TNotebook.Tab", background=PANEL, foreground=DIM, padding=(16, 7), font=mono_b, borderwidth=0)
     style.map("TNotebook.Tab", background=[("selected", BG)], foreground=[("selected", CYAN)])
 
-    tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(fill="x", padx=20, pady=(16, 6))
+    header = tk.Frame(root, bg=BG); header.pack(fill="x", padx=20, pady=(16, 6))
+    tk.Label(header, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(side="left")
+    tk.Button(header, text="?  Help", command=lambda: _show_help(root, mono, mono_b, title_f),
+              font=mono, bg=PANEL, fg=DIM, relief="flat", padx=10, pady=2, cursor="hand2").pack(side="right")
 
-    # Shared across tabs: rig address / password (WiFi + OTA) and USB port.
+    # Shared across tabs: the rig's WiFi address / service password and USB port.
     host_var = tk.StringVar(value="nillos-wardriver.local")
     pass_var = tk.StringVar()
     port_var = tk.StringVar(value="auto")
@@ -796,34 +854,43 @@ def main():
     report_tab = tk.Frame(nb, bg=BG)
     flash_tab = tk.Frame(nb, bg=BG)
     manage_tab = tk.Frame(nb, bg=BG)
-    nb.add(report_tab, text="  Logs & Report  ")
-    nb.add(flash_tab, text="  Flash  ")
-    nb.add(manage_tab, text="  Manage  ")
+    nb.add(report_tab, text="  1 · Logs & Report  ")
+    nb.add(flash_tab, text="  2 · Flash boards  ")
+    nb.add(manage_tab, text="  3 · Console  ")
     nb.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
     _build_report_tab(report_tab, mono, mono_b, host_var, pass_var, port_var)
-    _build_flash_tab(flash_tab, mono, mono_b, root, host_var, pass_var, port_var)
+    _build_flash_tab(flash_tab, mono, mono_b, root)
     _build_manage_tab(manage_tab, mono, mono_b, root, port_var)
 
     root.mainloop()
 
 
 def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
-    tk.Label(tab, text="Get the logs off the rig three ways - SD card, USB cable, or WiFi\n"
-                       "(rig in service mode) - and build an interactive field report (map +\n"
-                       "browse / filter / search, with Flock/Flipper/skimmer detection).",
-             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 8))
+    tk.Label(tab, text="Pull your rig's logs and build an interactive field report - a map you\n"
+                       "can browse, filter and search, with Flock / Flipper / skimmer detection.",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 6))
 
-    row = tk.Frame(tab, bg=BG); row.pack(fill="x", padx=6, pady=(0, 4))
-    tk.Label(row, text="Rig:", font=mono, bg=BG, fg=DIM).pack(side="left")
-    _themed_entry(row, host_var, mono, 22).pack(side="left", padx=(6, 10))
-    tk.Label(row, text="Pass:", font=mono, bg=BG, fg=DIM).pack(side="left")
-    _themed_entry(row, pass_var, mono, 12, show="*").pack(side="left", padx=(6, 10))
-    tk.Label(row, text="USB:", font=mono, bg=BG, fg=DIM).pack(side="left")
-    _themed_entry(row, port_var, mono, 12).pack(side="left", padx=(6, 0))
+    state = {"report": None, "out": None}
 
-    status = _log_area(tab, mono, 8)
-    status.pack(fill="both", expand=True, padx=6, pady=(6, 8))
+    # --- the one big button most people need ---
+    auto_border, auto_btn = _tactical_button(
+        tab, "> GET MY LOGS", lambda: threading.Thread(target=do_auto, daemon=True).start(), mono_b, accent=GREEN)
+    auto_border.pack(pady=(4, 2))
+    tk.Label(tab, text="Finds your SD card or the rig on USB automatically. Just plug one in.",
+             font=mono, bg=BG, fg=DIM).pack(pady=(0, 6))
+
+    # --- results (shown once a report is built) ---
+    results = tk.Frame(tab, bg=BG)
+    rep_border, _rb = _tactical_button(results, "> VIEW FIELD REPORT",
+                                       lambda: state["report"] and open_path(state["report"]), mono_b)
+    rep_border.pack(side="left", padx=(0, 8))
+    fol_border, _fb = _tactical_button(results, "> OPEN FOLDER",
+                                       lambda: state["out"] and open_path(state["out"]), mono_b, accent=PURPLE)
+    fol_border.pack(side="left")
+
+    status = _log_area(tab, mono, 7)
+    status.pack(fill="both", expand=True, padx=6, pady=(4, 6))
 
     def log(text="", tag=None):
         status.configure(state="normal"); status.insert("end", text + "\n", (tag,) if tag else ())
@@ -832,78 +899,113 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
     def clear():
         status.configure(state="normal"); status.delete("1.0", "end"); status.configure(state="disabled")
 
-    state = {"report": None, "out": None}
-
     def _process(folder):
-        log("Building from " + folder, "accent")
+        log("Building your report from " + folder, "accent")
         try:
             out_dir, st = organize(folder, progress=lambda s: log("  " + s, "dim"))
         except Exception as e:
-            log("ERROR: " + str(e), "err"); return
+            log("Something went wrong: " + str(e), "err"); return
         state["out"], state["report"] = out_dir, os.path.join(out_dir, "report.html")
         log("")
-        log(f"  unique devices : {st['unique_devices']}  (WiFi {st['wifi']}, BLE {st['ble']}, cell {st['cell']})")
-        log(f"  notable        : {st['notable']}  (Flock / Flipper / skimmer / Pineapple / ...)",
+        log(f"  {st['unique_devices']} devices  (WiFi {st['wifi']} · BLE {st['ble']} · cell {st['cell']})")
+        log(f"  {st['notable']} notable  (Flock / Flipper / skimmer / Pineapple / ...)",
             "accent" if st["notable"] else "dim")
         log("")
         if st["unique_devices"] == 0:
-            log("No logged devices in these files (bench-test / no GPS fix yet).", "dim")
+            log("No located devices in these logs yet (bench test, or no GPS fix during the drive).", "dim")
         else:
-            log("field report + organized folders in:", "dim"); log("  " + out_dir, "accent"); log("> DONE", "ok")
-            report_border.pack(pady=(0, 6))
-        folder_border.pack(pady=(0, 10))
+            log("Saved to: " + out_dir, "dim")
+            log("> DONE - opening the report in your browser", "ok")
+            results.pack(before=status, pady=(2, 6))  # reveal VIEW / OPEN buttons, above the log
+            open_path(state["report"])                # auto-open so the result is right there
 
     def _busy(on):
-        for b in (sd_btn, usb_btn, wifi_btn):
+        for b in (auto_btn, sd_btn, usb_btn, wifi_btn):
             b.configure(state="disabled" if on else "normal")
 
+    def _start(msg=None):
+        _busy(True); results.pack_forget(); clear()
+        if msg: log(msg, "accent")
+
+    def do_auto():
+        _start("Looking for your logs...")
+        kind, val = smart_get_source()
+        if kind == "sd":
+            log("Found the rig's SD card.", "ok"); _process(val)
+        elif kind == "usb":
+            log(f"Found the rig on USB ({val}) - reading over the cable...", "ok")
+            tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_auto"); shutil.rmtree(tmp, ignore_errors=True)
+            try:
+                n = read_from_cyd_serial(val, tmp, progress=lambda s: log("  " + s, "dim"))
+                log(f"  read {n} file(s)", "dim"); _process(tmp)
+            except Exception as e:
+                log("Couldn't read over USB: " + str(e), "err")
+        else:
+            log("")
+            log("Couldn't find the SD card or the rig on USB.", "err")
+            log("Do one of these, then click GET MY LOGS again:", "dim")
+            log("  - plug the rig's SD card into this computer, or", "dim")
+            log("  - plug the rig into USB with a cable, or", "dim")
+            log("  - use 'From WiFi' below (put the rig in service mode first).", "dim")
+        _busy(False)
+
     def do_sd():
-        _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
+        _start("Reading the SD card...")
         folder = find_session_folder()
         if not folder:
-            log("No SD card auto-detected - pick the 'wardrive' folder...", "dim")
+            log("No SD card found - pick the 'wardrive' folder yourself...", "dim")
             folder = filedialog.askdirectory(title="Select the 'wardrive' folder on the rig's SD card")
             if not folder:
                 log("Cancelled.", "dim"); _busy(False); return
         _process(folder); _busy(False)
 
     def do_wifi():
-        _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
+        _start("Downloading over WiFi...")
         if not host_var.get().strip():
-            log("Enter the rig's address on the field above.", "err"); _busy(False); return
+            log("Type the rig's address in the WiFi field below first.", "err"); _busy(False); return
         tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_dl"); shutil.rmtree(tmp, ignore_errors=True)
         try:
             n = download_from_rig(host_var.get(), pass_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
-            log(f"  downloaded {n} file(s) over WiFi", "dim")
+            log(f"  downloaded {n} file(s)", "dim")
         except Exception as e:
-            log("ERROR: " + str(e), "err"); _busy(False); return
+            log("Couldn't reach the rig over WiFi: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)
 
     def do_usb():
-        _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
+        _start("Reading over the USB cable...")
         tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_usb"); shutil.rmtree(tmp, ignore_errors=True)
         try:
             n = read_from_cyd_serial(port_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
-            log(f"  read {n} file(s) over USB", "dim")
+            log(f"  read {n} file(s)", "dim")
         except Exception as e:
-            log("ERROR: " + str(e), "err"); _busy(False); return
+            log("Couldn't read over USB: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)
 
-    sd_border, sd_btn = _tactical_button(tab, "> GET FROM SD CARD", lambda: threading.Thread(target=do_sd, daemon=True).start(), mono_b)
-    sd_border.pack(pady=(0, 5))
-    usb_border, usb_btn = _tactical_button(tab, "> GET FROM RIG (USB)", lambda: threading.Thread(target=do_usb, daemon=True).start(), mono_b)
-    usb_border.pack(pady=(0, 5))
-    wifi_border, wifi_btn = _tactical_button(tab, "> GET FROM RIG (WIFI)", lambda: threading.Thread(target=do_wifi, daemon=True).start(), mono_b, accent=PURPLE)
-    wifi_border.pack(pady=(0, 5))
-    report_border, _rb = _tactical_button(tab, "> VIEW FIELD REPORT", lambda: state["report"] and open_path(state["report"]), mono_b)
-    folder_border, _fb = _tactical_button(tab, "> OPEN FOLDER", lambda: state["out"] and open_path(state["out"]), mono_b, accent=PURPLE)
-    log("Ready. SD card, USB cable, or WiFi (rig in service mode).", "dim")
+    # --- manual sources (for when auto can't be used, e.g. WiFi) ---
+    tk.Label(tab, text="— or pick a source —", font=mono, bg=BG, fg=DIM).pack(pady=(2, 4))
+    srow = tk.Frame(tab, bg=BG); srow.pack(padx=6)
+    def _small(parent, text, cmd, accent=CYAN):
+        b = tk.Button(parent, text=text, command=cmd, font=mono, bg=PANEL, fg=accent,
+                      activebackground=accent, activeforeground=BG, relief="flat", bd=0, padx=14, pady=7, cursor="hand2")
+        b.pack(side="left", padx=4); return b
+    sd_btn = _small(srow, "From SD card", lambda: threading.Thread(target=do_sd, daemon=True).start())
+    usb_btn = _small(srow, "From USB", lambda: threading.Thread(target=do_usb, daemon=True).start())
+    wifi_btn = _small(srow, "From WiFi", lambda: threading.Thread(target=do_wifi, daemon=True).start(), accent=PURPLE)
+
+    frow = tk.Frame(tab, bg=BG); frow.pack(fill="x", padx=6, pady=(8, 8))
+    tk.Label(frow, text="WiFi address:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    _themed_entry(frow, host_var, mono, 20).pack(side="left", padx=(6, 8))
+    tk.Label(frow, text="password:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    _themed_entry(frow, pass_var, mono, 10, show="*").pack(side="left", padx=(6, 8))
+    tk.Label(frow, text="(only for 'From WiFi')", font=mono, bg=BG, fg=DIM).pack(side="left")
+
+    log("Ready. Plug in the SD card or the rig, then click GET MY LOGS.", "dim")
 
 
-def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
-    tk.Label(tab, text="Flash firmware to a board over USB. Uses PlatformIO from the firmware/\n"
-                       "project. Hit DETECT to see what's plugged in and its node number, or\n"
-                       "pick a port and board yourself.",
+def _build_flash_tab(tab, mono, mono_b, root):
+    tk.Label(tab, text="Flash firmware to the rig over USB.   1) plug a board in    2) DETECT\n"
+                       "to see what it is and its node number    3) FLASH ALL (reflashes every\n"
+                       "board found), or flash one board with the buttons below.",
              font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 8))
 
     prow = tk.Frame(tab, bg=BG); prow.pack(fill="x", padx=6, pady=(0, 6))
@@ -1173,9 +1275,9 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
 
 
 def _build_manage_tab(tab, mono, mono_b, root, port_var):
-    tk.Label(tab, text="Live serial console to the CYD: send commands and watch the rig.\n"
-                       "Quick actions cover the common ones. (Type 'help' - or any cfg/rig\n"
-                       "command - in the box.)",
+    tk.Label(tab, text="A live console to the rig. Pick the port (or leave 'auto') and press\n"
+                       "CONNECT, then use the quick buttons below or type a command and Enter.\n"
+                       "Try 'help' to list commands. Connecting won't disturb a run.",
              font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 6))
 
     prow = tk.Frame(tab, bg=BG); prow.pack(fill="x", padx=6, pady=(0, 6))

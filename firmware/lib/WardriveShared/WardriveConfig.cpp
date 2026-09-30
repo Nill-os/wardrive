@@ -46,6 +46,7 @@ bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 		else if (key == "led_color_ok") outCfg.ledColorOk = parseHexColor(value, outCfg.ledColorOk);
 		else if (key == "led_color_fail") outCfg.ledColorFail = parseHexColor(value, outCfg.ledColorFail);
 		else if (key == "retention_days") outCfg.retentionDays = (uint32_t)value.toInt();
+		else if (key == "min_free_mb") outCfg.minFreeMB = (uint32_t)value.toInt();
 		else if (key == "channel_hop_ms") {
 			uint32_t parsed = (uint32_t)value.toInt();
 			if (parsed >= 20 && parsed <= 5000) outCfg.channelHopMs = parsed; // sane floor/ceiling - outside this is almost certainly a typo, not intent

@@ -40,8 +40,15 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
     private val scanTrigger = object : Runnable {
         override fun run() {
             if (!running) return
+            // Emit whatever the OS already has cached FIRST. Android throttles
+            // startScan() to a few calls per 2 min, and when it's throttled the
+            // SCAN_RESULTS_AVAILABLE broadcast may never fire - so relying only on
+            // that broadcast left WiFi permanently empty on a throttled phone.
+            // Reading the cached results every tick surfaces every nearby AP
+            // regardless of whether a fresh scan actually ran.
+            emitResults()
             @Suppress("DEPRECATION")
-            wifiManager.startScan()
+            wifiManager.startScan()   // ask for a fresh sweep; the receiver picks it up if it runs
             handler.postDelayed(this, SCAN_INTERVAL_MS)
         }
     }
@@ -55,6 +62,7 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
         } else {
             context.registerReceiver(receiver, filter)
         }
+        emitResults()             // surface the OS's already-cached APs immediately, don't wait for a scan
         handler.post(scanTrigger)
     }
 

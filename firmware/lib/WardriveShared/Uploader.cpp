@@ -334,39 +334,74 @@ void Uploader::removeEmptySessions(const String &dirPath) {
 }
 
 void Uploader::cleanupOldFiles(const String &dirPath, uint32_t nowEpoch) {
-	if (_cfg.retentionDays == 0 || nowEpoch == 0) return; // 0 retention = keep forever; 0 epoch = no reliable clock, never guess
-
-	uint32_t retentionSec = _cfg.retentionDays * 24UL * 3600UL;
-
-	File dir = SD.open(dirPath);
-	if (!dir) return;
-
-	File entry = dir.openNextFile();
-	while (entry) {
-		String name = String(entry.name());
-		entry.close();
-
-		if (name.endsWith(".uploaded")) {
-			String sidecarPath = dirPath + "/" + name;
-			File f = SD.open(sidecarPath, FILE_READ);
-			uint32_t uploadedEpoch = 0;
-			if (f) {
-				uploadedEpoch = (uint32_t)f.parseInt();
-				f.close();
+	// Optional time cap (off by default): if retentionDays > 0, also delete
+	// uploaded files older than that many days, same as the original behaviour.
+	if (_cfg.retentionDays > 0 && nowEpoch != 0) {
+		uint32_t retentionSec = _cfg.retentionDays * 24UL * 3600UL;
+		File dir = SD.open(dirPath);
+		if (dir) {
+			for (File entry = dir.openNextFile(); entry; entry = dir.openNextFile()) {
+				String name = String(entry.name());
+				entry.close();
+				if (!name.endsWith(".uploaded")) continue;
+				String sidecarPath = dirPath + "/" + name;
+				File f = SD.open(sidecarPath, FILE_READ);
+				uint32_t uploadedEpoch = f ? (uint32_t)f.parseInt() : 0;
+				if (f) f.close();
+				// epoch 0 = marked before a clock existed; unknown age, leave it.
+				if (uploadedEpoch != 0 && nowEpoch > uploadedEpoch &&
+					(nowEpoch - uploadedEpoch) > retentionSec) {
+					SD.remove(sidecarPath);
+					SD.remove(sidecarPath.substring(0, sidecarPath.length() - 9));
+				}
 			}
+			dir.close();
+		}
+	}
 
-			// uploadedEpoch of 0 means it was marked before this board ever
-			// had a GPS fix - unknown age, so leave it alone rather than
-			// guess it's infinitely old and delete it immediately.
-			if (uploadedEpoch != 0 && nowEpoch > uploadedEpoch &&
-				(nowEpoch - uploadedEpoch) > retentionSec) {
-				String csvPath = sidecarPath.substring(0, sidecarPath.length() - 9); // strip ".uploaded"
-				SD.remove(sidecarPath);
-				SD.remove(csvPath);
+	// Space-based retention (the default): keep every session forever, but once
+	// the card drops below minFreeMB (default 1 GB), delete the OLDEST *uploaded*
+	// files to make room and stop as soon as we're back above the line. Files
+	// that haven't been uploaded yet are never deleted - only backups of data
+	// already sent to WiGLE/wdgwars are dropped, oldest first.
+	if (_cfg.minFreeMB == 0) return; // 0 = never delete for space
+	uint64_t total = SD.totalBytes();
+	if (total == 0) return;
+	uint64_t used = SD.usedBytes();
+	uint64_t minFreeBytes = (uint64_t)_cfg.minFreeMB * 1024ULL * 1024ULL;
+
+	// Track free space by subtracting each deleted file's size, so we don't pay
+	// for a full usedBytes() FAT walk on every pass.
+	for (int guard = 0; guard < 100000 && (total - used) < minFreeBytes; guard++) {
+		String oldSidecar, oldCsv;
+		uint32_t oldEpoch = 0xFFFFFFFFu;
+		bool found = false;
+		File dir = SD.open(dirPath);
+		if (!dir) return;
+		for (File entry = dir.openNextFile(); entry; entry = dir.openNextFile()) {
+			String name = String(entry.name());
+			entry.close();
+			if (!name.endsWith(".uploaded")) continue;
+			String sidecar = dirPath + "/" + name;
+			File f = SD.open(sidecar, FILE_READ);
+			uint32_t ep = f ? (uint32_t)f.parseInt() : 0; // 0 sorts oldest -> deleted first
+			if (f) f.close();
+			if (!found || ep < oldEpoch) {
+				oldEpoch = ep; oldSidecar = sidecar;
+				oldCsv = sidecar.substring(0, sidecar.length() - 9); // strip ".uploaded"
+				found = true;
 			}
 		}
+		dir.close();
+		if (!found) break; // no uploaded backups left to reclaim; keep the un-uploaded data
 
-		entry = dir.openNextFile();
+		uint64_t freed = 0;
+		File cf = SD.open(oldCsv, FILE_READ);
+		if (cf) { freed += cf.size(); cf.close(); }
+		File sf = SD.open(oldSidecar, FILE_READ);
+		if (sf) { freed += sf.size(); sf.close(); }
+		SD.remove(oldSidecar);
+		SD.remove(oldCsv);
+		used = used > freed ? used - freed : 0;
 	}
-	dir.close();
 }

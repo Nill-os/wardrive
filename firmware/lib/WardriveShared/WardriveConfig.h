@@ -38,13 +38,17 @@
 // unset) to disable the geofence and fall back to WiFi-visibility-only
 // gating. Double-click always uploads immediately regardless of location.
 //
-// retention_days: once a session file has been successfully uploaded, it's
-// kept locally on the SD card as a backup for this many days before being
-// deleted. Defaults to 0 (keep forever, never auto-delete) - at realistic
-// driving volumes this never gets close to filling a normal-sized card, so
-// there's no real reason not to keep everything as a standing local backup.
-// Set to a nonzero value only if you actually want old uploaded files
-// cleaned up after that many days.
+// retention_days: an optional age cap on uploaded backups, off by default (0).
+// Set to a nonzero value only if you want uploaded files deleted after that
+// many days regardless of free space. The normal cleanup is space-based (see
+// min_free_mb) - at realistic driving volumes the card holds months of logs.
+//
+// min_free_mb: how the card is kept from filling up. Every uploaded session is
+// kept forever as a local backup until free space falls below this many MB;
+// then the OLDEST uploaded files are deleted, one at a time, just until free
+// space is back above the line. Files that haven't been uploaded yet are never
+// deleted. Defaults to 1024 (keep ~1 GB free). Set to 0 to never delete for
+// space (only retention_days, if set, would then clean up).
 //
 // channel_hop_ms: how long wifi_node's promiscuous sniffer dwells on each
 // 2.4GHz channel before moving to the next one, 1-11 in sequence. Lower
@@ -76,7 +80,8 @@ struct WardriveConfig {
 	uint8_t screenBrightness = 100; // 0-100 %, cyd_node's TFT backlight
 	uint32_t screenTimeoutSec = 0;  // blank the CYD screen after this many s of no touch; 0 = never
 	bool screenKeepOnScanning = true; // don't blank while a run is active
-	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
+	uint32_t retentionDays = 0; // 0 = keep uploaded files forever (age-based cap off by default)
+	uint32_t minFreeMB = 1024;  // keep everything until free space drops below this, then delete oldest uploaded files; 0 = never delete for space
 	uint32_t channelHopMs = 150;
 	// Password for service mode's log web server. When set, every web request
 	// must supply it; when empty, service mode is open to anyone on the same

@@ -24,7 +24,12 @@ led_color_ap=FF00FF
 led_color_ble=00FFFF
 led_color_ok=00FF00
 led_color_fail=FF0000
+# Storage: keep every uploaded log forever until free space drops below
+# min_free_mb, then delete the OLDEST uploaded files just until it's back above.
+# Un-uploaded data is never deleted. retention_days is an optional age cap
+# (0 = off). Set min_free_mb=0 to never delete for space.
 retention_days=0
+min_free_mb=1024
 channel_hop_ms=150
 # Password for service mode's log web server. Strongly recommended: when set,
 # the web page/downloads need this password. Left blank, service mode is open

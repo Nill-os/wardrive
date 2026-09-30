@@ -119,8 +119,32 @@ static uint32_t channelHopMs = 150;
 // single drive-by. cyd_node's own sniffer sweeps the full 1-11 range, so the
 // less-common channels (2-5, 7-10) are still covered - just by the board
 // without the good antenna, where they belong.
-static const uint8_t WIFI_CHANNELS[] = {1, 6, 11};
-static const uint8_t WIFI_CHANNEL_COUNT = sizeof(WIFI_CHANNELS) / sizeof(WIFI_CHANNELS[0]);
+// Modular multi-node channel plan. One sniffer node (the default) covers the
+// three popular, non-overlapping channels 1/6/11. To add more sniffer nodes,
+// flash each with -D NODE_COUNT=<total> -D NODE_INDEX=<0..total-1> (build_flags
+// in platformio.ini, or the desktop flasher): the full 2.4 GHz plan 1-13 is
+// then split round-robin across the nodes, so every added board just takes its
+// share of the channels and revisits them faster. See docs/DESIGN_NOTES.md.
+#ifndef NODE_INDEX
+#define NODE_INDEX 0
+#endif
+#ifndef NODE_COUNT
+#define NODE_COUNT 1
+#endif
+static uint8_t WIFI_CHANNELS[13];
+static uint8_t WIFI_CHANNEL_COUNT = 0;
+static void buildChannelPlan() {
+	WIFI_CHANNEL_COUNT = 0;
+	if (NODE_COUNT <= 1) {
+		static const uint8_t popular[] = {1, 6, 11};
+		for (uint8_t i = 0; i < 3; i++) WIFI_CHANNELS[WIFI_CHANNEL_COUNT++] = popular[i];
+	} else {
+		for (uint8_t ch = 1; ch <= 13; ch++)
+			if ((uint8_t)((ch - 1) % NODE_COUNT) == (uint8_t)(NODE_INDEX % NODE_COUNT))
+				WIFI_CHANNELS[WIFI_CHANNEL_COUNT++] = ch;
+	}
+	if (WIFI_CHANNEL_COUNT == 0) WIFI_CHANNELS[WIFI_CHANNEL_COUNT++] = 1; // never empty
+}
 
 // Both board-to-board links. 460800 (not 115200) because every forwarded
 // sighting is a ~120-byte line: at 115200 that's ~10ms of blocking per line,
@@ -232,7 +256,7 @@ bool idleAnchorSet = false;
 uint32_t idleAnchorSetMs = 0;
 uint32_t lastHeartbeatMs = 0;
 uint8_t channelIndex = 0;
-uint8_t currentChannel = WIFI_CHANNELS[0];
+uint8_t currentChannel = 1; // real value set by buildChannelPlan() in setup()
 
 // cyd_node is the only board left with SD/upload logic, so wifi_node now
 // gates its own scanning start on cyd_node's storage health, exactly the
@@ -749,6 +773,8 @@ uint32_t ggaCount = 0;
 
 void setup() {
 	Serial.begin(115200);
+	buildChannelPlan(); // this node's share of the WiFi channels (see NODE_INDEX/NODE_COUNT)
+	currentChannel = WIFI_CHANNELS[0];
 
 	neopixelWrite(RGB_BUILTIN, 0, 0, 0);
 

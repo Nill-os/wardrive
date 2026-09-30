@@ -112,3 +112,19 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 - **Security type is parsed from the RSN information element** (AKM suites), so WPA2, WPA3-SAE, WPA3-Enterprise, OWE and WPA2/WPA3 transitional are each identified in the CSV. Only the phone's live `wdstream` mirror collapses WPA3 to `WPA2`, for GhostESP compatibility; the logged data keeps the real type.
 - **No raw pcap capture** in the three-board layout.
 - **Touch calibration** was measured on one unit; other panels may need `TOUCH_RAW_*` adjusted.
+
+## Scaling to more sniffer nodes
+
+The WiFi channel plan is modular. `wifi_node` builds its channel set from two
+build flags (default `NODE_INDEX=0`, `NODE_COUNT=1`):
+
+- **One node** (the default) covers the three popular, non-overlapping channels **1 / 6 / 11**.
+- **N nodes:** flash each board with `-D NODE_COUNT=<N> -D NODE_INDEX=<0..N-1>` and the full 2.4 GHz plan **1-13** is split round-robin across them, so each node dwells on fewer channels and revisits them faster (e.g. with `NODE_COUNT=3`: node 0 → 1,4,7,10,13; node 1 → 2,5,8,11; node 2 → 3,6,9,12). Set the flags in `[env:wifi_node]` `build_flags`, or per board in the desktop flasher.
+
+That's the firmware side; the code divides the channels for you. Actually running more than one extra sniffer needs three hardware decisions the current 3-board layout doesn't make for you:
+
+- **Connectivity.** Today it's a point-to-point wired UART chain (each sniffer → `wifi_node` → `cyd_node`). More nodes means either more UARTs into the aggregator, a shared bus, or moving the board-to-board link to **ESP-NOW** (each node broadcasts its sightings, the CYD collects them) - ESP-NOW is the natural fit for an arbitrary number of nodes and is the recommended direction.
+- **Aggregation.** All sightings still funnel to `cyd_node` (the only board with the SD card and uploader), so its dedup and CSV writer already handle extra volume; only the transport changes.
+- **Power.** Each ESP32 is another ~100-250 mA off the car supply.
+
+Seeed XIAO ESP32-C6/S3 boards work well as add-on nodes (small, cheap, external-antenna variants exist); a C6 or C5 also gets you 5 GHz, which the S3 can't do. `ble_node` and `cyd_node`'s own sniffer are unchanged - they're separate coverage layers on top of whatever `wifi_node`(s) you run.

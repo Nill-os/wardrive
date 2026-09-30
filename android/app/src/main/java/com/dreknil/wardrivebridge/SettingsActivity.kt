@@ -196,6 +196,19 @@ class SettingsActivity : AppCompatActivity() {
     /** Push the detection-alert toggles to the rig so its own on-screen/LED
      *  alerts match the phone's. Silently no-ops if the rig isn't connected -
      *  they're saved on the phone and (re)pushed on the next connected save. */
+    /** Push the home exclusion zone to the rig so it drops sightings near home
+     *  exactly like the app does - change it in one place and both match. The
+     *  app's exclusion radius (home_radius_m) maps to the rig's exclude_radius_m
+     *  (its drop-near-home setting). Saved on the phone regardless; re-pushed on
+     *  the next connected save, same as the alert/LED settings. */
+    private fun pushRigExclusionZone() {
+        val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+        if (link == null || ScanService.instance?.rigConnected != true) return
+        link.sendRaw("cfg home_lat ${settings.homeLat}")
+        link.sendRaw("cfg home_lon ${settings.homeLon}")
+        link.sendRaw("cfg exclude_radius_m ${settings.homeRadiusM}")
+    }
+
     private fun pushRigAlertSettings() {
         val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
         if (link == null || ScanService.instance?.rigConnected != true) return
@@ -248,6 +261,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.homeLat = binding.homeLatInput.text.toString().toDoubleOrNull() ?: 0.0
         settings.homeLon = binding.homeLonInput.text.toString().toDoubleOrNull() ?: 0.0
         settings.homeRadiusM = binding.homeRadiusInput.text.toString().toDoubleOrNull() ?: 0.0
+        pushRigExclusionZone() // keep the rig's exclusion zone in sync with the app's
         settings.macBlacklistRaw = binding.macBlacklistInput.text.toString()
         settings.ssidBlacklistRaw = binding.ssidBlacklistInput.text.toString()
         settings.retentionDays = binding.retentionDaysInput.text.toString().toIntOrNull() ?: 0

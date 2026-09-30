@@ -139,7 +139,12 @@ class ScanService : Service(), RigLinkManager.Listener {
     // so without a separate counter "total found" would silently undercount
     // by however many got excluded, with no way to tell the difference
     // between "found less" and "found the same but some got filtered out".
+    // Counts UNIQUE excluded devices, not every excluded observation. Each MAC
+    // is re-seen on every scan cycle, so counting per-observation made this climb
+    // forever even while stationary; counting per-MAC means it settles once every
+    // nearby filtered device has been seen once.
     var excludedCount = 0; private set
+    private val excludedMacs = HashSet<String>()
 
     // Snapshot of every device ever logged in a *previous* run, taken once
     // at startRun() (before this run's own CSV exists) - see
@@ -388,6 +393,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         totalDistanceMeters = 0.0
         lastFixForDistance = null
         excludedCount = 0
+        excludedMacs.clear()
         alertedTrackers.clear()
         alertedDetections.clear()
         groups.values.forEach { it.clear() }
@@ -572,7 +578,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             isReturning = previousSighting != null,
         )
 
-        if (isFiltered(tagged)) { excludedCount++; return } // _nomap / blacklist / home exclusion zone - dropped entirely, never shown/logged/uploaded
+        if (isFiltered(tagged)) { if (excludedMacs.add(tagged.mac)) excludedCount++; return } // _nomap / blacklist / home exclusion zone - dropped entirely; counted once per unique device
 
         val map = groups.getValue(tagged.source)
         val existing = map[tagged.mac]

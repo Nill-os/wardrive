@@ -2484,6 +2484,11 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "alert_glasses") config.alertGlasses = (value == "1" || value == "true");
 	else if (key == "alert_actioncam") config.alertActionCam = (value == "1" || value == "true");
 	else if (key == "alert_pineapple") config.alertPineapple = (value == "1" || value == "true");
+	// Home exclusion zone - pushed by the phone so the rig's zone matches the app's.
+	else if (key == "home_lat") config.homeLat = value.toDouble();
+	else if (key == "home_lon") config.homeLon = value.toDouble();
+	else if (key == "home_radius_m") config.homeRadiusM = value.toDouble();
+	else if (key == "exclude_radius_m") config.excludeRadiusM = value.toDouble();
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
 	// Don't echo any password (or a wifi credential) back over serial.

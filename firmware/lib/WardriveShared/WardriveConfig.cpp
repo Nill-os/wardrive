@@ -51,6 +51,13 @@ bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 			if (parsed >= 20 && parsed <= 5000) outCfg.channelHopMs = parsed; // sane floor/ceiling - outside this is almost certainly a typo, not intent
 		}
 		else if (key == "service_password") outCfg.servicePassword = value;
+		else if (key == "alert_flock") outCfg.alertFlock = (value == "1" || value == "true");
+		else if (key == "alert_police") outCfg.alertPolice = (value == "1" || value == "true");
+		else if (key == "alert_skimmer") outCfg.alertSkimmer = (value == "1" || value == "true");
+		else if (key == "alert_flipper") outCfg.alertFlipper = (value == "1" || value == "true");
+		else if (key == "alert_glasses") outCfg.alertGlasses = (value == "1" || value == "true");
+		else if (key == "alert_actioncam") outCfg.alertActionCam = (value == "1" || value == "true");
+		else if (key == "alert_pineapple") outCfg.alertPineapple = (value == "1" || value == "true");
 	}
 	f.close();
 

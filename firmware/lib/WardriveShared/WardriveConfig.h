@@ -82,6 +82,16 @@ struct WardriveConfig {
 	// When set, an OTA push and every web request must supply it; when empty,
 	// service mode is open to anyone on the same WiFi (see docs/SECURITY.md).
 	String servicePassword;
+	// Per-category detection alerts on the CYD (banner + LED flash the first
+	// time each notable device is seen in a run). Off by default; the phone app
+	// pushes these as cfg alert_* keys so its toggles and the rig's agree.
+	bool alertFlock = false;
+	bool alertPolice = false;
+	bool alertSkimmer = false;
+	bool alertFlipper = false;
+	bool alertGlasses = false;
+	bool alertActionCam = false;
+	bool alertPineapple = false;
 	bool valid = false;
 };
 

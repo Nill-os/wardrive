@@ -586,6 +586,16 @@ static void refreshUploadStatus();
 // (only whatever few fields happened to genuinely change would redraw).
 volatile bool forceFullRedraw = false;
 
+// Detection-alert state (Flock cameras etc.). Declared here - before drawStatus
+// and startScanning both use it. Cleared each run start; the banner is drawn by
+// drawStatus and raised by the detection-alerts section further down.
+std::unordered_set<uint64_t> alertedDevices; // mac keys already alerted this run
+String alertBannerText;
+uint32_t alertBannerUntilMs = 0;
+static const uint32_t ALERT_BANNER_MS = 6000;
+static void checkBleAlert(const String &mac, const String &name, const String &mfgHex);
+static void checkApAlert(const String &bssid, const String &ssid);
+
 // Upload blocks the whole main loop for its entire duration (WiFi connect +
 // every file's HTTP round trip) - without this, the screen (and touch/
 // button handling, which also only runs in loop()) would appear frozen for
@@ -1381,6 +1391,8 @@ static void drawPairingBox(bool force) {
 	tft.setTextDatum(TL_DATUM);
 }
 
+static void drawAlertBanner();        // defined in the detection-alerts section below
+
 static void drawStatus() {
 	static bool firstDraw = true;
 	if (forceFullRedraw) {
@@ -1419,6 +1431,13 @@ static void drawStatus() {
 		}
 	}
 	pairingWasOpen = pairingNow;
+
+	// Detection alert banner (Flock camera etc.), drawn over everything.
+	static bool alertWasShown = false;
+	bool alertNow = millis() < alertBannerUntilMs;
+	if (alertNow) drawAlertBanner();
+	else if (alertWasShown) forceFullRedraw = true; // wipe the banner once it expires
+	alertWasShown = alertNow;
 
 	lastDrawnContentTab = currentTab;
 	firstDraw = false;
@@ -1875,6 +1894,7 @@ static bool startScanning() {
 	bool wifiFileOk = wigleWifi.begin(sessionDir(), "wifi");
 	bool bleFileOk = wigleBle.begin(sessionDir(), "ble");
 	cydApDedupState.clear();
+	alertedDevices.clear(); // fresh detection alerts each run
 	lastSdFlushMs = millis();
 	initSnifferRadio();
 	esp_wifi_set_promiscuous(true);
@@ -2468,6 +2488,13 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "wifi_pass") config.wifiPass = value;
 	else if (key == "backup_wifi_ssid") config.backupWifiSsid = value;
 	else if (key == "backup_wifi_pass") config.backupWifiPass = value;
+	else if (key == "alert_flock") config.alertFlock = (value == "1" || value == "true");
+	else if (key == "alert_police") config.alertPolice = (value == "1" || value == "true");
+	else if (key == "alert_skimmer") config.alertSkimmer = (value == "1" || value == "true");
+	else if (key == "alert_flipper") config.alertFlipper = (value == "1" || value == "true");
+	else if (key == "alert_glasses") config.alertGlasses = (value == "1" || value == "true");
+	else if (key == "alert_actioncam") config.alertActionCam = (value == "1" || value == "true");
+	else if (key == "alert_pineapple") config.alertPineapple = (value == "1" || value == "true");
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
 	// Don't echo any password (or a wifi credential) back over serial.
@@ -2617,6 +2644,47 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		startServiceMode();
 	} else if (line == "rig service off") {
 		stopServiceMode();
+	} else if (fromUsb && line == "sd list") {
+		// USB-only: list every session CSV on the card (name + size), so the
+		// desktop tool can pull logs over the serial cable without WiFi or
+		// removing the SD card. Serial-only output (not mirrored to BLE).
+		File dir = SD.open(sessionDir());
+		if (dir) {
+			for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
+				String n = e.name();
+				int slash = n.lastIndexOf('/');
+				if (slash >= 0) n = n.substring(slash + 1);
+				if (n.endsWith(".csv")) Serial.printf("SDLIST name=%s size=%u\n", n.c_str(), (unsigned)e.size());
+				e.close();
+			}
+			dir.close();
+		}
+		Serial.println("SDLISTEND");
+	} else if (fromUsb && line.startsWith("sd get ")) {
+		// USB-only: dump one session CSV over serial, one "SDROW <line>" per
+		// line (raw - rows are newline-terminated and comma-safe at the source),
+		// framed by SDBEGIN/SDEND so the reader can skip interleaved heartbeats.
+		String name = line.substring(7);
+		if (!relaySafeName(name)) {
+			Serial.printf("SDERR %s bad-name\n", name.c_str());
+		} else {
+			File f = SD.open(String(sessionDir()) + "/" + name, FILE_READ);
+			if (!f) {
+				Serial.printf("SDERR %s open-failed\n", name.c_str());
+			} else {
+				Serial.printf("SDBEGIN name=%s size=%u\n", name.c_str(), (unsigned)f.size());
+				unsigned long rows = 0;
+				while (f.available()) {
+					String row = f.readStringUntil('\n');
+					row.replace("\r", "");
+					Serial.print("SDROW ");
+					Serial.println(row);
+					rows++;
+				}
+				f.close();
+				Serial.printf("SDEND rows=%lu\n", rows);
+			}
+		}
 	} else if (line == "rig autoupload off") {
 		phoneUploadClaimMs = millis(); // the phone is handling uploads - hold off the rig's WiFi one
 	} else if (line == "rig upload") {
@@ -2655,6 +2723,21 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			forceFullRedraw = true;
 			Serial.printf("[test] switched to tab %d (%s)\n", n, TAB_LABELS[n]);
 		}
+	} else if (line.startsWith("test:ble ")) {
+		// "test:ble <mac> <name>" - feed a synthetic BLE device through the
+		// detection-alert path (USB test, so alerts can be exercised without a
+		// real Flock/Flipper/etc. nearby).
+		String rest = line.substring(9); int sp = rest.indexOf(' ');
+		String mac = sp > 0 ? rest.substring(0, sp) : rest;
+		String name = sp > 0 ? rest.substring(sp + 1) : "";
+		checkBleAlert(mac, name, "");
+		Serial.printf("[test] ble %s '%s' -> alert checked\n", mac.c_str(), name.c_str());
+	} else if (line.startsWith("test:ap ")) {
+		String rest = line.substring(8); int sp = rest.indexOf(' ');
+		String mac = sp > 0 ? rest.substring(0, sp) : rest;
+		String ssid = sp > 0 ? rest.substring(sp + 1) : "";
+		checkApAlert(mac, ssid);
+		Serial.printf("[test] ap %s '%s' -> alert checked\n", mac.c_str(), ssid.c_str());
 	} else if (line == "test:netcfg") {
 		// Open the network/debug config list over USB, so the on-screen keyboard
 		// path can be exercised without physically tapping the touchscreen.
@@ -2813,6 +2896,78 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 //   EPOCH:<unix seconds>
 //   GPSPOS:<0|1>,<lat>,<lon>
 //   CH:<wifi channel 1-11>
+// ---- CYD-side detection alerts (Flock cameras, Flipper Zeros, skimmers, ...) ----
+// Same signatures the phone app and desktop tool use, run here on the BLE/WiFi
+// data the rig already sees so alerts work standalone, no phone needed. Each
+// category is gated on its own config toggle (alert_*), settable from the app.
+// alertedDevices + the banner state are declared up top so run-start and
+// drawStatus can reach them.
+
+static bool macHasPrefix(const String &mac, const char *p) {
+	size_t n = strlen(p);
+	return mac.length() >= n && mac.substring(0, n).equalsIgnoreCase(p);
+}
+
+// Company ID = first two bytes of the manufacturer-data hex, little-endian.
+static int mfgCompanyIdFromHex(const String &hex) {
+	if (hex.length() < 4) return -1;
+	auto h = [](char c) -> int { c = toupper(c); if (c >= '0' && c <= '9') return c - '0'; if (c >= 'A' && c <= 'F') return c - 'A' + 10; return 0; };
+	return (h(hex[0]) * 16 + h(hex[1])) | ((h(hex[2]) * 16 + h(hex[3])) << 8);
+}
+
+static void raiseAlert(const String &what, uint64_t key) {
+	if (alertedDevices.count(key)) return; // once per device per run
+	alertedDevices.insert(key);
+	alertBannerText = what;
+	alertBannerUntilMs = millis() + ALERT_BANNER_MS;
+	if (!screenOn) wakeScreen(); // don't hide an alert behind a blanked screen
+	flashLed(true, false, false, 500, true); // red attention flash
+	pushLogLine(String("[ALERT] ") + what + " nearby", COLOR_ORANGE);
+	Serial.printf("[ALERT] %s nearby\n", what.c_str()); // also to USB, for logging tools
+	forceFullRedraw = true;
+}
+
+static void checkBleAlert(const String &mac, const String &name, const String &mfgHex) {
+	String nl = name; nl.toLowerCase();
+	int cid = mfgCompanyIdFromHex(mfgHex);
+	String label;
+	if (config.alertFlock && (macHasPrefix(mac, "B4:1E:52") || macHasPrefix(mac, "00:03:7F") ||
+							   cid == 0x09C8 || nl.startsWith("penguin-") || nl == "fs battery" || nl == "dfutarg"))
+		label = "FLOCK CAMERA";
+	else if (config.alertPolice && nl.startsWith("axon")) label = "POLICE CAMERA";
+	else if (config.alertSkimmer && (nl == "hc-05" || nl == "hc-06" || nl == "hc-08" || nl == "hc-03" || nl == "free2move"))
+		label = "POSSIBLE SKIMMER";
+	else if (config.alertFlipper && (macHasPrefix(mac, "0C:FA:22") || macHasPrefix(mac, "80:E1:26") ||
+									 macHasPrefix(mac, "80:E1:27") || nl.startsWith("flipper")))
+		label = "FLIPPER ZERO";
+	else if (config.alertGlasses && (nl.startsWith("ray-ban") || nl.startsWith("meta"))) label = "SMART GLASSES";
+	else if (config.alertActionCam && (nl.startsWith("gopro") || nl.startsWith("insta360"))) label = "ACTION CAMERA";
+	if (label.length()) raiseAlert(label, cydMacKeyFromString(mac));
+}
+
+static void checkApAlert(const String &bssid, const String &ssid) {
+	if (config.alertPineapple) {
+		String s = ssid; s.toLowerCase();
+		if (s.indexOf("pineapple") >= 0) raiseAlert("WIFI PINEAPPLE", cydMacKeyFromString(bssid));
+	}
+}
+
+static void drawAlertBanner() {
+	const int16_t w = tft.width();
+	const int16_t boxX = 8, boxY = 70, boxW = w - 16, boxH = 70;
+	tft.fillRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_PANEL);
+	tft.drawRoundRect(boxX, boxY, boxW, boxH, 8, COLOR_RED);
+	tft.drawRoundRect(boxX + 1, boxY + 1, boxW - 2, boxH - 2, 8, COLOR_RED);
+	tft.setTextDatum(MC_DATUM);
+	tft.setTextColor(COLOR_RED, COLOR_PANEL);
+	tft.setTextSize(1);
+	tft.drawString("!! DETECTED NEARBY !!", w / 2, boxY + 18);
+	tft.setTextColor(COLOR_TEXT, COLOR_PANEL);
+	tft.setTextSize(2);
+	tft.drawString(alertBannerText, w / 2, boxY + 46);
+	tft.setTextDatum(TL_DATUM);
+}
+
 static void handleIncomingLine(const String &line) {
 
 	if (line.startsWith("CH:")) {
@@ -2902,6 +3057,7 @@ static void handleIncomingLine(const String &line) {
 		wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
 		wifiCountThisRun++;
 		pushApSighting(bssid, ssid, authMode, rssi, true);
+		checkApAlert(bssid, ssid);
 		pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(rssi) + "dB", COLOR_CYAN);
 
 		if (wdstreamActive && !relayActive) {
@@ -2942,6 +3098,7 @@ static void handleIncomingLine(const String &line) {
 		wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
 		bleCountThisRun++;
 		pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
+		checkBleAlert(mac, name, mfgHex);
 
 		if (wdstreamActive && !relayActive) {
 			phonePrintf("WD:BLE ts=%lu mac=%s name_hex=%s rssi=%d mfg_hex=%s",
@@ -3487,6 +3644,7 @@ void loop() {
 							  obs.rssi, lastKnownLat, lastKnownLon, 0.0, 30.0);
 			wifiCountThisRun++;
 			pushApSighting(bssid, ssid, authMode, obs.rssi, true);
+			checkApAlert(bssid, ssid);
 			pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(obs.rssi) + "dB (cyd)", COLOR_CYAN);
 			// Mirror this board's own catches to the phone too, same as wifi_node's relayed
 			// ones - without this the phone never saw channels 6-11 and its rig count ran

@@ -31,3 +31,13 @@ channel_hop_ms=150
 # the web page/downloads need this password. Left blank, service mode is open
 # to anyone on the same WiFi while it's running - only fine on a trusted network.
 service_password=
+# Detection alerts on the CYD (a red banner + LED flash the first time each is
+# seen in a run). 1 = on, 0 = off. The phone app's alert toggles push these,
+# so you normally set them there, but they can live here too.
+alert_flock=0
+alert_police=0
+alert_skimmer=0
+alert_flipper=0
+alert_glasses=0
+alert_actioncam=0
+alert_pineapple=0

@@ -233,6 +233,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         createNotificationChannel()
         rigLink.start() // registers the USB permission receiver once and attempts an initial connect
         mainHandler.postDelayed(relayTicker, 10_000)
+        mainHandler.postDelayed(watchSweep, WATCH_SWEEP_MS)
         cleanupOldLogs()
     }
 
@@ -341,6 +342,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     override fun onDestroy() {
         instance = null
         mainHandler.removeCallbacks(relayTicker)
+        mainHandler.removeCallbacks(watchSweep)
         spoken.shutdown()
         stopRun(notifyRig = false, reason = "app closed")
         rigLink.stop()
@@ -553,6 +555,8 @@ class ScanService : Service(), RigLinkManager.Listener {
     private fun onObservation(raw: Observation) {
         if ((!running && !previewing) || paused) return // no run and no live preview open = nothing to collect; paused drops everything, including rig-relayed data, without touching the rig itself
 
+        checkWatchlist(raw) // notify on watched devices entering range - runs for every sighting, before any filtering
+
         // DOP-gated logging: HDOP comes from real NMEA GSA sentences (no
         // modern Android location API exposes it directly) - above the
         // configured threshold, positional geometry is too poor to trust
@@ -744,9 +748,72 @@ class ScanService : Service(), RigLinkManager.Listener {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < 26) return
+        val nm = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(CHANNEL_ID, "Wardrive scanning", NotificationManager.IMPORTANCE_LOW)
         channel.description = "Shown while a wardrive run is actively collecting data"
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        nm.createNotificationChannel(channel)
+        // Higher-importance channel so watchlist hits pop as a heads-up.
+        val watch = NotificationChannel(WATCH_CHANNEL_ID, "Watchlist alerts", NotificationManager.IMPORTANCE_HIGH)
+        watch.description = "A watched WiFi/BLE device came into range or left"
+        nm.createNotificationChannel(watch)
+    }
+
+    // ---- Watchlist: notify when specific devices enter / leave range ----
+
+    private val watchLastSeen = HashMap<String, Long>() // watch entry -> last time a matching device was seen
+    private var watchNotifId = 4000
+
+    private fun watchMatches(entry: String, obs: Observation): Boolean =
+        if (entry.contains(":")) obs.mac.equals(entry, ignoreCase = true)
+        else obs.label.contains(entry, ignoreCase = true) || obs.mac.contains(entry, ignoreCase = true)
+
+    private fun checkWatchlist(obs: Observation) {
+        val entries = appSettings.watchlist()
+        if (entries.isEmpty()) return
+        val now = System.currentTimeMillis()
+        for (e in entries) {
+            if (!watchMatches(e, obs)) continue
+            val wasPresent = watchLastSeen.containsKey(e)
+            watchLastSeen[e] = now
+            if (!wasPresent && appSettings.watchNotifyEnter) {
+                watchNotify("Watchlist: in range", "${obs.label.ifBlank { obs.mac }}  ·  $e  ·  ${obs.rssi} dBm")
+            }
+        }
+    }
+
+    // Runs on mainHandler; a watched device not seen for WATCH_LEAVE_MS is "gone".
+    private val watchSweep = object : Runnable {
+        override fun run() {
+            val now = System.currentTimeMillis()
+            val it = watchLastSeen.entries.iterator()
+            while (it.hasNext()) {
+                val (entry, last) = it.next()
+                if (now - last > WATCH_LEAVE_MS) {
+                    it.remove()
+                    if (appSettings.watchNotifyLeave) watchNotify("Watchlist: left range", entry)
+                }
+            }
+            mainHandler.postDelayed(this, WATCH_SWEEP_MS)
+        }
+    }
+
+    private fun watchNotify(title: String, text: String) {
+        vibrateAlert()
+        try {
+            val open = PendingIntent.getActivity(
+                this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0),
+            )
+            val n = NotificationCompat.Builder(this, WATCH_CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(R.drawable.ic_radar)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build()
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(watchNotifId++, n)
+        } catch (_: Exception) {}
     }
 
     private fun buildNotification(): Notification {
@@ -872,8 +939,11 @@ class ScanService : Service(), RigLinkManager.Listener {
 
     companion object {
         private const val CHANNEL_ID = "wardrive_scan"
+        private const val WATCH_CHANNEL_ID = "wardrive_watchlist"
         private const val NOTIF_ID = 1
         private const val JOIN_NOTIF_ID = 2
+        private const val WATCH_LEAVE_MS = 60_000L  // no sighting for this long = the device left range
+        private const val WATCH_SWEEP_MS = 15_000L  // how often we check the watchlist for departures
         // How far the current sighting has to be from where a flagged
         // tracker was last logged before it's treated as "traveling with
         // you" rather than "same spot as last time" - GPS/RSSI-position

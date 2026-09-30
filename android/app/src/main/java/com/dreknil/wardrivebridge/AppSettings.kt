@@ -36,6 +36,22 @@ class AppSettings(context: Context) {
         get() = prefs.getString("ssid_blacklist", "") ?: ""
         set(value) = prefs.edit().putString("ssid_blacklist", value).apply()
 
+    // Watchlist: specific WiFi/BLE devices to be notified about when they come
+    // into range or leave. One entry per line; an entry with ':' matches a MAC,
+    // otherwise it matches an SSID/device-name substring (case-insensitive).
+    var watchlistRaw: String
+        get() = prefs.getString("watchlist", "") ?: ""
+        set(value) = prefs.edit().putString("watchlist", value).apply()
+    var watchNotifyEnter: Boolean
+        get() = prefs.getBoolean("watch_notify_enter", true)
+        set(value) = prefs.edit().putBoolean("watch_notify_enter", value).apply()
+    var watchNotifyLeave: Boolean
+        get() = prefs.getBoolean("watch_notify_leave", true)
+        set(value) = prefs.edit().putBoolean("watch_notify_leave", value).apply()
+
+    fun watchlist(): List<String> =
+        watchlistRaw.split("\n", ",").map { it.trim() }.filter { it.isNotEmpty() }
+
     // 0 = keep forever, matching the firmware's own retentionDays convention.
     var retentionDays: Int
         get() = prefs.getInt("retention_days", 0)

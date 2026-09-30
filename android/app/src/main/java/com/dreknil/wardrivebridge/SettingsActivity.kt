@@ -31,6 +31,9 @@ class SettingsActivity : AppCompatActivity() {
         if (settings.homeRadiusM != 0.0) binding.homeRadiusInput.setText(settings.homeRadiusM.toString())
         binding.macBlacklistInput.setText(settings.macBlacklistRaw)
         binding.ssidBlacklistInput.setText(settings.ssidBlacklistRaw)
+        binding.watchlistInput.setText(settings.watchlistRaw)
+        binding.watchEnterCheck.isChecked = settings.watchNotifyEnter
+        binding.watchLeaveCheck.isChecked = settings.watchNotifyLeave
         binding.retentionDaysInput.setText(settings.retentionDays.toString())
         if (settings.maxHdop != 0.0) binding.maxHdopInput.setText(settings.maxHdop.toString())
         if (settings.spokenUpdateMinutes > 0) binding.spokenMinutesInput.setText(settings.spokenUpdateMinutes.toString())
@@ -266,6 +269,9 @@ class SettingsActivity : AppCompatActivity() {
         pushRigExclusionZone() // keep the rig's exclusion zone in sync with the app's
         settings.macBlacklistRaw = binding.macBlacklistInput.text.toString()
         settings.ssidBlacklistRaw = binding.ssidBlacklistInput.text.toString()
+        settings.watchlistRaw = binding.watchlistInput.text.toString()
+        settings.watchNotifyEnter = binding.watchEnterCheck.isChecked
+        settings.watchNotifyLeave = binding.watchLeaveCheck.isChecked
         settings.retentionDays = binding.retentionDaysInput.text.toString().toIntOrNull() ?: 0
         settings.maxHdop = binding.maxHdopInput.text.toString().toDoubleOrNull() ?: 0.0
         settings.spokenUpdateMinutes = binding.spokenMinutesInput.text.toString().toIntOrNull()?.coerceIn(0, 120) ?: 0

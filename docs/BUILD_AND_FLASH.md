@@ -116,6 +116,8 @@ pio run -e cyd_node_ota -t upload
 
 `cyd_node_ota` is the same firmware as `cyd_node`, uploaded over WiFi to the mDNS host `nillos-wardriver` instead of a serial port. If `.local` mDNS doesn't resolve on your network, pass the address the rig showed: `pio run -e cyd_node_ota -t upload --upload-port 192.168.1.198`.
 
+If you set `service_password` in `config.cfg` (recommended - see [Config](CONFIG.md) and [SECURITY.md](../SECURITY.md)), pass it to the OTA upload too: `pio run -e cyd_node_ota -t upload --upload-flags "--auth=YOURPASSWORD"`. The same password protects the log web server.
+
 3. The rig reboots into the new firmware. Tap its screen (or send `rig service off`) to leave service mode and go back to normal.
 
 The very first flash after changing the partition layout (or a brand-new board) still has to be over USB (`pio run -e cyd_node -t upload`) - OTA needs the two-slot partition table already running.

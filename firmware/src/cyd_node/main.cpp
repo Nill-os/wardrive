@@ -1827,9 +1827,22 @@ static String serviceListHtml() {
 	return html;
 }
 
-static void serviceHandleRoot() { serviceServer.send(200, "text/html", serviceListHtml()); }
+// When a service password is set, every web request must pass HTTP basic auth
+// (any username, that password). Returns true if the request may proceed.
+static bool serviceAuthOk() {
+	if (config.servicePassword.length() == 0) return true; // open (LAN trust)
+	if (serviceServer.authenticate("wardrive", config.servicePassword.c_str())) return true;
+	serviceServer.requestAuthentication();
+	return false;
+}
+
+static void serviceHandleRoot() {
+	if (!serviceAuthOk()) return;
+	serviceServer.send(200, "text/html", serviceListHtml());
+}
 
 static void serviceHandleDownload() {
+	if (!serviceAuthOk()) return;
 	String name = serviceServer.arg("f");
 	if (!serviceSafeCsvName(name)) { serviceServer.send(400, "text/plain", "bad name"); return; }
 	String path = String(sessionDir()) + "/" + name;
@@ -1881,6 +1894,14 @@ void startServiceMode() {
 	}
 	String ip = WiFi.localIP().toString();
 	ArduinoOTA.setHostname("nillos-wardriver");
+	// Password-protect OTA when one is configured (also gates the web server,
+	// see serviceAuthOk). Without it, service mode trusts everyone on the LAN.
+	if (config.servicePassword.length() > 0) {
+		ArduinoOTA.setPassword(config.servicePassword.c_str());
+		logEvent("service: password protected", COLOR_TEXT_DIM);
+	} else {
+		logEvent("service: OPEN (set service_password)", COLOR_ORANGE);
+	}
 	// Free the BLE heap only once a real flash starts - the phone link stays
 	// up the rest of the time so the app can show the URL and exit service mode.
 	ArduinoOTA.onStart([]() {
@@ -2227,9 +2248,12 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "led_color_ble") { config.ledColorBle = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
 	else if (key == "led_color_ok") { config.ledColorOk = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
 	else if (key == "led_color_fail") { config.ledColorFail = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
+	else if (key == "service_password") config.servicePassword = value; // protects OTA + the log server
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
-	if (WARDRIVE_DEBUG) Serial.printf("[cfg] %s = %s (applied + saved)\n", key.c_str(), value.c_str());
+	// Don't echo a password back over serial.
+	if (WARDRIVE_DEBUG) Serial.printf("[cfg] %s = %s (applied + saved)\n", key.c_str(),
+									  key == "service_password" ? "********" : value.c_str());
 }
 
 static void relayBroadcastLedColors() {
@@ -2366,6 +2390,7 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		// "cfg <key> <value>" from the phone - apply live and save to config.cfg.
 		String rest = line.substring(4); int sp = rest.indexOf(' ');
 		if (sp > 0) applyConfigSetting(rest.substring(0, sp), rest.substring(sp + 1));
+		else if (rest.length() > 0) applyConfigSetting(rest, ""); // "cfg <key>" with no value clears it
 	} else if (line.startsWith("rig ack ")) {
 		relayMarkUploaded(line.substring(8));
 	} else if (line == "rig service on") {

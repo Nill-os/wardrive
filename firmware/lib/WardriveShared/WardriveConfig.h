@@ -88,6 +88,10 @@ struct WardriveConfig {
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
 	uint32_t channelHopMs = 150;
 	bool pcapCaptureEnabled = false;
+	// Password for service mode (OTA firmware updates + the log web server).
+	// When set, an OTA push and every web request must supply it; when empty,
+	// service mode is open to anyone on the same WiFi (see docs/SECURITY.md).
+	String servicePassword;
 	bool valid = false;
 };
 

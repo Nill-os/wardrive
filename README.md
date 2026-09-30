@@ -17,25 +17,26 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 - **Touchscreen control:** start/stop, upload and re-link, a live status bar, and 4 tabs.
 - **Resumes after power cuts:** it picks up where it left off when the car restarts.
 - **Automatic upload on arriving home** (geofence), or manual upload.
-- **Smart de-duplication:** distance-based for WiFi, per-run for BLE. It rides out GPS gaps of up to 15 s.
+- **Smart de-duplication:** distance-based for WiFi, per-run for BLE. It rides out GPS gaps of up to 15 s, and streams location-less sightings to the phone's live tools so they work indoors with no fix (those never enter the SD logs/uploads).
+- **Space-based retention:** every uploaded session is kept on the card until free space drops below ~1 GB, then the oldest uploaded files are trimmed; un-uploaded data is never deleted.
 - **Idle auto-stop** after 30 minutes parked, to protect the car battery.
 - **Status LEDs** on every board, so you can read the rig without a screen.
 - **Detection alerts:** the rig and phone flag notable devices as you pass them - Flock cameras, Flipper Zeros, card skimmers, police body cams, smart glasses, action cams and WiFi Pineapples - each category togglable on its own. The car screen shows a red banner and flashes an LED; the phone speaks the alert and vibrates.
 - **Service mode:** park the rig on WiFi to download its session logs from any browser - no unplugging, no SD-card removal. Started from the phone app or a touch on the screen; scanning pauses while it's up.
 - **Modular, multi-node scaling:** add more ESP32 sniffer nodes (e.g. Seeed XIAO boards) - up to 20 - and the firmware splits the 2.4 GHz channels across them automatically, so each node dwells on fewer channels and revisits them faster. Multiple **BLE nodes** scale too: since BLE has no channels to divide, they split the device-reporting load so a busy area doesn't overflow one node. The BLE scanner also runs on a tiny **Seeed XIAO ESP32-C3/S3**. See [Scaling the rig](docs/SCALING.md) for the diagrams, wiring and how to number nodes.
 - **Desktop app** ([`firmware/tools/`](firmware/tools/)): the go-to tool for the rig. Pull logs off the SD card, over USB, or over WiFi (no card removal); build an interactive **field report** (map, search, filters, plus the same Flock/Flipper/skimmer detection); **flash and manage** the boards - it **detects** what's plugged into each port and its node number, flashes any board over USB (WiFi/BLE board pickers for the Seeed XIAO variants, node-count/number controls, and a bulk "flash all"), and gives a serial console. One-click launcher with an app icon (`tools/install-desktop.sh`).
-- **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile.
+- **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), **live tools** (Live WiFi/BLE, Pineapple/AirTag/Flipper/Flock/skimmer/drone/mesh/glasses detection) that pull from **both the rig and the phone** and work indoors with no GPS fix, **fox-hunt** (long-press a device to home in on its signal) and an **antenna checker** with a per-radio selector, detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile. Save the home exclusion zone and it syncs to the rig too.
 - **Map and car display** ([Organic Maps overlay](organic-maps-overlay/)): live status on the map and in Android Auto, with a start/stop button in the car.
 
 ## Screenshots
 
 <p align="center">
   <img src="docs/screenshots/phone-dashboard.png" width="205" alt="Dashboard">
-  <img src="docs/screenshots/phone-wifi-tools.png" width="205" alt="WiFi tools">
-  <img src="docs/screenshots/phone-bluetooth-tools.png" width="205" alt="Bluetooth tools">
+  <img src="docs/screenshots/phone-wifi-tools.png" width="205" alt="Live WiFi (rig + phone)">
+  <img src="docs/screenshots/phone-bluetooth-tools.png" width="205" alt="Live BLE (rig + phone)">
   <img src="docs/screenshots/phone-settings.png" width="205" alt="Settings">
 </p>
-<p align="center"><em>The Nill OS - Wardriver phone app: live dashboard, WiFi &amp; Bluetooth tools, and rig customization. (Account totals and map are hidden here for privacy.)</em></p>
+<p align="center"><em>The Nill OS - Wardriver phone app: live dashboard, and Live WiFi / Live BLE pulling from both the rig and the phone (each device tagged by source), long-press any of them to fox-hunt. (Account totals and map are hidden here for privacy.)</em></p>
 
 <p align="center">
   <img src="docs/screenshots/desktop-uploader.png" width="330" alt="Desktop tool - logs & report">

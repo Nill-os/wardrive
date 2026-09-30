@@ -132,7 +132,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Observations captured within this radius of home are dropped entirely - never shown, logged, or uploaded. Radius 0 disables it."
+            android:text="Devices within this radius of home are never logged, exported or uploaded (your home stays private). They still appear briefly in the live tools so fox-hunt and antenna check work at home. Radius 0 disables it. This zone is also pushed to the rig on save."
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
             android:paddingBottom="8dp" />

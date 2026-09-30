@@ -3,10 +3,12 @@
 The rig works on its own, and **the phone is optional**. With the phone you get:
 
 - a live dashboard and history
-- the phone's own WiFi, BLE and cell scanning, merged in
+- the phone's own WiFi, BLE and cell scanning, merged in with the rig's
+- **live tools** (WiFi/Bluetooth tabs) - Live WiFi, Live BLE, Pineapple, AirTag/Flipper/Flock/skimmer/drone/mesh/glasses/action-cam/police-cam detection. Opening a tool starts scanning for it right away (no run needed); the list pulls from **both the rig and the phone**, and works indoors with no GPS fix.
+- **fox-hunt**: long-press any device in a tool to track its live signal (hot/cold + rising beep) and home in on it
+- an **antenna checker** (Settings → Antenna check) that reads a chosen device's live signal with peak hold and A/B capture - pick **which radio** to measure (Rig WiFi, Rig BLE, Phone WiFi, Phone Bluetooth, or strongest) so you can test the rig's own antenna
 - tracker and skimmer detection alerts
 - start/stop from the phone, the map and the car screen
-- an **antenna checker** (Settings → Antenna check) that reads a chosen device's live signal, with peak hold and A/B capture, so you can swap antennas and see which pulls it in strongest
 
 ## Nill OS - Wardriver (Android)
 
@@ -30,10 +32,11 @@ You need JDK 17 and the Android SDK. Android Studio installs both; `local.proper
 1. Grant **Location** (choose **Precise** - Bluetooth scanning withholds results with only Approximate, and select "Allow all the time" if you want it scanning with the screen off), **Nearby devices** (Bluetooth) and **Notifications**.
 2. Open **Settings**:
    - **Background:** tap **ALLOW BACKGROUND USAGE** so Android's battery optimizer doesn't pause scanning when the screen is off or the app is backgrounded.
-   - **Tools → Antenna check:** compare antennas on a live signal (needs a run active - it can start scanning itself).
+   - **Tools → Antenna check:** compare antennas on a live signal - it starts scanning itself (no run needed) and lets you pick which radio to measure, so you can test the rig's antenna against the phone's.
    - **Upload credentials:** your WiGLE "Encoded for use" token and your wdgwars API key. These are only needed if the phone should upload its own logs.
    - **Trip mode** (off by default): for trips away from home WiFi. While on, the phone pulls the rig's own log files over the Bluetooth link and uploads them with your keys over whatever connection the phone has (cell or WiFi); the rig holds off its own upload, so nothing is sent twice. Off = the rig uploads over its own WiFi (`config.cfg`) as usual.
-   - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is dropped completely.
+   - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is never logged, exported or uploaded (your home stays private), but still shows briefly in the live tools so fox-hunt and antenna check work at home. Saving also **pushes this zone to the rig** so its own logs match.
+   - **CYD counters:** a toggle switches the rig screen's headline numbers between **WiGLE / WDGW** and raw **found APs / Bluetooth**.
    - **Blacklists:** any MACs or SSIDs you never want logged, such as your own devices.
    - Tap **SAVE**.
 3. **Pair with your rig (once).** On the rig, open the **4.CFG** tab and tap **PAIR PHONE**. A 6-digit code appears for 60 seconds. With the app open, Android asks you to pair with *WardriveCYD*: type the code and tap OK. The dashboard shows `CYD: PAIR` until this is done.
@@ -51,9 +54,9 @@ If Bluetooth isn't available, plug the phone into the CYD's USB port with a USB-
 
 ### Privacy
 
-- The home exclusion zone and blacklists apply to everything the **app** shows, logs and uploads, from both the rig and the phone.
+- The home exclusion zone and blacklists keep matching devices out of everything the **app** logs, exports and uploads, from both the rig and the phone. They still appear briefly in the live tools (so fox-hunt/antenna check work at home) but are never stored or sent.
 - SSIDs ending in `_nomap` are always dropped.
-- The rig's own SD logs and uploads **do not** use the app's exclusion zone. See [Config → Keep it private](CONFIG.md#keep-it-private).
+- Saving the exclusion zone **pushes it to the rig too** (home lat/lon + radius over Bluetooth), so the rig's own SD logs and uploads use the same zone. See [Config → Keep it private](CONFIG.md#keep-it-private).
 - **No GPS fix:** devices are still gathered (the dashboard shows an amber `NO GPS FIX` warning), but saved without a position and **never uploaded or exported**, so nothing lands at 0,0. If a device is seen again once there's a fix, it's re-logged with a real position and that row is what uploads.
 
 ## Organic Maps overlay (optional)

@@ -54,7 +54,10 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
     }
 
     fun start() {
-        if (running) return
+        // Even if we're already scanning (e.g. reopening a tool that left the
+        // scanner running), always re-emit the OS's cached APs right now so the
+        // list fills instantly instead of looking dead until the next tick.
+        if (running) { emitResults(); return }
         running = true
         val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         if (Build.VERSION.SDK_INT >= 33) {
@@ -130,6 +133,9 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
     }
 
     companion object {
-        private const val SCAN_INTERVAL_MS = 15000L
+        // Re-read the OS cache this often. startScan() itself is throttled by
+        // Android (~4/2min), but reading cached results is free, so a short
+        // interval keeps the list fresh and self-heals a momentarily-empty cache.
+        private const val SCAN_INTERVAL_MS = 5000L
     }
 }

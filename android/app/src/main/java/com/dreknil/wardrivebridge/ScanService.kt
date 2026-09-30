@@ -499,7 +499,16 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (previewing) stopPreview() // switching tool type: drop the old radio set first
         previewing = true
         previewWifi = wifi; previewBle = ble; previewCell = cell
-        groups.values.forEach { it.clear() }
+        // Don't wipe groups here: clearing then waiting for the first scan is
+        // what made a reopened tool flash empty. The scanners re-emit the OS's
+        // cached results immediately on start(), updating entries in place.
+        //
+        // Location tracking has to be on even though we don't log positions in a
+        // preview: Android only hands WifiManager.getScanResults() to an app
+        // that is actively using location, so without this the WiFi list comes
+        // back empty (the whole "Live WiFi doesn't work" symptom). It also lets
+        // BLE/WiFi readings carry a position if a tool ever wants one.
+        if (wifi && hasLocationPermission()) locationTracker.start()
         if (wifi && hasLocationPermission()) wifiScanner.start()
         if (ble && hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
         if (cell && hasCellPermission()) cellScanner.start()
@@ -515,6 +524,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (previewWifi) wifiScanner.stop()
         if (previewBle) bleScanner.stop()
         if (previewCell) cellScanner.stop()
+        locationTracker.stop() // was only started to unlock WiFi scan results for the preview
         previewWifi = false; previewBle = false; previewCell = false
     }
 

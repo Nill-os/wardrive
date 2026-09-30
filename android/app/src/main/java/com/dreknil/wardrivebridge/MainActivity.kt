@@ -550,6 +550,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     override fun onResume() {
         super.onResume()
+        // Reclaim the service listener every time we come to the foreground. It's
+        // shared: another screen (e.g. Antenna check) becomes the listener while
+        // it's up and nulls it on the way out, and onServiceConnected only fires
+        // on a fresh bind - so without this the live feed silently stops updating
+        // after visiting one of those screens ("Live WiFi doesn't work").
+        scanService?.let {
+            it.listener = this
+            for (map in it.groups.values) for (obs in map.values) mapManager.upsertLive(obs)
+        }
+        refreshDetailFeedIfShown()
         binding.mapView.onResume()
         refreshAccountStats()
         refreshLifetimeChips()

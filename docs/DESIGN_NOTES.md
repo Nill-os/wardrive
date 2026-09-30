@@ -128,3 +128,30 @@ That's the firmware side; the code divides the channels for you. Actually runnin
 - **Power.** Each ESP32 is another ~100-250 mA off the car supply.
 
 Seeed XIAO ESP32-C6/S3 boards work well as add-on nodes (small, cheap, external-antenna variants exist); a C6 or C5 also gets you 5 GHz, which the S3 can't do. `ble_node` and `cyd_node`'s own sniffer are unchanged - they're separate coverage layers on top of whatever `wifi_node`(s) you run.
+
+## Scaling BLE nodes
+
+BLE scales differently from WiFi. BLE advertising uses only three fixed
+channels (37/38/39), and a scanning controller already listens across all
+three, so there are no channels to divide the way the WiFi sniffers split
+1-13. What multiple `ble_node` boards divide is the **reporting load**.
+
+`ble_node` builds its split from two flags (default `BLE_NODE_INDEX=0`,
+`BLE_NODE_COUNT=1`, or set per board in the desktop flasher's *BLE nodes*
+control):
+
+- **One node** (the default) forwards every device it hears.
+- **N nodes:** each board forwards only the slice of the MAC-address space it
+  owns (`mac[5] % N == index`), so a single board's UART queue to `wifi_node`
+  isn't swamped in a dense area - and queue overflow is what actually drops BLE
+  sightings, so spreading the reporting lets the rig log more distinct devices
+  per unit time. The last MAC byte is device-specific and evenly spread, so it
+  distributes owners well. A device advertises repeatedly (roughly every
+  0.1-1 s), so its owning node still catches it on a later advertisement even
+  if it misses one; only the owner ever forwards it, so the aggregator sees no
+  extra duplicates.
+
+The same transport caveat as the WiFi nodes applies: today each `ble_node`
+reaches `wifi_node` over its own wired UART, so several BLE boards means more
+UARTs into the aggregator or a move to ESP-NOW. The `ble_node` firmware also
+runs on a Seeed XIAO ESP32-C3/S3 (see [Build and flash](BUILD_AND_FLASH.md#building-variations)), which makes small add-on BLE receivers cheap.

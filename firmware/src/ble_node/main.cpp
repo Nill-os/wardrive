@@ -280,6 +280,33 @@ static void hexEncode(const uint8_t *data, size_t len, char *out, size_t outSize
 	out[n] = '\0';
 }
 
+// Multi-BLE-node reporting split. Set per board at flash time (the desktop
+// flasher does this, or -D BLE_NODE_COUNT=<N> -D BLE_NODE_INDEX=<0..N-1>).
+#ifndef BLE_NODE_COUNT
+#define BLE_NODE_COUNT 1
+#endif
+#ifndef BLE_NODE_INDEX
+#define BLE_NODE_INDEX 0
+#endif
+
+// Whether this board is the one responsible for a given device. Unlike the
+// WiFi sniffers, BLE nodes have nothing to divide by channel - BLE advertising
+// uses only three fixed channels (37/38/39) and every node's radio already
+// hears all of them. So when several BLE boards run, they divide the *reporting*
+// work instead: each owns a slice of the MAC-address space and forwards only
+// that slice, so no single node's link queue is swamped in a dense area (a full
+// queue is what actually drops sightings). One node (the default) owns
+// everything. Devices advertise repeatedly, so the owning node still catches a
+// device on a later advertisement even if it misses one. The last MAC byte is
+// device-specific and well spread, so it distributes owners evenly.
+static inline bool bleOwnsDevice(const uint8_t *mac) {
+#if BLE_NODE_COUNT > 1
+	return (mac[5] % BLE_NODE_COUNT) == BLE_NODE_INDEX;
+#else
+	(void)mac; return true;
+#endif
+}
+
 // "MAC,RSSI,NAME,MFG_HEX\n" - wifi_node enriches this with its own GPS
 // fix/timestamp before relaying it onward to cyd_node (see
 // wifi_node/main.cpp's own header/comments).
@@ -316,6 +343,7 @@ class WardriveScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 		uint8_t mac[6];
 		memcpy(mac, device->getAddress().getNative(), 6);
 
+		if (!bleOwnsDevice(mac)) return; // another BLE node owns this slice of the MAC space
 		if (!shouldSendBle(mac)) return; // seen this device recently, skip the duplicate
 
 		flashLed(0, 255, 255); // cyan - only for a genuinely new device this run (resets each run with the dedup set)

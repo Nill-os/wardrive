@@ -869,6 +869,37 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
                        "wifi_node with its own #). Wiring more nodes in needs a transport change - see Design notes.",
              font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(0, 6))
 
+    # Multiple BLE scanners: BLE has no channels to divide (every node hears all
+    # three advertising channels), so they split the MAC space instead - each
+    # board forwards only its slice, so no one node's link queue is swamped.
+    ble_count = tk.IntVar(value=1)
+    ble_index = tk.IntVar(value=0)
+    brow = tk.Frame(tab, bg=BG); brow.pack(fill="x", padx=6, pady=(0, 2))
+    tk.Label(brow, text="BLE nodes:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    ble_idx_menu = ttk_combo(brow, ble_index, mono, width=4)
+
+    def _on_ble_count_change(*_):
+        n = max(1, ble_count.get())
+        vals = [str(i) for i in range(n)]
+        ble_idx_menu["values"] = vals
+        if str(ble_index.get()) not in vals:
+            ble_index.set(0)
+        if n > 1:
+            ble_idx_menu.configure(state="readonly")
+        else:
+            ble_index.set(0); ble_idx_menu.configure(state="disabled")
+
+    ble_count_menu = ttk_combo(brow, ble_count, mono, width=4)
+    ble_count_menu["values"] = [str(i) for i in range(1, 21)]
+    ble_count_menu.pack(side="left", padx=(6, 10))
+    ble_count.trace_add("write", _on_ble_count_change)
+    tk.Label(brow, text="this ble_node is #", font=mono, bg=BG, fg=DIM).pack(side="left")
+    ble_idx_menu.pack(side="left", padx=(6, 0))
+    _on_ble_count_change()
+    tk.Label(tab, text="1 BLE node hears everything. More nodes each report a share of devices (flash each\n"
+                       "ble_node with its own #) so a busy area doesn't overflow one node's link.",
+             font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(0, 6))
+
     out = _log_area(tab, mono, 12)
     out.pack(fill="both", expand=True, padx=6, pady=(6, 8))
 
@@ -900,6 +931,10 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
             n, i = node_count.get(), node_index.get()
             build_flags = f"-DNODE_COUNT={n} -DNODE_INDEX={i}"
             append(f"(node {i} of {n} - this board takes its slice of channels 1-13)", "dim")
+        elif env.startswith("ble_node") and ble_count.get() > 1:
+            n, i = ble_count.get(), ble_index.get()
+            build_flags = f"-DBLE_NODE_COUNT={n} -DBLE_NODE_INDEX={i}"
+            append(f"(BLE node {i} of {n} - this board reports its share of devices)", "dim")
 
         def worker():
             try:

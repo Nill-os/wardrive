@@ -99,6 +99,13 @@ class ScanService : Service(), RigLinkManager.Listener {
     // doesn't end or finalize the run the way stopRun() does). Only
     // meaningful when running is true; startRun()/stopRun() always clear it.
     var paused = false; private set
+    // Live "preview" scanning for the detection/live-feed tools: the phone's
+    // radios are on and observations flow into `groups` (so the tools show
+    // what's around right now), but there's NO logged run - no GPS, no DB rows,
+    // no foreground service, no rig involvement. This is what makes "Live WiFi",
+    // "Pineapple Detection" etc. actually show something when you open them
+    // without first starting a full drive. A real run always takes precedence.
+    var previewing = false; private set
     var rigConnected = false; private set
     var meshLinkState = RigLinkManager.MeshLinkState.DISCONNECTED; private set
     // Parsed out of the rig's own periodic "WD:STATUS ... ch=N ..." line (see
@@ -371,6 +378,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         logRunEvent("run started ($reason)")
         running = true
         paused = false
+        previewing = false // a real run supersedes any live-preview scanning
         runStartMs = System.currentTimeMillis()
         totalDistanceMeters = 0.0
         lastFixForDistance = null
@@ -465,6 +473,30 @@ class ScanService : Service(), RigLinkManager.Listener {
         listener?.onPauseStateChanged(false)
     }
 
+    // Turn the phone's radios on for the live/detection tools without starting a
+    // logged run. No GPS (positions aren't needed just to see what's nearby), no
+    // DB rows (currentRunId stays null, so onObservation never writes), no
+    // foreground service. A real run always wins: if one is active this is a
+    // no-op and the run's own scanning already feeds the same tools.
+    fun startPreview() {
+        if (running || previewing) return
+        previewing = true
+        groups.values.forEach { it.clear() }
+        if (hasLocationPermission()) wifiScanner.start()
+        if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
+        if (hasCellPermission()) cellScanner.start()
+        updateExternalUi(force = true)
+    }
+
+    fun stopPreview() {
+        if (!previewing) return
+        previewing = false
+        if (running) return // a run took over the radios; leave them on for it
+        wifiScanner.stop()
+        bleScanner.stop()
+        cellScanner.stop()
+    }
+
     fun currentRunId(): Long? = currentRunId
 
     fun database(): WardriveDao = dao
@@ -482,7 +514,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     // ---- Observation handling (moved from MainActivity verbatim) ----
 
     private fun onObservation(raw: Observation) {
-        if (!running || paused) return // dedup state only makes sense for the current run; paused drops everything, including rig-relayed data, without touching the rig itself
+        if ((!running && !previewing) || paused) return // no run and no live preview open = nothing to collect; paused drops everything, including rig-relayed data, without touching the rig itself
 
         // DOP-gated logging: HDOP comes from real NMEA GSA sentences (no
         // modern Android location API exposes it directly) - above the
@@ -567,7 +599,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         val newToDb = firstLog || upgrade
         // Count a "new find" only on the genuine first sighting, never again on the
         // fix-less -> positioned upgrade (that's the same device, a second row).
-        if (firstLog && !historicalIndex.containsKey(tagged2.mac)) newThisRunCount++
+        if (running && firstLog && !historicalIndex.containsKey(tagged2.mac)) newThisRunCount++ // live preview doesn't touch the run's new-find tally
         if (newToDb && runId != null) {
             val entity = tagged2.toEntity(runId)
             dbExecutor.execute {

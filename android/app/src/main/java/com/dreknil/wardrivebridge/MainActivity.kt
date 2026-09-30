@@ -76,6 +76,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             for (map in bound.groups.values) for (obs in map.values) mapManager.upsertLive(obs)
             refreshDetailFeedIfShown()
             updateStatusText()
+            syncPreviewScanning() // if a live tool was already open before the service bound, start scanning for it now
             maybeStartRunFromShortcut()
         }
 
@@ -415,6 +416,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         binding.mapTabContent.visibility = if (kind == DetailKind.MAP) View.VISIBLE else View.GONE
         binding.logsTabContent.visibility = if (kind == DetailKind.LOGS) View.VISIBLE else View.GONE
         binding.floorPlanTabContent.visibility = if (kind == DetailKind.FLOOR_PLAN) View.VISIBLE else View.GONE
+        syncPreviewScanning()
         when (kind) {
             DetailKind.FEED -> refreshDetailFeedIfShown()
             DetailKind.LOGS -> refreshLogsView()
@@ -447,6 +449,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         currentDetailKind = DetailKind.NONE
         binding.detailContent.visibility = View.GONE
         updateNavHighlight()
+        syncPreviewScanning()
+    }
+
+    // The live/detection tools (all the FEED detail screens) need the phone's
+    // radios actually on to show anything. When one is open and no full run is
+    // active, run a lightweight preview scan; otherwise leave the radios alone
+    // (a real run drives them itself, and nothing should scan with no tool open).
+    private fun syncPreviewScanning() {
+        val s = scanService ?: return
+        if (currentDetailKind == DetailKind.FEED && !s.running) s.startPreview() else s.stopPreview()
     }
 
     private fun refreshDetailFeedIfShown() {
@@ -521,6 +533,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         refreshLifetimeChips()
         binding.root.removeCallbacks(statusTicker)
         binding.root.postDelayed(statusTicker, 2_000)
+        syncPreviewScanning() // resume live-tool scanning if one is still open
     }
 
     // wdgwars/WiGLE account totals - not per-observation, so fetched on a
@@ -570,6 +583,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         super.onPause()
         binding.mapView.onPause()
         binding.root.removeCallbacks(statusTicker)
+        // Don't keep the radios on scanning in the background just for a live
+        // tool - preview stops here (a real run keeps going; stopPreview no-ops
+        // while running). onResume restarts it if the tool is still open.
+        scanService?.stopPreview()
     }
 
     // ---- Permissions ----

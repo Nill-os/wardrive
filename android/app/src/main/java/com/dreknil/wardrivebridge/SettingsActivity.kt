@@ -1,6 +1,8 @@
 package com.dreknil.wardrivebridge
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Bundle
@@ -103,7 +105,46 @@ class SettingsActivity : AppCompatActivity() {
                 finish() // back to the dashboard, where the URL dialog appears
             }
         }
+        binding.batteryOptButton.setOnClickListener { requestIgnoreBatteryOptimizations() }
+        refreshBatteryOptButton()
+
         binding.saveSettingsButton.setOnClickListener { save() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshBatteryOptButton()
+    }
+
+    /** Reflect whether the app is already exempt from battery optimization. */
+    private fun refreshBatteryOptButton() {
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        val exempt = pm.isIgnoringBatteryOptimizations(packageName)
+        binding.batteryOptButton.text =
+            if (exempt) "> BACKGROUND USAGE ALLOWED ✓" else "> ALLOW BACKGROUND USAGE"
+        binding.batteryOptButton.isEnabled = !exempt
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            Toast.makeText(this, "Already allowed", Toast.LENGTH_SHORT).show()
+            refreshBatteryOptButton()
+            return
+        }
+        // The direct opt-in dialog needs the REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+        // permission; if the OEM blocks that intent, fall back to the settings list.
+        try {
+            startActivity(Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:$packageName")))
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
+                Toast.makeText(this, "Open Settings → Apps → Nill OS - Wardriver → Battery → Unrestricted", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     /** Push the LED/screen settings to the rig over Bluetooth (it applies live and saves them). */

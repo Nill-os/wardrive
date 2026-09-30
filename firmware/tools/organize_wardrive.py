@@ -679,14 +679,18 @@ def write_summary(out_dir, source, stats):
 
 # ---------- flashing the ESP boards (PlatformIO) ----------
 BOARDS = [
-    ("wifi_node", "WiFi sniffer + GPS (ESP32-S3)", "usb"),
+    ("wifi_node", "WiFi sniffer + GPS", "usb"),
     ("ble_node", "BLE scanner", "usb"),
     ("cyd_node", "Screen / storage / uploads (CYD) - USB", "usb"),
-    ("cyd_node_ota", "Screen board - over-the-air (rig in service mode)", "ota"),
 ]
 
-# The BLE scanner runs the same firmware on more than one board. The label is
-# shown in the Flash tab's "BLE board" picker; the value is the PlatformIO env.
+# The WiFi sniffer and BLE scanner each run the same firmware on more than one
+# board. The label shows in the Flash tab's board picker; the value is the env.
+WIFI_BOARDS = [
+    ("ESP32-S3 DevKitC", "wifi_node"),
+    ("Seeed XIAO ESP32-C3", "wifi_node_xiao_c3"),
+    ("Seeed XIAO ESP32-S3", "wifi_node_xiao_s3"),
+]
 BLE_BOARDS = [
     ("ESP32-S3 DevKitC", "ble_node"),
     ("Seeed XIAO ESP32-C3", "ble_node_xiao_c3"),
@@ -703,22 +707,16 @@ def pio_exe():
     return shutil.which("pio") or shutil.which("platformio")
 
 
-def flash_board(env, port, host, password, on_line, build_flags=None):
-    """Flash one board with PlatformIO, streaming output line by line. Returns
-    the exit code (0 = success). `port` is used for USB envs, `host`/`password`
-    for the OTA env. `build_flags` (a string of extra -D flags) is injected via
-    PLATFORMIO_BUILD_FLAGS - used to set the per-board channel split for a
-    multi-node rig (e.g. "-DNODE_COUNT=3 -DNODE_INDEX=1")."""
+def flash_board(env, port, on_line, build_flags=None):
+    """Flash one board with PlatformIO over USB, streaming output line by line.
+    Returns the exit code (0 = success). `build_flags` (a string of extra -D
+    flags) is injected via PLATFORMIO_BUILD_FLAGS - used to set the per-board
+    channel/MAC split for a multi-node rig (e.g. "-DNODE_COUNT=3 -DNODE_INDEX=1")."""
     pio = pio_exe()
     if not pio:
         raise ValueError("PlatformIO not found on PATH.\nInstall it:  pip install platformio")
     cmd = [pio, "run", "-e", env, "-t", "upload"]
-    if env.endswith("_ota"):
-        if host and host.strip():
-            cmd += ["--upload-port", host.strip()]
-        if password:
-            cmd += ["--upload-flags", "--auth=" + password]
-    elif port and port.strip().lower() != "auto":
+    if port and port.strip().lower() != "auto":
         cmd += ["--upload-port", port.strip()]
     run_env = os.environ.copy()
     if build_flags:
@@ -903,9 +901,9 @@ def _build_report_tab(tab, mono, mono_b, host_var, pass_var, port_var):
 
 
 def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
-    tk.Label(tab, text="Flash firmware to a board over USB (or the CYD over the air). Uses\n"
-                       "PlatformIO from the firmware/ project. Hit DETECT to see what's plugged\n"
-                       "in and its node number, or pick a port and board yourself.",
+    tk.Label(tab, text="Flash firmware to a board over USB. Uses PlatformIO from the firmware/\n"
+                       "project. Hit DETECT to see what's plugged in and its node number, or\n"
+                       "pick a port and board yourself.",
              font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=6, pady=(10, 8))
 
     prow = tk.Frame(tab, bg=BG); prow.pack(fill="x", padx=6, pady=(0, 6))
@@ -997,13 +995,11 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
         for b in buttons.values(): b.configure(state="disabled")
         out.configure(state="normal"); out.delete("1.0", "end"); out.configure(state="disabled")
         append(f"Flashing {env}...", "accent")
-        if env.endswith("_ota"):
-            append("(rig must be in service mode; using " + host_var.get() + ")", "dim")
 
         # For a multi-node rig, tell wifi_node how many sniffers there are and
         # which one this board is, so the firmware picks this node's channels.
         build_flags = None
-        if env == "wifi_node" and node_count.get() > 1:
+        if env.startswith("wifi_node") and node_count.get() > 1:
             n, i = node_count.get(), node_index.get()
             build_flags = f"-DNODE_COUNT={n} -DNODE_INDEX={i}"
             append(f"(node {i} of {n} - this board takes its slice of channels 1-13)", "dim")
@@ -1014,8 +1010,7 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
 
         def worker():
             try:
-                rc = flash_board(env, fport.get(), host_var.get(), pass_var.get(),
-                                 lambda l: append("  " + l), build_flags=build_flags)
+                rc = flash_board(env, fport.get(), lambda l: append("  " + l), build_flags=build_flags)
                 append("> SUCCESS" if rc == 0 else f"> FAILED (exit {rc})", "ok" if rc == 0 else "err")
             except Exception as e:
                 append("ERROR: " + str(e), "err")
@@ -1075,26 +1070,34 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
     detect_border.pack(side="left", padx=(10, 0))
     buttons["_detect"] = detect_btn
 
-    # Which board the BLE scanner is flashed to (default the ESP32-S3 DevKitC).
+    # Which board the WiFi sniffer / BLE scanner are flashed to (default DevKitC).
+    wifi_labels = [lbl for lbl, _env in WIFI_BOARDS]
+    wifi_env_of = dict(WIFI_BOARDS)
+    wifi_choice = tk.StringVar(value=wifi_labels[0])
     ble_labels = [lbl for lbl, _env in BLE_BOARDS]
     ble_env_of = dict(BLE_BOARDS)
     ble_choice = tk.StringVar(value=ble_labels[0])
 
+    def _board_picker_row(f, desc, label_text, button_env_getter, choice_var, labels, key):
+        border, btn = _tactical_button(f, "> FLASH " + label_text,
+                                       (lambda: do_flash(button_env_getter())), mono_b, accent=CYAN)
+        border.pack(side="left")
+        buttons[key] = btn
+        tk.Label(f, text=desc + " on:", font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 4))
+        menu = ttk_combo(f, choice_var, mono, width=20)
+        menu["values"] = labels
+        menu.pack(side="left")
+
     for env, desc, kind in BOARDS:
         f = tk.Frame(tab, bg=BG); f.pack(fill="x", padx=6, pady=2)
-        if env == "ble_node":
-            # The button flashes whichever BLE board is picked to its right.
-            border, btn = _tactical_button(f, "> FLASH BLE_NODE",
-                                           (lambda: do_flash(ble_env_of[ble_choice.get()])), mono_b, accent=CYAN)
-            border.pack(side="left")
-            buttons["ble_node"] = btn
-            tk.Label(f, text=desc + " on:", font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 4))
-            ble_menu = ttk_combo(f, ble_choice, mono, width=20)
-            ble_menu["values"] = ble_labels
-            ble_menu.pack(side="left")
+        if env == "wifi_node":
+            _board_picker_row(f, desc, "WIFI_NODE", lambda: wifi_env_of[wifi_choice.get()],
+                              wifi_choice, wifi_labels, "wifi_node")
+        elif env == "ble_node":
+            _board_picker_row(f, desc, "BLE_NODE", lambda: ble_env_of[ble_choice.get()],
+                              ble_choice, ble_labels, "ble_node")
         else:
-            border, btn = _tactical_button(f, "> FLASH " + env.upper(), (lambda e=env: do_flash(e)), mono_b,
-                                           accent=(PURPLE if kind == "ota" else CYAN))
+            border, btn = _tactical_button(f, "> FLASH " + env.upper(), (lambda e=env: do_flash(e)), mono_b, accent=CYAN)
             border.pack(side="left")
             buttons[env] = btn
             tk.Label(f, text=desc, font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 0))
@@ -1130,8 +1133,8 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
                 append("ERROR: " + str(e), "err")
                 root.after(0, lambda: [b.configure(state="normal") for b in buttons.values()]); return
             descriptions = _port_descriptions()
-            # role -> PlatformIO env to flash it with (BLE uses the picked board)
-            env_for = {"wifi": "wifi_node", "ble": ble_env_of[ble_choice.get()], "cyd": "cyd_node"}
+            # role -> PlatformIO env to flash it with (WiFi/BLE use the picked board)
+            env_for = {"wifi": wifi_env_of[wifi_choice.get()], "ble": ble_env_of[ble_choice.get()], "cyd": "cyd_node"}
             plan = []
             for port in ports:
                 info = detect_board(serial, port)
@@ -1150,8 +1153,7 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
                 env = env_for[role]
                 append(f"--- {env} on {port} ---", "accent")
                 try:
-                    rc = flash_board(env, port, host_var.get(), pass_var.get(),
-                                     lambda l: append("  " + l), build_flags=flags_for(role, info))
+                    rc = flash_board(env, port, lambda l: append("  " + l), build_flags=flags_for(role, info))
                     if rc == 0:
                         ok += 1; append(f"> {env} OK", "ok")
                     else:

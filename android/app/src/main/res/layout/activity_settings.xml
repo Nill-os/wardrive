@@ -47,13 +47,13 @@
             android:id="@+id/serviceModeButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="&gt; RIG SERVICE MODE (OTA + LOG SERVER)"
+            android:text="&gt; RIG SERVICE MODE (LOG SERVER)"
             android:layout_marginTop="4dp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Parks the rig on WiFi so you can download its logs from a browser and flash firmware over the air. Pauses scanning; tap the rig screen to exit. The rig shows the URL, and it also pops up here."
+            android:text="Parks the rig on WiFi so you can download its logs from a browser (no SD-card removal). Pauses scanning; tap the rig screen to exit. The rig shows the URL, and it also pops up here."
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:layout_marginTop="4dp"
@@ -283,6 +283,31 @@
             android:layout_height="wrap_content"
             android:textColor="@color/text_primary"
             android:text="Trip mode: upload the rig's data through this phone (Bluetooth)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; BACKGROUND"
+            android:textColor="@color/cyan_500"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="20dp"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Android's battery optimizer can pause or kill scanning when the screen is off or the app is in the background, so a long drive stops logging. Allow unrestricted background usage so a run keeps going with the screen off."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:paddingBottom="6dp" />
+
+        <Button
+            android:id="@+id/batteryOptButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&gt; ALLOW BACKGROUND USAGE"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:layout_width="match_parent"

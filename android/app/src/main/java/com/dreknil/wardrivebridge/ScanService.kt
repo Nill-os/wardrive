@@ -164,6 +164,13 @@ class ScanService : Service(), RigLinkManager.Listener {
     private val loggedBleMacsThisRun = mutableSetOf<String>()
     private val loggedCellIdsThisRun = mutableSetOf<String>()
 
+    // Devices logged this run WITHOUT a GPS fix (rows at 0,0). Tracked so a later
+    // fixed sighting of the same device can be upgraded to a positioned row, and
+    // so these can be counted for the "logging without a fix" warning.
+    private val noFixWifiMacsThisRun = mutableSetOf<String>()
+    private val noFixBleMacsThisRun = mutableSetOf<String>()
+    private val noFixCellIdsThisRun = mutableSetOf<String>()
+
     private val spoken by lazy { SpokenUpdates(this, appSettings) { wifiCountThisRun to bleCountThisRun } }
 
     override fun onCreate() {
@@ -275,6 +282,14 @@ class ScanService : Service(), RigLinkManager.Listener {
     val wifiCountThisRun: Int get() = loggedWifiMacsThisRun.size
     val bleCountThisRun: Int get() = loggedBleMacsThisRun.size
 
+    /** True when there's a position fresh enough to log with (phone's own fix). */
+    fun hasFix(): Boolean = ::locationTracker.isInitialized && locationTracker.hasFix()
+
+    /** Devices logged this run WITHOUT a position (0,0) - kept locally but never
+     *  uploaded/exported. Drives the "logging without a GPS fix" warning. */
+    val noFixCountThisRun: Int
+        get() = noFixWifiMacsThisRun.size + noFixBleMacsThisRun.size + noFixCellIdsThisRun.size
+
     // Devices logged this run whose MAC was in no previous run at all - i.e.
     // new to this phone's whole collection, the "new finds" WiGLE-style number
     // that makes a drive feel worthwhile. Counted locally against the
@@ -366,6 +381,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         loggedWifiMacsThisRun.clear()
         loggedBleMacsThisRun.clear()
         loggedCellIdsThisRun.clear()
+        noFixWifiMacsThisRun.clear()
+        noFixBleMacsThisRun.clear()
+        noFixCellIdsThisRun.clear()
         newThisRunCount = 0
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         // Blocking-but-brief, once per run start - the old WigleCsvWriter's
@@ -525,15 +543,28 @@ class ScanService : Service(), RigLinkManager.Listener {
         // Fire-and-forget on dbExecutor - nothing downstream depends on the
         // insert having completed synchronously, same as the old CSV append.
         //
-        // No position (no phone fix yet, and the rig didn't supply one) = shown live but not
-        // logged, and not marked as logged either, so it's written the first time it's seen
-        // with a fix. Logging it anyway put it at 0,0 - "Null Island" - in every export and upload.
+        // Logging without a GPS fix: the device is still recorded (kept locally so
+        // no data is lost - the user asked to keep gathering with a warning), but at
+        // 0,0. Those fix-less rows are flagged (below) and excluded from every upload
+        // and export, so nothing lands at "Null Island" on WiGLE. If the same device
+        // is seen again once there IS a fix, it's logged a second time with a real
+        // position (the "upgrade" below), and that positioned row is what uploads.
         val runId = currentRunId
         val hasPosition = tagged2.lat != 0.0 || tagged2.lon != 0.0
-        val newToDb = hasPosition && when (tagged2.source) {
-            Source.RIG_WIFI, Source.PHONE_WIFI -> loggedWifiMacsThisRun.add(tagged2.mac)
-            Source.RIG_BLE, Source.PHONE_BLE -> loggedBleMacsThisRun.add(tagged2.mac)
-            Source.PHONE_CELL -> loggedCellIdsThisRun.add(tagged2.mac)
+        val loggedSet = when (tagged2.source) {
+            Source.RIG_WIFI, Source.PHONE_WIFI -> loggedWifiMacsThisRun
+            Source.RIG_BLE, Source.PHONE_BLE -> loggedBleMacsThisRun
+            Source.PHONE_CELL -> loggedCellIdsThisRun
+        }
+        val noFixSet = when (tagged2.source) {
+            Source.RIG_WIFI, Source.PHONE_WIFI -> noFixWifiMacsThisRun
+            Source.RIG_BLE, Source.PHONE_BLE -> noFixBleMacsThisRun
+            Source.PHONE_CELL -> noFixCellIdsThisRun
+        }
+        val newToDb: Boolean = when {
+            loggedSet.add(tagged2.mac) -> { if (!hasPosition) noFixSet.add(tagged2.mac); true } // first sighting this run
+            hasPosition && noFixSet.remove(tagged2.mac) -> true                                  // upgrade a fix-less row now we have a position
+            else -> false
         }
         if (newToDb && !historicalIndex.containsKey(tagged2.mac)) newThisRunCount++
         if (newToDb && runId != null) {

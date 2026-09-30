@@ -23,6 +23,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets Settings offer a one-tap opt-out of battery optimization so a long
+         run keeps scanning with the screen off / app backgrounded. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Legacy Bluetooth permissions for pre-Android 12 -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />

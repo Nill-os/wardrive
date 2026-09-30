@@ -21,9 +21,9 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 - **Idle auto-stop** after 30 minutes parked, to protect the car battery.
 - **Status LEDs** on every board, so you can read the rig without a screen.
 - **Detection alerts:** the rig and phone flag notable devices as you pass them - Flock cameras, Flipper Zeros, card skimmers, police body cams, smart glasses, action cams and WiFi Pineapples - each category togglable on its own. The car screen shows a red banner and flashes an LED; the phone speaks the alert and vibrates.
-- **Service mode:** park the rig on WiFi to download its session logs from any browser and flash new firmware **over the air** - no unplugging. Started from the phone app or a touch on the screen; scanning pauses while it's up.
+- **Service mode:** park the rig on WiFi to download its session logs from any browser - no unplugging, no SD-card removal. Started from the phone app or a touch on the screen; scanning pauses while it's up.
 - **Modular, multi-node scaling:** add more ESP32 sniffer nodes (e.g. Seeed XIAO boards) - up to 20 - and the firmware splits the 2.4 GHz channels across them automatically, so each node dwells on fewer channels and revisits them faster. Multiple **BLE nodes** scale too: since BLE has no channels to divide, they split the device-reporting load so a busy area doesn't overflow one node. The BLE scanner also runs on a tiny **Seeed XIAO ESP32-C3/S3**. See [Scaling the rig](docs/SCALING.md) for the diagrams, wiring and how to number nodes.
-- **Desktop app** ([`firmware/tools/`](firmware/tools/)): the go-to tool for the rig. Pull logs off the SD card, over USB, or over WiFi (no card removal); build an interactive **field report** (map, search, filters, plus the same Flock/Flipper/skimmer detection); **flash and manage** the boards - it **detects** what's plugged into each port and its node number, flashes any board over USB or the CYD over the air (BLE-board picker, node-count/number controls), and gives a serial console. One-click launcher with an app icon (`tools/install-desktop.sh`).
+- **Desktop app** ([`firmware/tools/`](firmware/tools/)): the go-to tool for the rig. Pull logs off the SD card, over USB, or over WiFi (no card removal); build an interactive **field report** (map, search, filters, plus the same Flock/Flipper/skimmer detection); **flash and manage** the boards - it **detects** what's plugged into each port and its node number, flashes any board over USB (WiFi/BLE board pickers for the Seeed XIAO variants, node-count/number controls, and a bulk "flash all"), and gives a serial console. One-click launcher with an app icon (`tools/install-desktop.sh`).
 - **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile.
 - **Map and car display** ([Organic Maps overlay](organic-maps-overlay/)): live status on the map and in Android Auto, with a start/stop button in the car.
 
@@ -44,7 +44,7 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 <p align="center">
   <img src="docs/screenshots/desktop-field-report.png" width="480" alt="Field report">
 </p>
-<p align="center"><em>The desktop app is the one-stop tool: pull logs off the SD card, over USB, or over WiFi (no card removal) and build an interactive field report (map, search, filters, Flock/Flipper/skimmer detection); <b>flash</b> any board over USB or the CYD over the air; and <b>manage</b> the rig from a serial console. (Map above is demo data, not a real drive.)</em></p>
+<p align="center"><em>The desktop app is the one-stop tool: pull logs off the SD card, over USB, or over WiFi (no card removal) and build an interactive field report (map, search, filters, Flock/Flipper/skimmer detection); <b>flash</b> any board over USB; and <b>manage</b> the rig from a serial console. (Map above is demo data, not a real drive.)</em></p>
 
 ## Get started
 

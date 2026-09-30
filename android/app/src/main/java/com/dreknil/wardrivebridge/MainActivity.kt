@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private val expandedHistGroups = mutableMapOf<String, Boolean>()
     private val uploadManager by lazy { UploadManager(applicationContext) }
     private var huntDialog: HuntDialog? = null
+    private var antennaDialog: AntennaCheckDialog? = null
     private val dao: WardriveDao by lazy { AppDatabase.get(applicationContext).dao() }
 
     // ---- Navigation shell (Dashboard/WiFi/Bluetooth/Terminal bottom nav +
@@ -135,7 +136,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (intent?.action == ScanService.ACTION_START) startRunRequested = true
         adapter = ObservationAdapter(
             onHeaderClick = { source -> toggleGroup(source) },
-            onRowLongClick = { obs -> startHunt(obs) },
+            onRowLongClick = { obs -> showTargetActions(obs) },
             onRowClick = { obs -> showObservationDetail(obs) },
         )
         binding.detailFeedList.layoutManager = LinearLayoutManager(this)
@@ -496,6 +497,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     override fun onDestroy() {
         super.onDestroy()
         huntDialog?.dismiss() // avoid a WindowLeaked crash if the app closes mid-hunt
+        antennaDialog?.dismiss()
         // Deliberately does NOT stop the run - the whole point of
         // ScanService is that closing this Activity (screen lock, app
         // switch, task swipe) must not interrupt an active run.
@@ -625,6 +627,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     override fun onObservation(tagged: Observation) {
         huntDialog?.let { if (it.matches(tagged.mac)) it.onSample(tagged) }
+        antennaDialog?.let { if (it.matches(tagged.mac)) it.onSample(tagged) }
         mapManager.upsertLive(tagged)
         refreshDetailFeedIfShown()
         updateStatusText()
@@ -832,6 +835,17 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     // Only one hunt at a time - starting a new one replaces whatever was
     // showing. See HuntDialog for why this is signal-strength feedback, not
     // triangulation.
+    // Long-press a device: pick what to do with it as a signal target.
+    private fun showTargetActions(obs: Observation) {
+        val label = obs.label.ifBlank { obs.mac }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(label)
+            .setItems(arrayOf("Fox hunt (find it)", "Antenna check (compare antennas)")) { _, which ->
+                if (which == 0) startHunt(obs) else startAntennaCheck(obs)
+            }
+            .show()
+    }
+
     private fun startHunt(obs: Observation) {
         huntDialog?.dismiss()
         val dialog = HuntDialog(this, obs.mac, obs.label)
@@ -839,6 +853,15 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         huntDialog = dialog
         dialog.show()
         dialog.onSample(obs) // seed it with the reading that triggered the long-press
+    }
+
+    private fun startAntennaCheck(obs: Observation) {
+        antennaDialog?.dismiss()
+        val dialog = AntennaCheckDialog(this, obs.mac, obs.label)
+        dialog.setOnDismissListener { antennaDialog = null }
+        antennaDialog = dialog
+        dialog.show()
+        dialog.onSample(obs)
     }
 
     // Tap a row for the full picture on one device - everything the live
@@ -1003,8 +1026,19 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         // "Fix" = a position fresh enough to log with, not just one seen at some point.
         val gpsFix = service?.locationTracker?.hasFix() == true
-        binding.gpsDot.text = if (gpsFix) "PHONE GPS: FIX" else "PHONE GPS: ---"
-        binding.gpsDot.setTextColor(ContextCompat.getColor(this, if (gpsFix) R.color.cyan_500 else R.color.text_secondary))
+        val running = service?.running == true
+        // While a run is active with no fix, sightings are still gathered but saved
+        // without a position (0,0) - kept locally, never uploaded/exported. Warn in
+        // amber so it's obvious that data is landing without coordinates.
+        if (running && !gpsFix) {
+            val noFix = service?.noFixCountThisRun ?: 0
+            binding.gpsDot.text = if (noFix > 0) "NO GPS FIX - $noFix saved w/o position (not uploaded)"
+                                  else "NO GPS FIX - logging without position (not uploaded)"
+            binding.gpsDot.setTextColor(ContextCompat.getColor(this, R.color.amber_warning))
+        } else {
+            binding.gpsDot.text = if (gpsFix) "PHONE GPS: FIX" else "PHONE GPS: ---"
+            binding.gpsDot.setTextColor(ContextCompat.getColor(this, if (gpsFix) R.color.cyan_500 else R.color.text_secondary))
+        }
 
         val channel = service?.lastRigChannel ?: 0
         binding.telemetryChannel.text = if (channel > 0) "CH: %02d".format(channel) else "CH: --"

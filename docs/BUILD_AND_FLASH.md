@@ -77,7 +77,8 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 - **A different ESP32-S3 board:** change `board =` in `[env:wifi_node]` and `[env:ble_node]`. If your board has no RGB LED on GPIO48, change the LED pin in `firmware/src/wifi_node/main.cpp` and `firmware/src/ble_node/main.cpp`.
 - **A different CYD:** the display pin map is in `[env:cyd_node]` `build_flags`. A single-USB CYD with an **ILI9341** screen needs `ILI9341_DRIVER` in place of `ST7789_DRIVER`, and probably different inversion and rotation settings too (see [Design notes](DESIGN_NOTES.md#display-quirks)).
 - **More sniffer nodes:** flash each extra `wifi_node` board with its own `-D NODE_COUNT=<N> -D NODE_INDEX=<0..N-1>` (up to 20 nodes) and the firmware splits the 2.4 GHz channels across them automatically. The easiest way is the **desktop app's Flash tab**: set *Sniffer nodes* to `N`, pick this board's number, and flash - it injects those flags for you (no `platformio.ini` edit). Adding nodes also needs a transport decision (ESP-NOW is the recommended direction); see [Design notes → Scaling to more sniffer nodes](DESIGN_NOTES.md#scaling-to-more-sniffer-nodes).
-- **BLE node on a Seeed XIAO ESP32:** the BLE scanner runs the same firmware on a tiny Seeed XIAO board. In the desktop Flash tab, the **BLE board** picker next to *FLASH BLE_NODE* offers the ESP32-S3 DevKitC (default), the **XIAO ESP32-C3**, and the **XIAO ESP32-S3** (build envs `ble_node_xiao_c3` / `ble_node_xiao_s3`). Wire the UART to the same GPIO numbers (GPIO3 = RX, GPIO8 = TX). The XIAO has no addressable RGB LED, so its single builtin LED lights instead of showing colors. (The XIAO ESP32-C6 needs a newer Arduino-ESP32 core than the pinned platform ships, so it isn't offered yet.)
+- **WiFi node on a Seeed XIAO ESP32:** the WiFi sniffer runs the same firmware on a tiny Seeed XIAO board too - handy as a small, cheap extra sniffer node. In the desktop Flash tab, the **WiFi board** picker next to *FLASH WIFI_NODE* offers the ESP32-S3 DevKitC (default), the **XIAO ESP32-C3**, and the **XIAO ESP32-S3** (build envs `wifi_node_xiao_c3` / `wifi_node_xiao_s3`). Wire the GPS and the UART links to the same GPIO numbers as on the DevKitC ([Hardware](HARDWARE.md)). The XIAO has no addressable RGB LED, so its single builtin LED lights instead of showing colors. For range, prefer a XIAO variant with a u.FL/external-antenna connector - the external antenna is what gives the WiFi node its reach. (The XIAO ESP32-C6 needs a newer Arduino-ESP32 core than the pinned platform ships, so it isn't offered yet.)
+- **BLE node on a Seeed XIAO ESP32:** likewise, the BLE scanner runs on a XIAO. In the Flash tab, the **BLE board** picker next to *FLASH BLE_NODE* offers the ESP32-S3 DevKitC (default), the **XIAO ESP32-C3**, and the **XIAO ESP32-S3** (build envs `ble_node_xiao_c3` / `ble_node_xiao_s3`). Wire the UART to the same GPIO numbers (GPIO3 = RX, GPIO8 = TX).
 - **More BLE nodes:** flash each extra `ble_node` with `-D BLE_NODE_COUNT=<N> -D BLE_NODE_INDEX=<0..N-1>` (up to 20), or use the Flash tab's *BLE nodes* control. BLE has no channels to divide, so the nodes split the MAC space instead - each forwards only its share of devices, so a busy area doesn't overflow one node's link. See [Design notes → Scaling BLE nodes](DESIGN_NOTES.md#scaling-ble-nodes).
 - **Quieter serial output:** set `WARDRIVE_DEBUG` to `false` in each `main.cpp` once the rig works.
 
@@ -87,7 +88,7 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 
 - **GET FROM SD CARD** - plug the card into the PC (auto-detected on Linux, macOS, Windows).
 - **GET FROM RIG (USB)** - *without removing the card*: plug the CYD in over USB; it reads the logs straight off the card over the serial cable (`sd list` / `sd get`), no WiFi needed.
-- **GET FROM RIG (WIFI)** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs-update-firmware), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
+- **GET FROM RIG (WIFI)** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
 
 Either way it writes, under `~/Wardrive_Reports/report_<date>_<time>/`:
 
@@ -119,22 +120,4 @@ tools/install-desktop.sh
 
 Then launch **Nill OS - Wardriver** like any app - `run.sh` sets up its Python environment on first run.
 
-## Over-the-air updates (cyd_node)
-
-The CYD can be reflashed over WiFi, so you don't have to pull it out of the car and plug in a cable for every firmware change. The two node boards (wifi_node, ble_node) are still flashed over USB - they spend their time in scan modes that don't hold a normal WiFi connection.
-
-1. Put the rig in **service mode**: tap **RIG SERVICE MODE** in the phone app's Settings, or send `rig service on` over the CYD's USB serial. The rig joins the WiFi in `config.cfg`, pauses scanning, and shows its address (e.g. `http://192.168.1.198`) on screen and in the app.
-2. Flash over the air:
-
-```
-cd firmware
-pio run -e cyd_node_ota -t upload
-```
-
-`cyd_node_ota` is the same firmware as `cyd_node`, uploaded over WiFi to the mDNS host `nillos-wardriver` instead of a serial port. If `.local` mDNS doesn't resolve on your network, pass the address the rig showed: `pio run -e cyd_node_ota -t upload --upload-port 192.168.1.198`.
-
-If you set `service_password` in `config.cfg` (recommended - see [Config](CONFIG.md) and [SECURITY.md](../SECURITY.md)), pass it to the OTA upload too: `pio run -e cyd_node_ota -t upload --upload-flags "--auth=YOURPASSWORD"`. The same password protects the log web server.
-
-3. The rig reboots into the new firmware. Tap its screen (or send `rig service off`) to leave service mode and go back to normal.
-
-The very first flash after changing the partition layout (or a brand-new board) still has to be over USB (`pio run -e cyd_node -t upload`) - OTA needs the two-slot partition table already running.
+All boards are flashed over USB (the desktop tool's **Flash** tab does this for you, including bulk "flash all"). There is no over-the-air firmware update - service mode is for downloading logs only.

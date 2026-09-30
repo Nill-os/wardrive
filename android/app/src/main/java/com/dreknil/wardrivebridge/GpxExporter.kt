@@ -9,12 +9,15 @@ import java.io.File
  * it needs no new provider path. */
 object GpxExporter {
     fun convert(points: List<HistoricalPoint>, gpxFile: File): File? {
-        if (points.isEmpty()) return null
+        // Drop fix-less points (0,0) - kept in the DB but never exported, so a
+        // waypoint file has no stray "Null Island" markers.
+        val located = points.filter { it.lat != 0.0 || it.lon != 0.0 }
+        if (located.isEmpty()) return null
 
         gpxFile.bufferedWriter().use { out ->
             out.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             out.write("<gpx version=\"1.1\" creator=\"WardriveBridge\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
-            for (p in points) {
+            for (p in located) {
                 val name = xmlEscape(p.label.ifBlank { p.mac })
                 out.write("  <wpt lat=\"${p.lat}\" lon=\"${p.lon}\">\n")
                 out.write("    <name>$name</name>\n")

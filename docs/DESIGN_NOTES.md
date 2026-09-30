@@ -82,7 +82,7 @@ These are for the dual-USB CYD with an ST7789 panel:
 - `rotation(0)` is landscape on this panel. `runRotationDebug()` in `firmware/src/cyd_node/main.cpp` helps you re-derive it on a different panel.
 - The XPT2046 touch controller is bit-banged on its own pins (IRQ 36, MISO 39, MOSI 32, CLK 25, CS 33).
 - The display pin map is set entirely by `build_flags` in `[env:cyd_node]` (`USER_SETUP_LOADED`), so updating the library won't overwrite it.
-- The board is built as the generic `esp32dev` target with 4 MB flash and the `min_spiffs.csv` partition layout: two ~1.9 MB app slots (the ~1.4 MB app fits with room) so the CYD can take over-the-air updates in [service mode](USING_THE_RIG.md#service-mode-download-logs-update-firmware). The SPIFFS partition is left tiny since the CYD keeps everything on the SD card.
+- The board is built as the generic `esp32dev` target with 4 MB flash and the `min_spiffs.csv` partition layout: a ~1.9 MB app partition (the ~1.4 MB app plus the NimBLE stack needs the room; the default layout's ~1.25 MB was too tight). The SPIFFS partition is left tiny since the CYD keeps everything on the SD card. All boards flash over USB - there's no over-the-air update path.
 
 ## Testing without GPS
 

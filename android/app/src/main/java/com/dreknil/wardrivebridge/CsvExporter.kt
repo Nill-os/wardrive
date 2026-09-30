@@ -14,7 +14,10 @@ import java.util.Locale
 object CsvExporter {
     fun materialize(context: Context, dao: WardriveDao, runId: Long): File? {
         val run = dao.run(runId) ?: return null
-        val rows = dao.observationsForRun(runId)
+        // Skip fix-less rows (logged at 0,0 while there was no GPS fix) - they're
+        // kept in the DB so no data is lost, but never uploaded or exported, so
+        // nothing lands at "Null Island".
+        val rows = dao.observationsForRun(runId).filter { it.lat != 0.0 || it.lon != 0.0 }
 
         val dir = File(context.getExternalFilesDir(null), "wardrive")
         if (!dir.exists()) dir.mkdirs()

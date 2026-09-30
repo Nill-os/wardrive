@@ -87,13 +87,12 @@ The CYD has no GPS of its own. It uses the position relayed by wifi_node, so doc
 - **GPS gaps:** for up to 15 s after losing the fix, the last known position is used, with a worse accuracy value. After that, nothing is logged until the fix returns.
 - **Storage:** about 100–130 bytes per row. Even heavy daily urban driving takes years to fill a 32 GB card.
 
-## Service mode (download logs, update firmware)
+## Service mode (download logs)
 
-When you're parked, you can put the rig on your WiFi to grab its logs or update it without any cables. Start it from the phone app (**Settings → RIG SERVICE MODE**) or by sending `rig service on` over USB. The rig:
+When you're parked, you can put the rig on your WiFi to grab its logs without any cables or removing the SD card. Start it from the phone app (**Settings → RIG SERVICE MODE**) or by sending `rig service on` over USB. The rig:
 
 - pauses scanning and joins the WiFi in `config.cfg`,
 - shows its address on screen (e.g. `http://192.168.1.198`) and pops it up in the app,
-- serves a page listing every session CSV on the card - open it in a browser on the same network and click to download,
-- accepts over-the-air firmware updates on the mDNS host `nillos-wardriver` (see [Build and flash → Over-the-air updates](BUILD_AND_FLASH.md#over-the-air-updates-cyd_node)).
+- serves a page (also reachable at `http://nillos-wardriver.local`) listing every session CSV on the card - open it in a browser on the same network and click to download.
 
-The phone stays connected over Bluetooth the whole time (it only drops for the few seconds an actual firmware flash takes). Tap the rig's screen, tap **Exit service mode** in the app, or send `rig service off` to return to normal. It also times out on its own after 10 minutes.
+The phone stays connected over Bluetooth the whole time. Tap the rig's screen, tap **Exit service mode** in the app, or send `rig service off` to return to normal. It also times out on its own after 10 minutes. (Firmware is flashed over USB with the desktop tool - there's no over-the-air update path.)

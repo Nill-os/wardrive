@@ -49,7 +49,7 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
-#include <ArduinoOTA.h>
+#include <ESPmDNS.h>
 #include "esp_wifi.h"
 #include <time.h>
 #include <unordered_map>
@@ -2017,17 +2017,16 @@ static void setScanning(bool want) {
 	phonePrintf("WD:SCANSTATE:%d", scanningActive ? 1 : 0); // phone app mirror
 }
 
-// ---- Service mode: OTA firmware updates + a log-download web server ----
+// ---- Service mode: a log-download web server ----
 // While parked (not driving) this board's own sniffer is off, so its radio is
 // free to join home WiFi. Service mode pauses scanning, joins WiFi and brings
-// up ArduinoOTA plus a tiny web server, so the day's CSV logs can be pulled
-// from a browser and new firmware flashed over the air without unplugging
-// anything. The phone BLE link stays up so the app can show the URL and turn
-// service mode back off; it's only dropped when a firmware flash actually
-// begins (ArduinoOTA.onStart), to free heap for the update. A 10-minute idle
-// timeout, a touch, or a "rig service off" command exits back to normal.
+// up a tiny web server, so the day's CSV logs can be pulled from a browser
+// without unplugging anything or removing the SD card. The phone BLE link stays
+// up so the app can show the URL and turn service mode back off. A 10-minute
+// idle timeout, a touch, or a "rig service off" command exits back to normal.
+// (Firmware is flashed over USB with the desktop tool - there is no over-the-air
+// update path.)
 static WebServer serviceServer(80);
-static bool serviceOtaReady = false;
 static uint32_t serviceModeStartedMs = 0;
 static const uint32_t SERVICE_MODE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
 
@@ -2056,9 +2055,7 @@ static String serviceListHtml() {
 		}
 		dir.close();
 	}
-	html += F("</ul><p><small>Firmware updates: flash over the air to host "
-			  "<b>nillos-wardriver</b> with PlatformIO (upload_protocol=espota) or "
-			  "arduino-cli.</small></p>");
+	html += F("</ul>");
 	return html;
 }
 
@@ -2091,7 +2088,7 @@ static void serviceHandleDownload() {
 void stopServiceMode() {
 	if (!serviceModeActive) return;
 	serviceServer.stop();
-	if (serviceOtaReady) { ArduinoOTA.end(); serviceOtaReady = false; }
+	MDNS.end();
 	WiFi.disconnect(true);
 	WiFi.mode(WIFI_MODE_STA);
 	serviceModeActive = false;
@@ -2128,24 +2125,17 @@ void startServiceMode() {
 		return;
 	}
 	String ip = WiFi.localIP().toString();
-	ArduinoOTA.setHostname("nillos-wardriver");
-	// Password-protect OTA when one is configured (also gates the web server,
-	// see serviceAuthOk). Without it, service mode trusts everyone on the LAN.
+	// A configured service password gates the web server (see serviceAuthOk).
+	// Without it, service mode trusts everyone on the LAN.
 	if (config.servicePassword.length() > 0) {
-		ArduinoOTA.setPassword(config.servicePassword.c_str());
 		logEvent("service: password protected", COLOR_TEXT_DIM);
 	} else {
 		logEvent("service: OPEN (set service_password)", COLOR_ORANGE);
 	}
-	// Free the BLE heap only once a real flash starts - the phone link stays
-	// up the rest of the time so the app can show the URL and exit service mode.
-	ArduinoOTA.onStart([]() {
-		CydBleLink::suspendServer();
-		logEvent("OTA UPDATING - do not power off", COLOR_ORANGE);
-	});
-	ArduinoOTA.onEnd([]() { logEvent("OTA done, rebooting", COLOR_GREEN); });
-	ArduinoOTA.begin();
-	serviceOtaReady = true;
+	// Advertise nillos-wardriver.local so the log server is reachable by name,
+	// not just IP (the desktop tool defaults to this host).
+	MDNS.begin("nillos-wardriver");
+	MDNS.addService("http", "tcp", 80);
 	serviceServer.on("/", serviceHandleRoot);
 	serviceServer.on("/dl", serviceHandleDownload);
 	serviceServer.begin();
@@ -2153,14 +2143,13 @@ void startServiceMode() {
 	serviceModeStartedMs = millis();
 	logEvent("SERVICE MODE  http://" + ip, COLOR_CYAN);
 	phonePrintf("WD:SERVICE on ip=%s", ip.c_str());
-	if (WARDRIVE_DEBUG) Serial.printf("[service] up at http://%s (OTA host nillos-wardriver)\n", ip.c_str());
+	if (WARDRIVE_DEBUG) Serial.printf("[service] log server up at http://%s\n", ip.c_str());
 }
 
-// Called every loop() while service mode is up: pump OTA + the web server, and
-// exit on the idle timeout (a touch-to-exit is handled by the touch dispatch).
+// Called every loop() while service mode is up: pump the web server, and exit
+// on the idle timeout (a touch-to-exit is handled by the touch dispatch).
 static void serviceModeTick() {
 	if (!serviceModeActive) return;
-	ArduinoOTA.handle();
 	serviceServer.handleClient();
 	if (millis() - serviceModeStartedMs > SERVICE_MODE_TIMEOUT_MS) {
 		logEvent("service: idle timeout", COLOR_TEXT_DIM);

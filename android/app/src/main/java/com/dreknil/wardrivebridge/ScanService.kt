@@ -112,6 +112,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         val gpsFix: Boolean, val sats: Int, val sdOk: Boolean, val pendingUploads: Int, val atMs: Long,
         /** The CYD screen's own WIGLE / BT numbers for its current run (null on older firmware). */
         val rigWifi: Int? = null, val rigBle: Int? = null,
+        /** Self-telemetry from newer firmware (null on older builds): free RAM (KB),
+         *  free SD space (MB, -1 if unknown), and whether the wifi_node link is up. */
+        val freeHeapKB: Int? = null, val sdFreeMB: Int? = null, val wifiNodeUp: Boolean? = null,
     )
     var rigHealth: RigHealth? = null; private set
     var runStartMs = 0L; private set
@@ -270,6 +273,15 @@ class ScanService : Service(), RigLinkManager.Listener {
     val wifiCountThisRun: Int get() = loggedWifiMacsThisRun.size
     val bleCountThisRun: Int get() = loggedBleMacsThisRun.size
 
+    // Devices logged this run whose MAC was in no previous run at all - i.e.
+    // new to this phone's whole collection, the "new finds" WiGLE-style number
+    // that makes a drive feel worthwhile. Counted locally against the
+    // historicalIndex snapshot taken at startRun(), so it's instant and exact
+    // for our own data (WiGLE's own credited-new count still lives in the
+    // Analytics account stats, which only it can know).
+    private var newThisRunCount = 0
+    val newThisRun: Int get() = newThisRunCount
+
     private var lastExternalUiUpdateMs = 0L
 
     /** Refreshes everything outside the app that shows run state: notification, widget, tile. */
@@ -351,6 +363,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         loggedWifiMacsThisRun.clear()
         loggedBleMacsThisRun.clear()
         loggedCellIdsThisRun.clear()
+        newThisRunCount = 0
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         // Blocking-but-brief, once per run start - the old WigleCsvWriter's
         // constructor did the same thing (synchronous file create + header
@@ -519,6 +532,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             Source.RIG_BLE, Source.PHONE_BLE -> loggedBleMacsThisRun.add(tagged2.mac)
             Source.PHONE_CELL -> loggedCellIdsThisRun.add(tagged2.mac)
         }
+        if (newToDb && !historicalIndex.containsKey(tagged2.mac)) newThisRunCount++
         if (newToDb && runId != null) {
             val entity = tagged2.toEntity(runId)
             dbExecutor.execute {
@@ -659,7 +673,8 @@ class ScanService : Service(), RigLinkManager.Listener {
             val gps = field("gps")
             if (gps != null) {
                 val health = RigHealth(gps == 1, field("sats") ?: -1, field("sd") == 1, field("pend") ?: 0, System.currentTimeMillis(),
-                    field("rw"), field("rb"))
+                    field("rw"), field("rb"),
+                    field("heap"), field("sdfree"), field("wnode")?.let { it == 1 })
                 mainHandler.post { rigHealth = health }
             }
         }

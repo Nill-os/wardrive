@@ -629,6 +629,41 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         while (terminalLines.size > 200) terminalLines.removeFirst()
         binding.terminalLog.text = terminalLines.joinToString("\n")
         binding.terminalScroll.post { binding.terminalScroll.fullScroll(View.FOCUS_DOWN) }
+
+        // The rig announces its service-mode URL (log web server + OTA) as
+        // "WD:SERVICE on ip=<addr>" the moment it joins WiFi - pop the URL so
+        // it's one tap to know where to point a browser / OTA upload.
+        if (line.contains("WD:SERVICE on ip=")) {
+            val ip = line.substringAfter("ip=").trim().substringBefore(' ')
+            if (ip.isNotEmpty()) showServiceModeDialog(ip)
+        } else if (line.contains("WD:SERVICE off")) {
+            serviceModeDialog?.dismiss(); serviceModeDialog = null
+        } else if (line.contains("WD:SERVICE error=")) {
+            val why = line.substringAfter("error=").trim()
+            Toast.makeText(this, "Service mode failed: ${if (why == "nowifi") "no WiFi in the rig's config.cfg" else "couldn't join WiFi"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private var serviceModeDialog: AlertDialog? = null
+
+    private fun showServiceModeDialog(ip: String) {
+        serviceModeDialog?.dismiss()
+        serviceModeDialog = AlertDialog.Builder(this)
+            .setTitle("Rig service mode")
+            .setMessage(
+                "The rig is on WiFi at:\n\nhttp://$ip\n\n" +
+                    "Open that in a browser on the same network to download the session CSV logs. " +
+                    "For firmware updates, flash over the air to host \"nillos-wardriver\".\n\n" +
+                    "Tap the rig's screen, or Exit below, to return to normal scanning."
+            )
+            .setPositiveButton("Open in browser") { _, _ ->
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://$ip"))) } catch (_: Exception) {}
+            }
+            .setNegativeButton("Exit service mode") { _, _ ->
+                scanService?.rigLink?.sendRaw("rig service off")
+            }
+            .setNeutralButton("Close", null)
+            .show()
     }
 
     override fun onPersistentTrackerAlert(tagged: Observation, previousSighting: HistoricalPoint) {
@@ -1022,18 +1057,28 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (health != null) {
                 val gps = if (health.gpsFix) "RIG GPS FIX" + (if (health.sats >= 0) " ${health.sats} SATS" else "") else "RIG GPS: NO FIX"
                 val sd = if (health.sdOk) "SD OK" else "SD FAIL"
+                val sdFree = health.sdFreeMB?.takeIf { it >= 0 }?.let { " (${fmtStorage(it)} FREE)" } ?: ""
                 val pend = if (health.pendingUploads > 0) " · ${health.pendingUploads} TO UPLOAD (TAP)" else ""
-                binding.rigHealthText.text = "$gps · $sd$pend"
+                // Second telemetry line: wifi_node link, free RAM. Only shown on
+                // firmware new enough to report them, so older rigs read unchanged.
+                val nodeBits = mutableListOf<String>()
+                health.wifiNodeUp?.let { nodeBits.add(if (it) "WIFI NODE UP" else "WIFI NODE DOWN") }
+                health.freeHeapKB?.let { nodeBits.add("RAM ${it}K") }
+                val telemetry = if (nodeBits.isNotEmpty()) "\n${nodeBits.joinToString(" · ")}" else ""
+                binding.rigHealthText.text = "$gps · $sd$sdFree$pend$telemetry"
+                val nodeDown = health.wifiNodeUp == false
                 binding.rigHealthText.setTextColor(ContextCompat.getColor(this,
-                    if (health.gpsFix && health.sdOk) R.color.cyan_500 else R.color.red_error))
+                    if (health.gpsFix && health.sdOk && !nodeDown) R.color.cyan_500 else R.color.red_error))
             }
 
             val shown = uniqueWifi.size + uniqueBle.size + cell
             val excluded = service.excludedCount
+            val newFinds = service.newThisRun
+            val newSuffix = if (newFinds > 0) "  ·  NEW $newFinds" else ""
             binding.totalStatus.text = if (excluded > 0) {
-                "TOTAL: ${shown + excluded}  (${excluded} EXCLUDED)"
+                "TOTAL: ${shown + excluded}  (${excluded} EXCLUDED)$newSuffix"
             } else {
-                "TOTAL: $shown"
+                "TOTAL: $shown$newSuffix"
             }
 
             updateMapStatusOverlay(service, uniqueWifi.size, uniqueWifi.size + uniqueBle.size, uniqueBle.size)
@@ -1516,14 +1561,15 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun showRunOptions(run: RunSummary) {
         AlertDialog.Builder(this)
             .setTitle(run.note.ifBlank { run.label })
-            .setItems(arrayOf("View on Map", "Share", "Add/Edit Note", "Export as GPX", "Export as KML (Google Earth)", "Delete")) { _, which ->
+            .setItems(arrayOf("View on Map", "Share", "Add/Edit Note", "Export as GPX", "Export as KML (Google Earth)", "Export as Aircrack CSV", "Delete")) { _, which ->
                 when (which) {
                     0 -> viewRunOnMap(run)
                     1 -> shareRun(run)
                     2 -> editNote(run)
                     3 -> exportGpx(run)
                     4 -> exportKml(run)
-                    5 -> confirmDeleteLog(run)
+                    5 -> exportAircrack(run)
+                    6 -> confirmDeleteLog(run)
                 }
             }
             .show()
@@ -1559,6 +1605,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 } else {
                     shareFile(gpxFile, "application/gpx+xml")
                 }
+            }
+        }.start()
+    }
+
+    private fun exportAircrack(run: RunSummary) {
+        Thread {
+            val file = AircrackExporter.export(this, dao, run.id)
+            runOnUiThread {
+                if (file == null) Toast.makeText(this, "Nothing to export in that log", Toast.LENGTH_SHORT).show()
+                else shareFile(file, "text/csv")
             }
         }.start()
     }

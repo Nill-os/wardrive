@@ -84,6 +84,16 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "Rig forgotten - pair again from the rig's CFG tab", Toast.LENGTH_LONG).show()
         }
         binding.useCurrentLocationButton.setOnClickListener { fillCurrentLocation() }
+        binding.serviceModeButton.setOnClickListener {
+            val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+            if (link == null || ScanService.instance?.rigConnected != true) {
+                Toast.makeText(this, "Connect to the rig first", Toast.LENGTH_SHORT).show()
+            } else {
+                link.sendRaw("rig service on")
+                Toast.makeText(this, "Rig joining WiFi… the URL will pop up on the dashboard", Toast.LENGTH_LONG).show()
+                finish() // back to the dashboard, where the URL dialog appears
+            }
+        }
         binding.saveSettingsButton.setOnClickListener { save() }
     }
 

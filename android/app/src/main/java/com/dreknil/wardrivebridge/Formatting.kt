@@ -11,3 +11,9 @@ import java.util.Locale
 private val thousandsFormat = NumberFormat.getIntegerInstance(Locale.US)
 
 fun fmtCount(n: Int): String = thousandsFormat.format(n)
+
+// Free storage from a megabyte count - "512 MB" under 1 GB, "3.7 GB" above,
+// for the rig's SD-space telemetry line.
+fun fmtStorage(megabytes: Int): String =
+    if (megabytes >= 1024) "%.1f GB".format(Locale.US, megabytes / 1024.0)
+    else "$megabytes MB"

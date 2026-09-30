@@ -155,7 +155,7 @@ class CarDashboardScreen(carContext: CarContext) : Screen(carContext) {
 
         return PaneTemplate.Builder(pane.build())
             .setHeaderAction(Action.APP_ICON)
-            .setTitle("Wardrive Bridge")
+            .setTitle("Nill OS - Wardriver")
             .build()
     }
 

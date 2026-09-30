@@ -18,9 +18,10 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="&gt; WARDRIVE BRIDGE"
+            android:text="&gt; NILL OS - WARDRIVER"
             android:textColor="@color/cyan_500"
-            android:textSize="20sp"
+            android:textSize="18sp"
+            android:maxLines="1"
             android:textStyle="bold" />
 
         <TextView

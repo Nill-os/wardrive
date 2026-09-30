@@ -268,8 +268,7 @@
             android:background="@drawable/bg_card_rounded"
             android:padding="12dp"
             android:layout_marginBottom="8dp"
-            android:clickable="true"
-            android:focusable="true">
+            android:focusable="false">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -310,8 +309,7 @@
                 android:background="@drawable/bg_card_rounded"
                 android:padding="12dp"
                 android:layout_marginEnd="4dp"
-                android:clickable="true"
-                android:focusable="true">
+                android:focusable="false">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -347,8 +345,7 @@
                 android:background="@drawable/bg_card_rounded"
                 android:padding="12dp"
                 android:layout_marginStart="4dp"
-                android:clickable="true"
-                android:focusable="true">
+                android:focusable="false">
 
                 <TextView
                     android:layout_width="wrap_content"

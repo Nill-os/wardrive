@@ -43,8 +43,20 @@ class RunLogAdapter : RecyclerView.Adapter<RunLogAdapter.ViewHolder>() {
     private val dateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.US)
     private val isoFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
+    // Which run's row to highlight (-1 = none) - set when a Records tile is
+    // tapped so the matching run in this list stands out after we scroll to it.
+    private var highlightId: Long = -1L
+
     fun submitList(newRows: List<RunLogRow>) {
         rows = newRows
+        notifyDataSetChanged()
+    }
+
+    /** The adapter position of a run by id, or -1. */
+    fun positionOf(id: Long): Int = rows.indexOfFirst { it.id == id }
+
+    fun highlight(id: Long) {
+        highlightId = id
         notifyDataSetChanged()
     }
 
@@ -56,13 +68,14 @@ class RunLogAdapter : RecyclerView.Adapter<RunLogAdapter.ViewHolder>() {
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val row = rows[position]
         val prevWifi = if (position + 1 < rows.size) rows[position + 1].wifiCount else null
-        holder.bind(row, dateFormat, isoFormat, prevWifi)
+        holder.bind(row, dateFormat, isoFormat, prevWifi, row.id == highlightId)
     }
 
     override fun getItemCount(): Int = rows.size
 
     class ViewHolder(private val binding: ItemRunLogRowBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(row: RunLogRow, dateFormat: SimpleDateFormat, isoFormat: SimpleDateFormat, prevWifi: Int?) {
+        fun bind(row: RunLogRow, dateFormat: SimpleDateFormat, isoFormat: SimpleDateFormat, prevWifi: Int?, highlighted: Boolean) {
+            binding.root.setBackgroundColor(if (highlighted) Color.parseColor("#14314A") else Color.TRANSPARENT)
             binding.rowDate.text = dateFormat.format(Date(row.startedAtMs))
             binding.rowDuration.text = formatDurationMs(row.durationMs(isoFormat))
             binding.rowWifi.text = "${row.wifiCount}"

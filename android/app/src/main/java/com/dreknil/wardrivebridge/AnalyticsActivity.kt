@@ -112,6 +112,14 @@ class AnalyticsActivity : AppCompatActivity() {
                 binding.runLogEmptyText.visibility = if (runLog.isEmpty()) View.VISIBLE else View.GONE
                 binding.runLogList.visibility = if (runLog.isEmpty()) View.GONE else View.VISIBLE
                 runLogAdapter.submitList(runLog)
+                expandRunLog()  // this RecyclerView sits in a ScrollView (nested scroll off) and
+                                // wasn't expanding to fit all rows - force its full height so every run shows.
+
+                // Records tiles jump to their run in the log below (as the
+                // section says). setOnClickListener makes the tile clickable.
+                binding.recordLongestRun.setOnClickListener { longest?.let { jumpToRun(it.id) } }
+                binding.recordMostWifi.setOnClickListener { mostWifiRun?.let { jumpToRun(it.id) } }
+                binding.recordMostBle.setOnClickListener { mostBleRun?.let { jumpToRun(it.id) } }
 
                 buildCalendar(dayCounts)
                 buildHourChart(hourCounts)
@@ -125,6 +133,48 @@ class AnalyticsActivity : AppCompatActivity() {
                 buildRegulars(regulars)
             }
         }.start()
+    }
+
+    // Scroll the screen so the given run's row in the log is visible, and
+    // highlight it - the action behind the Records tiles. The run log is a
+    // RecyclerView inside the page's ScrollView (all rows laid out, no inner
+    // scrolling), so the target Y is the list's offset in the scroll content
+    // plus the row's index times a row height.
+    // A RecyclerView with wrap_content inside a ScrollView doesn't reliably
+    // measure to its full content height here (it came out ~9 rows tall for a
+    // 45-run list, hiding the rest since nested scrolling is off). Force the
+    // height to one row times the item count so every run is shown. Rows are a
+    // single uniform line, so this is exact. Retries once if the first row
+    // hasn't been measured yet.
+    private fun expandRunLog(attempt: Int = 0) {
+        binding.runLogList.post {
+            val count = runLogAdapter.itemCount
+            val rowH = binding.runLogList.getChildAt(0)?.height ?: 0
+            if (count == 0) return@post
+            if (rowH == 0) { if (attempt < 3) expandRunLog(attempt + 1); return@post }
+            val full = rowH * count
+            val lp = binding.runLogList.layoutParams
+            if (lp.height != full) { lp.height = full; binding.runLogList.layoutParams = lp }
+        }
+    }
+
+    private fun jumpToRun(runId: Long) {
+        val index = runLogAdapter.positionOf(runId)
+        if (index < 0) return
+        runLogAdapter.highlight(runId)
+        // The RecyclerView lays out every row (it's in a ScrollView with no
+        // inner scrolling), so the row's own view gives an exact position -
+        // sum its top plus its parents' up to the ScrollView, no height guess.
+        binding.runLogList.post {
+            val count = runLogAdapter.itemCount
+            val listH = binding.runLogList.height
+            val rowH = if (count > 0 && listH > 0) listH / count else (binding.runLogList.getChildAt(0)?.height ?: dp(44))
+            var listY = 0
+            var v: android.view.View? = binding.runLogList
+            while (v != null && v !== binding.root) { listY += v.top; v = v.parent as? android.view.View }
+            val target = (listY + index * rowH - dp(72)).coerceAtLeast(0)
+            binding.root.smoothScrollTo(0, target)
+        }
     }
 
     // ---- Calendar ----

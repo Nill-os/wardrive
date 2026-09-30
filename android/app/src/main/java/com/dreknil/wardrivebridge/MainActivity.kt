@@ -1309,16 +1309,23 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     }
 
     private fun openFloorPlan(file: File) {
-        val bmp = BitmapFactory.decodeFile(file.absolutePath)
-        if (bmp == null) {
-            Toast.makeText(this, "Couldn't decode that image", Toast.LENGTH_SHORT).show()
-            return
-        }
-        currentFloorPlanImage = file
-        binding.floorPlanView.setImage(bmp)
-        floorPlanMarkers = FloorPlanStore.loadMarkers(file)
-        binding.floorPlanView.setMarkers(floorPlanMarkers)
-        binding.floorPlanHint.visibility = View.VISIBLE
+        // Decode off the main thread - a phone-camera floor-plan photo can be
+        // several MB and would visibly hitch the UI if decoded inline.
+        Thread {
+            val bmp = BitmapFactory.decodeFile(file.absolutePath)
+            val markers = if (bmp != null) FloorPlanStore.loadMarkers(file) else mutableListOf()
+            runOnUiThread {
+                if (bmp == null) {
+                    Toast.makeText(this, "Couldn't decode that image", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                currentFloorPlanImage = file
+                binding.floorPlanView.setImage(bmp)
+                floorPlanMarkers = markers
+                binding.floorPlanView.setMarkers(floorPlanMarkers)
+                binding.floorPlanHint.visibility = View.VISIBLE
+            }
+        }.start()
     }
 
     private fun loadMostRecentFloorPlan() {

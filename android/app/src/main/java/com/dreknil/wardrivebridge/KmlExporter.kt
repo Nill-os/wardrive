@@ -64,7 +64,7 @@ object KmlExporter {
 
     private fun style(out: java.io.Writer, id: String, color: String) {
         out.write("<Style id=\"$id\"><IconStyle><color>$color</color><scale>0.8</scale>")
-        out.write("<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>\n")
+        out.write("<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>\n")
     }
 
     private fun esc(s: String): String = s

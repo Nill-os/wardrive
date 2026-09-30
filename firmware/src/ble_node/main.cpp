@@ -68,7 +68,17 @@ uint32_t observationsSent = 0;
 // them down to LED_BRIGHTNESS_PCT before writing, so this one constant
 // controls how bright the whole LED is.
 static const uint32_t LED_FLICKER_MS = 150;
-uint8_t ledBrightnessPct = 3; // 0-100; relayed from cyd_node via wifi_node
+uint8_t ledBrightnessPct = 3;
+// Customizable status-LED colors (0xRRGGBB), relayed from cyd_node's config.cfg.
+uint32_t ledColorAp = 0xFF00FF, ledColorBle = 0x00FFFF, ledColorOk = 0x00FF00, ledColorFail = 0xFF0000;
+// Map a canonical accent color the code passes to the customized palette color.
+static uint32_t remapLedColor(uint8_t r, uint8_t g, uint8_t b) {
+	if (r == 255 && g == 0 && b == 255) return ledColorAp;
+	if (r == 0 && g == 255 && b == 255) return ledColorBle;
+	if (r == 0 && g == 255 && b == 0) return ledColorOk;
+	if (r == 255 && g == 0 && b == 0) return ledColorFail;
+	return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+} // 0-100; relayed from cyd_node via wifi_node
 uint32_t ledOffAtMs = 0;
 bool ledPriority = false; // true while a click/upload-status flash is showing
 
@@ -84,6 +94,8 @@ static uint8_t scaleBrightness(uint8_t channel) {
 // would never look like it settled back to idle.
 static void flashLed(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs = LED_FLICKER_MS, bool priority = false) {
 	if (!priority && ledPriority && millis() < ledOffAtMs) return;
+	uint32_t c = remapLedColor(r, g, b);
+	r = (c >> 16) & 0xFF; g = (c >> 8) & 0xFF; b = c & 0xFF;
 	neopixelWrite(RGB_BUILTIN, scaleBrightness(r), scaleBrightness(g), scaleBrightness(b));
 	ledOffAtMs = millis() + durationMs;
 	ledPriority = priority;
@@ -172,6 +184,16 @@ static void handleLinkStatusLine(const String &line) {
 		int v = line.substring(18).toInt();
 		ledBrightnessPct = v < 0 ? 0 : v > 100 ? 100 : v;
 		if (WARDRIVE_DEBUG) Serial.printf("[cfg] LED brightness -> %u%%\n", ledBrightnessPct);
+	} else if (line.startsWith("CFG:ledColors=")) {
+		String v = line.substring(14);
+		int c1 = v.indexOf(','), c2 = v.indexOf(',', c1 + 1), c3 = v.indexOf(',', c2 + 1);
+		if (c1 > 0 && c2 > 0 && c3 > 0) {
+			ledColorAp = strtoul(v.substring(0, c1).c_str(), nullptr, 16);
+			ledColorBle = strtoul(v.substring(c1 + 1, c2).c_str(), nullptr, 16);
+			ledColorOk = strtoul(v.substring(c2 + 1, c3).c_str(), nullptr, 16);
+			ledColorFail = strtoul(v.substring(c3 + 1).c_str(), nullptr, 16);
+		}
+		if (WARDRIVE_DEBUG) Serial.printf("[cfg] LED colors ap=%06lX\n", (unsigned long)ledColorAp);
 	} else if (line.startsWith("SDOK:")) {
 		bool newVal = line.substring(5).toInt() != 0;
 		if (WARDRIVE_DEBUG && newVal != wifiNodeSdOk) {

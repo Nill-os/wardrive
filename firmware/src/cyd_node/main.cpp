@@ -200,16 +200,56 @@ static const uint8_t LEDC_CH_BL = 0, LEDC_CH_R = 1, LEDC_CH_G = 2, LEDC_CH_B = 3
 static uint8_t ledDuty = 8;        // 0-255, the "on" level for the RGB LED
 static uint8_t screenDuty = 255;   // 0-255, TFT backlight
 
-static void setLed(bool r, bool g, bool b) {
-	ledcWrite(LEDC_CH_R, r ? ledDuty : 0);
-	ledcWrite(LEDC_CH_G, g ? ledDuty : 0);
-	ledcWrite(LEDC_CH_B, b ? ledDuty : 0);
+// The boolean r/g/b callers pass encodes WHICH status color to show (r+b = "AP seen",
+// g+b = "BLE seen", g = ok, r = fail, ...). Map that pattern to the customizable palette
+// (config.cfg's led_color_*), then drive each LED channel by PWM scaled to led_brightness.
+// Colors with no palette entry (blue=upload, white=low storage, yellow=phone) keep their
+// natural color built from the same channels.
+static void writeLedRGB(uint8_t cr, uint8_t cg, uint8_t cb) {
+	ledcWrite(LEDC_CH_R, (uint16_t)cr * ledDuty / 255);
+	ledcWrite(LEDC_CH_G, (uint16_t)cg * ledDuty / 255);
+	ledcWrite(LEDC_CH_B, (uint16_t)cb * ledDuty / 255);
 }
+
+static void setLed(bool r, bool g, bool b) {
+	uint32_t c;
+	if (r && b && !g) c = config.ledColorAp;        // purple - AP seen / re-link
+	else if (g && b && !r) c = config.ledColorBle;  // cyan - BLE seen
+	else if (g && !r && !b) c = config.ledColorOk;  // green - ok
+	else if (r && !g && !b) c = config.ledColorFail;// red - fail
+	else if (r && g && b) c = 0xFFFFFF;             // white - low storage
+	else if (r && g && !b) c = 0xFFFF00;           // yellow - phone connected
+	else if (b && !r && !g) c = 0x0000FF;          // blue - upload requested
+	else { writeLedRGB(0, 0, 0); return; }          // off
+	writeLedRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+}
+
+bool screenOn = true;
+uint32_t lastTouchWakeMs = 0;
 
 static void applyBrightness() {
 	ledDuty = (uint16_t)config.ledBrightness * 255 / 100;
 	screenDuty = (uint16_t)config.screenBrightness * 255 / 100;
-	ledcWrite(LEDC_CH_BL, screenDuty);
+	if (screenOn) ledcWrite(LEDC_CH_BL, screenDuty);
+}
+
+static void wakeScreen() {
+	lastTouchWakeMs = millis();
+	if (!screenOn) {
+		screenOn = true;
+		ledcWrite(LEDC_CH_BL, screenDuty);
+	}
+}
+
+// Blanks the backlight after screen_timeout_sec of no touch (0 = never). While a run is
+// active it stays on if screen_keep_on_scanning is set; otherwise it times out as normal.
+static void serviceScreenTimeout() {
+	if (config.screenTimeoutSec == 0) { if (!screenOn) wakeScreen(); return; }
+	if (scanningActive && config.screenKeepOnScanning) { lastTouchWakeMs = millis(); return; }
+	if (screenOn && millis() - lastTouchWakeMs > config.screenTimeoutSec * 1000UL) {
+		screenOn = false;
+		ledcWrite(LEDC_CH_BL, 0);
+	}
 }
 
 static const uint32_t LED_FLICKER_MS = 150;
@@ -2178,6 +2218,25 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			gpsFixKnown = true;
 			Serial.printf("[test] fake GPS %.6f,%.6f - logging to %s\n", lastKnownLat, lastKnownLon, TEST_SESSION_DIR);
 		}
+	} else if (line.startsWith("test:screentimeout ")) {
+		config.screenTimeoutSec = line.substring(19).toInt();
+		lastTouchWakeMs = millis();
+		Serial.printf("[test] screen timeout %lus, keepOnScanning=%d\n", (unsigned long)config.screenTimeoutSec, config.screenKeepOnScanning);
+	} else if (line.startsWith("test:ledcolor ")) {
+		// "test:ledcolor RRGGBB RRGGBB RRGGBB RRGGBB" = ap ble ok fail (USB test).
+		String v = line.substring(14); int a=v.indexOf(' '),b2=v.indexOf(' ',a+1),cc=v.indexOf(' ',b2+1);
+		if (a>0&&b2>0&&cc>0) {
+			config.ledColorAp=strtoul(v.substring(0,a).c_str(),nullptr,16);
+			config.ledColorBle=strtoul(v.substring(a+1,b2).c_str(),nullptr,16);
+			config.ledColorOk=strtoul(v.substring(b2+1,cc).c_str(),nullptr,16);
+			config.ledColorFail=strtoul(v.substring(cc+1).c_str(),nullptr,16);
+			char c[64]; snprintf(c,sizeof(c),"CFG:ledColors=%06lX,%06lX,%06lX,%06lX",(unsigned long)config.ledColorAp,(unsigned long)config.ledColorBle,(unsigned long)config.ledColorOk,(unsigned long)config.ledColorFail);
+			wifiLinkSend(c);
+			flashLed(true,false,true,600,true); // show the new AP color now
+			Serial.printf("[test] LED colors ap=%06lX ble=%06lX ok=%06lX fail=%06lX, relayed\n",(unsigned long)config.ledColorAp,(unsigned long)config.ledColorBle,(unsigned long)config.ledColorOk,(unsigned long)config.ledColorFail);
+		}
+	} else if (line == "test:wake") {
+		wakeScreen(); Serial.println("[test] screen woken");
 	} else if (line.startsWith("test:bright ")) {
 		// "test:bright led <0-100>" / "test:bright screen <0-100>" - live brightness (USB test).
 		String rest = line.substring(12); int sp = rest.indexOf(' ');
@@ -2246,8 +2305,8 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 	} else if (line == "test:forget") {
 		onForgetPhonesHandler();
 	} else if (line == "test:status") {
-		Serial.printf("[test] scanning=%d tab=%d fakegps=%d dir=%s pending=%d phone=%s rig=%d heap=%u maxblock=%u\n",
-					  scanningActive, (int)currentTab, testFakeGps, sessionDir(),
+		Serial.printf("[test] scanning=%d tab=%d fakegps=%d screenOn=%d dir=%s pending=%d phone=%s rig=%d heap=%u maxblock=%u\n",
+					  scanningActive, (int)currentTab, testFakeGps, screenOn, sessionDir(),
 					  uploader ? uploader->hasPending(sessionDir()) : -1, phoneLinkLabel(), (int)currentLinkState(),
 					  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 	} else if (line == "test:ls") {
@@ -2649,6 +2708,13 @@ void loop() {
 	// wasTouched gates this to fire once per press rather than once per
 	// poll while held down.
 	TouchPoint touch = readTouch();
+	if (touch.valid && !screenOn) {
+		// First touch on a blanked screen just wakes it - don't also fire a button.
+		wakeScreen();
+		wasTouched = true;
+		return;
+	}
+	if (touch.valid) lastTouchWakeMs = millis();
 	if (touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
 		lastTouchDispatchMs = millis();
 		bool hit = false;
@@ -2763,6 +2829,7 @@ void loop() {
 		if (millis() - phoneUploadClaimMs > 15000) phoneUploadClaimMs = 0;
 	}
 	serviceRelay();
+	serviceScreenTimeout();
 	phoneWasConnected = phoneConnected;
 
 	if (millis() - lastSdHealthBroadcastMs > SD_HEALTH_BROADCAST_MS) {
@@ -2776,6 +2843,10 @@ void loop() {
 		snprintf(cfgLine, sizeof(cfgLine), "CFG:channelHopMs=%lu", (unsigned long)config.channelHopMs);
 		wifiLinkSend(cfgLine);
 		snprintf(cfgLine, sizeof(cfgLine), "CFG:ledBrightness=%u", (unsigned)config.ledBrightness);
+		wifiLinkSend(cfgLine);
+		snprintf(cfgLine, sizeof(cfgLine), "CFG:ledColors=%06lX,%06lX,%06lX,%06lX",
+				 (unsigned long)config.ledColorAp, (unsigned long)config.ledColorBle,
+				 (unsigned long)config.ledColorOk, (unsigned long)config.ledColorFail);
 		wifiLinkSend(cfgLine);
 	}
 

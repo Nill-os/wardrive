@@ -76,7 +76,15 @@ struct WardriveConfig {
 	double homeRadiusM = 0.0; // 0 = geofence disabled
 	double excludeRadiusM = 0.0; // drop sightings within this many m of home; 0 = off
 	uint8_t ledBrightness = 3;    // 0-100 %, all boards' RGB status LEDs
+	// Customizable status-LED colors (0xRRGGBB). ap = a WiFi AP was seen,
+	// ble = a BLE device, ok = start/stop/success, fail = error/link down.
+	uint32_t ledColorAp = 0xFF00FF;   // purple
+	uint32_t ledColorBle = 0x00FFFF;  // cyan
+	uint32_t ledColorOk = 0x00FF00;   // green
+	uint32_t ledColorFail = 0xFF0000; // red
 	uint8_t screenBrightness = 100; // 0-100 %, cyd_node's TFT backlight
+	uint32_t screenTimeoutSec = 0;  // blank the CYD screen after this many s of no touch; 0 = never
+	bool screenKeepOnScanning = true; // don't blank while a run is active
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
 	uint32_t channelHopMs = 150;
 	bool pcapCaptureEnabled = false;

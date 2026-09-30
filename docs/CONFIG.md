@@ -19,6 +19,8 @@ exclude_radius_m=0
 retention_days=0
 led_brightness=3
 screen_brightness=100
+screen_timeout_sec=0
+led_color_ap=FF00FF
 channel_hop_ms=150
 ```
 
@@ -34,6 +36,9 @@ channel_hop_ms=150
 | `retention_days` | no | Delete **already-uploaded** session files older than this many days. The default, 0, keeps everything forever, which is the recommended setting. |
 | `led_brightness` | no | Status LED brightness on all three boards, 0-100 %. Default 3 (dim, easy on the eyes at night). |
 | `screen_brightness` | no | CYD screen backlight, 0-100 %. Default 100. |
+| `screen_timeout_sec` | no | Blank the CYD screen after this many seconds without a touch. 0 = never (default). A touch wakes it. |
+| `screen_keep_on_scanning` | no | Keep the screen on while a run is active (`true`, default), or let it time out anyway (`false`). |
+| `led_color_ap` / `led_color_ble` / `led_color_ok` / `led_color_fail` | no | Status-LED colors on all three boards, hex `RRGGBB`. AP seen (default purple), BLE seen (cyan), ok/start/stop (green), error (red). |
 | `channel_hop_ms` | no | How long each board dwells on a channel before hopping. Default 150 (just over one beacon interval). wifi_node hops 1/6/11; the CYD sweeps 1–11. |
 
 ## Keep it private

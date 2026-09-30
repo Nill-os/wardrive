@@ -15,5 +15,14 @@ exclude_radius_m=0
 led_brightness=3
 # CYD screen backlight, 0-100 %.
 screen_brightness=100
+# Blank the CYD screen after this many seconds of no touch. 0 = never off.
+screen_timeout_sec=0
+# Keep the screen on while a run is active (true), or let it time out anyway (false).
+screen_keep_on_scanning=true
+# Status-LED colors (hex RRGGBB): AP seen, BLE seen, ok/start/stop, error/fail.
+led_color_ap=FF00FF
+led_color_ble=00FFFF
+led_color_ok=00FF00
+led_color_fail=FF0000
 retention_days=0
 channel_hop_ms=150

@@ -1,6 +1,14 @@
 #include "WardriveConfig.h"
 #include <SD.h>
 
+static uint32_t parseHexColor(const String &v, uint32_t fallback) {
+	String h = v;
+	h.trim();
+	if (h.startsWith("#")) h = h.substring(1);
+	if (h.length() != 6) return fallback;
+	return (uint32_t)strtoul(h.c_str(), nullptr, 16) & 0xFFFFFF;
+}
+
 bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 	File f = SD.open(path);
 	if (!f) return false;
@@ -31,6 +39,12 @@ bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 		else if (key == "exclude_radius_m") outCfg.excludeRadiusM = value.toDouble();
 		else if (key == "led_brightness") { int v = value.toInt(); outCfg.ledBrightness = v < 0 ? 0 : v > 100 ? 100 : v; }
 		else if (key == "screen_brightness") { int v = value.toInt(); outCfg.screenBrightness = v < 0 ? 0 : v > 100 ? 100 : v; }
+		else if (key == "screen_timeout_sec") outCfg.screenTimeoutSec = (uint32_t)value.toInt();
+		else if (key == "screen_keep_on_scanning") outCfg.screenKeepOnScanning = (value == "1" || value == "true" || value == "yes");
+		else if (key == "led_color_ap") outCfg.ledColorAp = parseHexColor(value, outCfg.ledColorAp);
+		else if (key == "led_color_ble") outCfg.ledColorBle = parseHexColor(value, outCfg.ledColorBle);
+		else if (key == "led_color_ok") outCfg.ledColorOk = parseHexColor(value, outCfg.ledColorOk);
+		else if (key == "led_color_fail") outCfg.ledColorFail = parseHexColor(value, outCfg.ledColorFail);
 		else if (key == "retention_days") outCfg.retentionDays = (uint32_t)value.toInt();
 		else if (key == "channel_hop_ms") {
 			uint32_t parsed = (uint32_t)value.toInt();

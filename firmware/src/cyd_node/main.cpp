@@ -48,6 +48,8 @@
 #include <TFT_eSPI.h>
 
 #include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoOTA.h>
 #include "esp_wifi.h"
 #include <time.h>
 #include <unordered_map>
@@ -122,6 +124,10 @@ volatile bool scanningActive = false;
 volatile bool uploadRequested = false;
 bool wasScanning = false;
 bool sdOk = false;
+// True while parked in service mode (OTA + log web server own the WiFi radio).
+// Declared here, ahead of doUpload(), which checks it; the rest of the service
+// state and its functions live further down (see "Service mode").
+bool serviceModeActive = false;
 bool configOk = false;
 uint64_t sdUsedBytesCached = 0, sdTotalBytesCached = 0; // refreshed by checkStorage()
 
@@ -1676,6 +1682,10 @@ static void stopScanning() {
 }
 
 static UploadResult doUpload(bool force) {
+	// Service mode owns the WiFi radio (OTA + log server); an upload here would
+	// tear its connection down mid-session. Skip - the user can upload normally
+	// after leaving service mode.
+	if (serviceModeActive) return UploadResult::Skipped;
 	if (!uploader) {
 		if (WARDRIVE_DEBUG) Serial.println("[upload] skipped - SD/config not ready yet");
 		logEvent("upload skipped - SD/config not ready", COLOR_RED);
@@ -1772,7 +1782,140 @@ static void setScanning(bool want) {
 	phonePrintf("WD:SCANSTATE:%d", scanningActive ? 1 : 0); // phone app mirror
 }
 
+// ---- Service mode: OTA firmware updates + a log-download web server ----
+// While parked (not driving) this board's own sniffer is off, so its radio is
+// free to join home WiFi. Service mode pauses scanning, joins WiFi and brings
+// up ArduinoOTA plus a tiny web server, so the day's CSV logs can be pulled
+// from a browser and new firmware flashed over the air without unplugging
+// anything. The phone BLE link stays up so the app can show the URL and turn
+// service mode back off; it's only dropped when a firmware flash actually
+// begins (ArduinoOTA.onStart), to free heap for the update. A 10-minute idle
+// timeout, a touch, or a "rig service off" command exits back to normal.
+static WebServer serviceServer(80);
+static bool serviceOtaReady = false;
+static uint32_t serviceModeStartedMs = 0;
+static const uint32_t SERVICE_MODE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
+
+static bool serviceSafeCsvName(const String &name) {
+	if (name.length() == 0 || name.length() > 64) return false;
+	if (name.indexOf('/') >= 0 || name.indexOf("..") >= 0 || name.indexOf('\\') >= 0) return false;
+	return name.endsWith(".csv");
+}
+
+static String serviceListHtml() {
+	String html = F("<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
+					"<style>body{font-family:monospace;background:#0A0A12;color:#00F0FF;padding:16px}"
+					"a{color:#00F0FF}h1{font-size:18px}li{margin:8px 0}small{color:#7A7A92}</style>"
+					"<h1>&gt; NILL OS - WARDRIVER</h1><p>Session logs on the SD card:</p><ul>");
+	File dir = SD.open(sessionDir());
+	if (dir) {
+		for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+			String n = f.name();
+			int slash = n.lastIndexOf('/');
+			if (slash >= 0) n = n.substring(slash + 1);
+			if (n.endsWith(".csv")) {
+				html += "<li><a href='/dl?f=" + n + "'>" + n + "</a> <small>" +
+						String((unsigned long)(f.size() / 1024)) + " KB</small></li>";
+			}
+			f.close();
+		}
+		dir.close();
+	}
+	html += F("</ul><p><small>Firmware updates: flash over the air to host "
+			  "<b>nillos-wardriver</b> with PlatformIO (upload_protocol=espota) or "
+			  "arduino-cli.</small></p>");
+	return html;
+}
+
+static void serviceHandleRoot() { serviceServer.send(200, "text/html", serviceListHtml()); }
+
+static void serviceHandleDownload() {
+	String name = serviceServer.arg("f");
+	if (!serviceSafeCsvName(name)) { serviceServer.send(400, "text/plain", "bad name"); return; }
+	String path = String(sessionDir()) + "/" + name;
+	File f = SD.open(path, FILE_READ);
+	if (!f) { serviceServer.send(404, "text/plain", "not found"); return; }
+	serviceServer.sendHeader("Content-Disposition", "attachment; filename=" + name);
+	serviceServer.streamFile(f, "text/csv");
+	f.close();
+}
+
+void stopServiceMode() {
+	if (!serviceModeActive) return;
+	serviceServer.stop();
+	if (serviceOtaReady) { ArduinoOTA.end(); serviceOtaReady = false; }
+	WiFi.disconnect(true);
+	WiFi.mode(WIFI_MODE_STA);
+	serviceModeActive = false;
+	CydBleLink::resumeServer(); // no-op if never suspended; safe to call repeatedly
+	logEvent("service mode off", COLOR_TEXT_DIM);
+	phonePrintf("WD:SERVICE off");
+	if (WARDRIVE_DEBUG) Serial.println("[service] stopped");
+}
+
+void startServiceMode() {
+	if (serviceModeActive) return;
+	if (!config.valid || config.wifiSsid.length() == 0) {
+		logEvent("service: no wifi in config.cfg", COLOR_RED);
+		phonePrintf("WD:SERVICE error=nowifi");
+		return;
+	}
+	// Pause scanning (radio + files) and tell the other boards, same as an upload.
+	if (scanningActive) stopScanning();
+	setScanning(false);
+	logEvent("service: joining wifi...", COLOR_TEXT_DIM);
+	WiFi.mode(WIFI_MODE_STA);
+	WiFi.begin(config.wifiSsid.c_str(), config.wifiPass.c_str());
+	uint32_t start = millis();
+	while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(100);
+	if (WiFi.status() != WL_CONNECTED && config.backupWifiSsid.length() > 0) {
+		WiFi.begin(config.backupWifiSsid.c_str(), config.backupWifiPass.c_str());
+		start = millis();
+		while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(100);
+	}
+	if (WiFi.status() != WL_CONNECTED) {
+		logEvent("service: wifi failed", COLOR_RED);
+		phonePrintf("WD:SERVICE error=wifi");
+		WiFi.disconnect(true);
+		return;
+	}
+	String ip = WiFi.localIP().toString();
+	ArduinoOTA.setHostname("nillos-wardriver");
+	// Free the BLE heap only once a real flash starts - the phone link stays
+	// up the rest of the time so the app can show the URL and exit service mode.
+	ArduinoOTA.onStart([]() {
+		CydBleLink::suspendServer();
+		logEvent("OTA UPDATING - do not power off", COLOR_ORANGE);
+	});
+	ArduinoOTA.onEnd([]() { logEvent("OTA done, rebooting", COLOR_GREEN); });
+	ArduinoOTA.begin();
+	serviceOtaReady = true;
+	serviceServer.on("/", serviceHandleRoot);
+	serviceServer.on("/dl", serviceHandleDownload);
+	serviceServer.begin();
+	serviceModeActive = true;
+	serviceModeStartedMs = millis();
+	logEvent("SERVICE MODE  http://" + ip, COLOR_CYAN);
+	phonePrintf("WD:SERVICE on ip=%s", ip.c_str());
+	if (WARDRIVE_DEBUG) Serial.printf("[service] up at http://%s (OTA host nillos-wardriver)\n", ip.c_str());
+}
+
+// Called every loop() while service mode is up: pump OTA + the web server, and
+// exit on the idle timeout (a touch-to-exit is handled by the touch dispatch).
+static void serviceModeTick() {
+	if (!serviceModeActive) return;
+	ArduinoOTA.handle();
+	serviceServer.handleClient();
+	if (millis() - serviceModeStartedMs > SERVICE_MODE_TIMEOUT_MS) {
+		logEvent("service: idle timeout", COLOR_TEXT_DIM);
+		stopServiceMode();
+	}
+}
+
 void onSingleClickHandler() {
+	// A touch while parked in service mode just leaves it, rather than
+	// toggling a run - you tapped the screen to get back to normal.
+	if (serviceModeActive) { stopServiceMode(); return; }
 	setScanning(!scanningActive);
 	if (WARDRIVE_DEBUG) Serial.printf("[touch] toggle -> scanning=%d (saved, broadcast)\n", scanningActive);
 }
@@ -1992,11 +2135,19 @@ static void wdstreamEmitStatus() {
 	// gps/sats/sd/pend are extra fields for the Wardrive Bridge app's rig-health line;
 	// wdstream clients that don't know them just ignore them.
 	// rw/rb are this screen's own WIGLE/BT counts, so the phone can show the same numbers.
-	phonePrintf("WD:STATUS aps=%lu bles=%lu ch=%u uptime=%lum%02lus gps=%d sats=%d sd=%d pend=%u scan=%d rw=%lu rb=%lu",
+	// heap (free RAM, KB), sdfree (free card space, MB) and wnode (wifi_node link up:
+	// 1 = fresh UART traffic, 0 = the sniffer/GPS board is unreachable) are extra rig
+	// self-telemetry the app surfaces on its rig-health line - all trailing and named,
+	// so older app builds that don't parse them just ignore them.
+	uint32_t heapKB = ESP.getFreeHeap() / 1024;
+	long sdFreeMB = sdOk ? (long)((sdTotalBytesCached - sdUsedBytesCached) / (1024ULL * 1024ULL)) : -1;
+	int wnodeUp = (currentLinkState() == LinkState::Connected) ? 1 : 0;
+	phonePrintf("WD:STATUS aps=%lu bles=%lu ch=%u uptime=%lum%02lus gps=%d sats=%d sd=%d pend=%u scan=%d rw=%lu rb=%lu heap=%lu sdfree=%ld wnode=%d",
 				  (unsigned long)wdstreamApCount, (unsigned long)wdstreamBleCount,
 				  (unsigned)lastKnownChannel, (unsigned long)(uptimeS / 60), (unsigned long)(uptimeS % 60),
 				  gpsFixKnown ? 1 : 0, (int)lastKnownSatCount, sdOk ? 1 : 0, (unsigned)pendingUploadFiles, scanningActive ? 1 : 0,
-				  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun);
+				  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun,
+				  (unsigned long)heapKB, sdFreeMB, wnodeUp);
 }
 
 // fromUsb: the "test:" commands below can wipe logs and redirect uploads, so
@@ -2217,6 +2368,10 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		if (sp > 0) applyConfigSetting(rest.substring(0, sp), rest.substring(sp + 1));
 	} else if (line.startsWith("rig ack ")) {
 		relayMarkUploaded(line.substring(8));
+	} else if (line == "rig service on") {
+		startServiceMode();
+	} else if (line == "rig service off") {
+		stopServiceMode();
 	} else if (line == "rig autoupload off") {
 		phoneUploadClaimMs = millis(); // the phone is handling uploads - hold off the rig's WiFi one
 	} else if (line == "rig upload") {
@@ -2760,11 +2915,25 @@ uint32_t lastTouchDispatchMs = 0;
 static const uint32_t TOUCH_DISPATCH_COOLDOWN_MS = 400;
 
 void loop() {
+	// Pump OTA + the log web server while parked in service mode. The rest of
+	// loop() still runs (BLE poll, the wired link, command handling) so the
+	// phone can show the URL and send "rig service off"; the scanning and
+	// auto-upload paths below are inert because scanningActive is false and
+	// they're guarded on !serviceModeActive.
+	serviceModeTick();
+
 	// Edge-triggered on press (not release) so a touch reacts the instant
 	// you tap it, same feel as the old physical button's press-to-act -
 	// wasTouched gates this to fire once per press rather than once per
 	// poll while held down.
 	TouchPoint touch = readTouch();
+	if (serviceModeActive && touch.valid && !wasTouched) {
+		// Any touch leaves service mode (and wakes the screen if it was off).
+		wasTouched = true;
+		if (!screenOn) wakeScreen();
+		stopServiceMode();
+		return;
+	}
 	if (touch.valid && !screenOn) {
 		// First touch on a blanked screen just wakes it - don't also fire a button.
 		wakeScreen();

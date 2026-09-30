@@ -459,6 +459,7 @@ static bool getLoggablePosition(double &lat, double &lon, double &alt, double &a
 // - that's a memory-management detail, not a "duplicates are OK after a
 // while" policy.
 static const double AP_DEDUP_MOVEMENT_THRESHOLD_M = 40.0;
+static const uint32_t AP_NOFIX_RELOG_MS = 5000; // no-GPS re-forward interval, keeps the phone's live stream alive without flooding it
 static const uint32_t AP_DEDUP_FORGET_AFTER_MS = 2UL * 3600UL * 1000UL; // 2 hours
 static const uint32_t AP_DEDUP_PRUNE_SWEEP_MS = 300000; // how often to check for entries to forget
 static const size_t AP_DEDUP_MAX_ENTRIES = 3000;
@@ -518,8 +519,17 @@ static bool shouldLogAp(const uint8_t *mac, double lat, double lon) {
 	uint64_t key = macToKey(mac);
 	auto it = apDedupState.find(key);
 	if (it != apDedupState.end()) {
-		double movedM = TinyGPSPlus::distanceBetween(lat, lon, it->second.lat, it->second.lon);
-		if (movedM < AP_DEDUP_MOVEMENT_THRESHOLD_M) return false; // haven't moved - still the same sighting
+		if (lat == 0.0 && lon == 0.0) {
+			// No GPS fix: position never changes, so movement-based de-dup would
+			// suppress this BSSID forever after the first forward and the phone's
+			// live stream would go dead. Re-forward on a short timer instead so
+			// the live tools stay populated at a stationary desk (the phone
+			// de-dups by MAC, so this just refreshes the entry's RSSI).
+			if (now - it->second.lastLoggedMs < AP_NOFIX_RELOG_MS) return false;
+		} else {
+			double movedM = TinyGPSPlus::distanceBetween(lat, lon, it->second.lat, it->second.lon);
+			if (movedM < AP_DEDUP_MOVEMENT_THRESHOLD_M) return false; // haven't moved - still the same sighting
+		}
 	}
 
 	apDedupState[key] = {now, lat, lon};

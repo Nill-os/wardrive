@@ -1812,11 +1812,17 @@ static String cydIsoTimestampFromEpoch(uint32_t epoch) {
 // duplicates were being filtered). One shared map, keyed by BSSID
 // regardless of which board reported it, fixes this.
 static const double CYD_AP_DEDUP_MOVEMENT_THRESHOLD_M = 40.0;
+static const uint32_t CYD_AP_NOFIX_RELOG_MS = 5000; // no-GPS re-stream interval so the phone's live list stays populated
 struct CydApDedupEntry {
 	uint32_t lastLoggedMs;
 	double lat, lon;
 };
 std::unordered_map<uint64_t, CydApDedupEntry> cydApDedupState;
+// Which location-less APs have already been counted this run. The no-fix path
+// re-streams a BSSID every few seconds so the phone's live RSSI stays current,
+// but the run's WiFi count must only tick once per device (else it climbs
+// forever like a broken odometer). Cleared each run in startScanning().
+std::unordered_set<uint64_t> cydWifiNoFixCounted;
 
 static uint64_t cydMacToKey(const uint8_t *mac) {
 	uint64_t key = 0;
@@ -1866,7 +1872,14 @@ static bool cydShouldLogApByKey(uint64_t key, double lat, double lon) {
 	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES) cydPruneApDedup(lat, lon);
 	auto it = cydApDedupState.find(key);
 	if (it != cydApDedupState.end()) {
-		if (cydApproxDistanceM(lat, lon, it->second.lat, it->second.lon) < CYD_AP_DEDUP_MOVEMENT_THRESHOLD_M) return false;
+		if (lat == 0.0 && lon == 0.0) {
+			// No GPS fix: re-stream/count on a timer instead of by movement, so
+			// location-less sightings keep reaching the phone's live tools rather
+			// than being suppressed forever at a fixed 0,0 (see wifi_node's match).
+			if (millis() - it->second.lastLoggedMs < CYD_AP_NOFIX_RELOG_MS) return false;
+		} else if (cydApproxDistanceM(lat, lon, it->second.lat, it->second.lon) < CYD_AP_DEDUP_MOVEMENT_THRESHOLD_M) {
+			return false;
+		}
 	}
 	cydApDedupState[key] = {millis(), lat, lon};
 	return true;
@@ -1900,6 +1913,7 @@ static bool startScanning() {
 	bool wifiFileOk = wigleWifi.begin(sessionDir(), "wifi");
 	bool bleFileOk = wigleBle.begin(sessionDir(), "ble");
 	cydApDedupState.clear();
+	cydWifiNoFixCounted.clear();
 	alertedDevices.clear(); // fresh detection alerts each run
 	lastSdFlushMs = millis();
 	initSnifferRadio();
@@ -3100,11 +3114,20 @@ static void handleIncomingLine(const String &line) {
 		// to the phone's live tools and shows on-screen, but is NOT written to
 		// the SD log/upload - a wardrive point with no position is useless there.
 		bool hasFix = !(lat == 0.0 && lon == 0.0);
-		if (hasFix) wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
-		wifiCountThisRun++;
-		pushApSighting(bssid, ssid, authMode, rssi, true);
-		checkApAlert(bssid, ssid);
-		pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(rssi) + "dB", COLOR_CYAN);
+		bool isNew;
+		if (hasFix) {
+			wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
+			wifiCountThisRun++; // positioned: each accepted sighting is a real logged row
+			isNew = true;
+		} else {
+			isNew = cydWifiNoFixCounted.insert(cydMacKeyFromString(bssid)).second;
+			if (isNew) wifiCountThisRun++; // location-less: count once per run, even though we re-stream it for live RSSI
+		}
+		pushApSighting(bssid, ssid, authMode, rssi, true); // always: refreshes the on-screen RSSI
+		if (isNew) {
+			checkApAlert(bssid, ssid);
+			pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(rssi) + "dB", COLOR_CYAN);
+		}
 
 		if (wdstreamActive && !relayActive) {
 			// Not raw scan activity (this board never sees the radio hit

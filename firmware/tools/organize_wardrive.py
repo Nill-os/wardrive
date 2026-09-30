@@ -34,8 +34,9 @@ import shutil
 import string
 import sys
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 import pandas as pd
 
@@ -220,64 +221,125 @@ def open_path(path):
         os.startfile(path)  # Windows
 
 
-def run_upload():
-    folder = find_session_folder()
-    if not folder:
-        folder = filedialog.askdirectory(
-            title="Select the 'wardrive' folder on the rig's SD card"
-        )
-        if not folder:
-            return  # user cancelled
+# ---- Tactical UI - matches the phone app's "cyberdeck" theme (see the app's
+# res/values/colors.xml and themes.xml): black ground, one bright cyan accent,
+# a purple secondary, monospace everything, and outlined "> LABEL" buttons. ----
+BG = "#000000"       # background
+PANEL = "#080C10"    # surface
+CYAN = "#00F0FF"     # primary accent
+DIM = "#4A607A"      # text_secondary
+PURPLE = "#9D00FF"   # secondary accent
+GREEN = "#22C55E"    # ok
+RED = "#FF3333"      # error
 
-    try:
-        out_dir, stats = organize(folder)
-    except Exception as e:
-        messagebox.showerror("Nill OS Wardriver", f"Couldn't process that folder:\n\n{e}")
-        return
 
-    if stats["unique_devices"] == 0:
-        messagebox.showwarning(
-            "Nill OS Wardriver",
-            f"Copied {stats['files_copied']} session file(s) into:\n{out_dir}\n\n"
-            "But none of them had any logged APs or BLE devices (normal for "
-            "bench-test files captured before the rig had a GPS fix). Go for an "
-            "actual drive with the rig capturing, then run this again.",
-        )
-        open_path(out_dir)
-        return
-
-    summary = (
-        f"Card folder:\n{folder}\n\n"
-        f"Session files copied: {stats['files_copied']}\n"
-        f"Raw observations: {stats['raw_rows']}\n"
-        f"Unique devices: {stats['unique_devices']} "
-        f"(WiFi {stats['wifi']}, BLE/other {stats['ble']})\n\n"
-        f"Organized into:\n{out_dir}"
+def _tactical_button(parent, text, command, font, accent=CYAN):
+    """An outlined function-key button like the app's: a 2px accent border
+    around a black button with accent text that inverts on press."""
+    border = tk.Frame(parent, bg=accent, padx=2, pady=2)
+    btn = tk.Button(
+        border, text=text, command=command, font=font,
+        bg=BG, fg=accent, activebackground=accent, activeforeground=BG,
+        disabledforeground=DIM, relief="flat", bd=0, padx=22, pady=10, cursor="hand2",
     )
-    if messagebox.askyesno("Nill OS Wardriver - Done", summary + "\n\nOpen the folder now?"):
-        open_path(out_dir)
+    btn.pack(fill="both", expand=True)
+    return border, btn
 
 
 def main():
     root = tk.Tk()
-    root.title("Nill OS Wardriver")
-    root.geometry("460x240")
+    root.title("Nill OS - Wardriver")
+    root.geometry("640x560")
+    root.configure(bg=BG)
     root.resizable(False, False)
 
-    tk.Label(root, text="Nill OS Wardriver", font=("Sans", 16, "bold")).pack(pady=(24, 4))
+    mono = tkfont.nametofont("TkFixedFont").copy()
+    mono.configure(size=11)
+    mono_b = mono.copy(); mono_b.configure(weight="bold")
+    title_f = mono.copy(); title_f.configure(size=18, weight="bold")
+
+    tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN,
+             anchor="w").pack(fill="x", padx=20, pady=(20, 2))
+    tk.Label(root, text="UPLOAD & ORGANIZE", font=mono, bg=BG, fg=DIM,
+             anchor="w").pack(fill="x", padx=20, pady=(0, 14))
     tk.Label(
         root,
-        text="Plug in the rig's SD card and click Upload.\n"
-             "Everything is copied off and sorted into dated folders\n"
-             "under ~/Wardrive_Reports, with a combined WiGLE-ready CSV.",
-        justify="center",
-    ).pack(pady=(0, 18))
+        text="Plug in the rig's SD card and press > UPLOAD. Every session\n"
+             "file is copied off and sorted into dated folders under\n"
+             "~/Wardrive_Reports, with a combined WiGLE-ready CSV.\n"
+             "Nothing is deleted from the card.",
+        font=mono, bg=BG, fg=DIM, justify="left", anchor="w",
+    ).pack(fill="x", padx=20, pady=(0, 14))
 
-    tk.Button(
-        root, text="Upload", font=("Sans", 13, "bold"),
-        bg="#00838f", fg="white", padx=28, pady=12, command=run_upload,
-    ).pack()
+    status = tk.Text(root, height=11, font=mono, bg=PANEL, fg=CYAN,
+                     insertbackground=CYAN, relief="flat", wrap="word",
+                     highlightbackground=DIM, highlightthickness=1, padx=12, pady=10)
+    status.pack(fill="both", expand=True, padx=20, pady=(0, 14))
+    status.tag_config("dim", foreground=DIM)
+    status.tag_config("ok", foreground=GREEN)
+    status.tag_config("err", foreground=RED)
+    status.tag_config("accent", foreground=CYAN)
 
+    def log(text="", tag=None):
+        status.configure(state="normal")
+        status.insert("end", text + "\n", (tag,) if tag else ())
+        status.see("end")
+        status.configure(state="disabled")
+        root.update_idletasks()
+
+    def clear():
+        status.configure(state="normal")
+        status.delete("1.0", "end")
+        status.configure(state="disabled")
+
+    state = {"out_dir": None}
+
+    def do_upload():
+        upload_btn.configure(state="disabled")
+        open_border.pack_forget()
+        clear()
+        folder = find_session_folder()
+        if not folder:
+            log("No SD card auto-detected - pick the 'wardrive' folder...", "dim")
+            folder = filedialog.askdirectory(title="Select the 'wardrive' folder on the rig's SD card")
+            if not folder:
+                log("Cancelled.", "dim")
+                upload_btn.configure(state="normal")
+                return
+        log("Reading " + folder, "accent")
+        try:
+            out_dir, stats = organize(folder)
+        except Exception as e:
+            log("ERROR: " + str(e), "err")
+            upload_btn.configure(state="normal")
+            return
+        state["out_dir"] = out_dir
+        log()
+        log(f"  session files copied : {stats['files_copied']}")
+        log(f"  raw observations     : {stats['raw_rows']}")
+        log(f"  unique devices       : {stats['unique_devices']}   (WiFi {stats['wifi']}, BLE/other {stats['ble']})")
+        if stats["files_skipped"]:
+            log(f"  skipped              : {len(stats['files_skipped'])} file(s)", "dim")
+        log()
+        if stats["unique_devices"] == 0:
+            log("No logged devices in these files (bench-test / no GPS fix yet).", "dim")
+        else:
+            log("organized into:", "dim")
+            log("  " + out_dir, "accent")
+            log("> DONE", "ok")
+        open_border.pack(pady=(0, 20))
+        upload_btn.configure(state="normal")
+
+    def do_open():
+        if state["out_dir"]:
+            open_path(state["out_dir"])
+
+    upload_border, upload_btn = _tactical_button(root, "> UPLOAD", do_upload, mono_b)
+    upload_border.pack(pady=(0, 10))
+    open_border, _open_btn = _tactical_button(root, "> OPEN FOLDER", do_open, mono_b, accent=PURPLE)
+    # open_border stays hidden until a successful upload reveals it.
+
+    log("Ready. Plug in the rig's SD card, then press > UPLOAD.", "dim")
     root.mainloop()
 
 

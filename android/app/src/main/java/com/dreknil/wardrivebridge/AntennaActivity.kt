@@ -9,9 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import com.dreknil.wardrivebridge.databinding.ActivityAntennaBinding
 
@@ -46,7 +43,7 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
             scanService = bound
             bound.listener = this@AntennaActivity
             updateScanButton(bound.running)
-            refreshTargets()
+            updateTargetLabel()
         }
         override fun onServiceDisconnected(name: ComponentName?) { scanService = null }
     }
@@ -69,18 +66,11 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
             else s.startRun(notifyRig = true, reason = "antenna check")
             updateScanButton(s.running)
         }
-        binding.antRefreshButton.setOnClickListener { refreshTargets() }
+        binding.antTargetButton.setOnClickListener { showTargetPicker() }
         binding.antResetButton.setOnClickListener { resetStats() }
         binding.antCaptureAButton.setOnClickListener { captureA = snapshot(); updateCompare() }
         binding.antCaptureBButton.setOnClickListener { captureB = snapshot(); updateCompare() }
-
-        binding.antTargetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val mac = macOptions.getOrNull(position)
-                if (mac != null && mac != targetMac) { targetMac = mac; resetStats() }
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
+        updateTargetLabel()
     }
 
     override fun onStart() {
@@ -97,28 +87,49 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
         scanService = null
     }
 
-    // ---- target list ----
-    private fun refreshTargets() {
-        val s = scanService ?: return
-        // Every device currently heard, strongest first, deduped across sources.
+    // ---- target selection ----
+    // Snapshot of every device currently heard, strongest first, deduped across
+    // sources - the choices shown when you tap SELECT TARGET.
+    private fun currentDevices(): List<Observation> {
+        val s = scanService ?: return emptyList()
         val bestByMac = LinkedHashMap<String, Observation>()
         for ((_, map) in s.groups) for ((mac, obs) in map) {
             val cur = bestByMac[mac]
             if (cur == null || obs.rssi > cur.rssi) bestByMac[mac] = obs
         }
-        val sorted = bestByMac.values.sortedByDescending { it.rssi }
-        macOptions = sorted.map { it.mac }
-        val labels = sorted.map {
-            val name = it.label.ifBlank { it.mac }
-            "$name  ·  ${it.source.label}  ·  ${it.rssi}dBm"
+        return bestByMac.values.sortedByDescending { it.rssi }
+    }
+
+    private fun showTargetPicker() {
+        val devices = currentDevices()
+        if (devices.isEmpty()) {
+            android.widget.Toast.makeText(
+                this,
+                if (scanService?.running == true) "No devices heard yet - give it a few seconds"
+                else "Tap START SCANNING first", android.widget.Toast.LENGTH_SHORT).show()
+            return
         }
-        val display = if (labels.isEmpty()) listOf("No devices yet - start scanning") else labels
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, display)
-        binding.antTargetSpinner.adapter = adapter
-        // keep the current target selected if it's still present
-        val idx = macOptions.indexOf(targetMac)
-        if (idx >= 0) binding.antTargetSpinner.setSelection(idx)
-        else if (macOptions.isNotEmpty()) { targetMac = macOptions[0]; resetStats() }
+        macOptions = devices.map { it.mac }
+        val labels = devices.map {
+            val name = it.label.ifBlank { it.mac }
+            "$name\n${it.source.label} · ${it.rssi} dBm · ${it.mac}"
+        }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Select target")
+            .setItems(labels) { _, which ->
+                targetMac = macOptions.getOrNull(which)
+                resetStats()
+                updateTargetLabel(devices.getOrNull(which))
+            }
+            .show()
+    }
+
+    private fun updateTargetLabel(obs: Observation? = null) {
+        binding.antTargetLabel.text = when {
+            targetMac == null -> "No target selected"
+            obs != null -> "Target: ${obs.label.ifBlank { obs.mac }}  (${obs.mac})"
+            else -> "Target: $targetMac"
+        }
     }
 
     private fun updateScanButton(running: Boolean) {
@@ -189,7 +200,7 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
         if (best > peak) peak = best
         sum += best; count++
     }
-    override fun onRunStateChanged(running: Boolean) { updateScanButton(running); if (running) refreshTargets() }
+    override fun onRunStateChanged(running: Boolean) { updateScanButton(running) }
     override fun onRigConnected() {}
     override fun onRigDisconnected() {}
     override fun onMeshLinkStateChanged(state: RigLinkManager.MeshLinkState) {}

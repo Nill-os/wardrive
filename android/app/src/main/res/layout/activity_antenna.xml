@@ -35,32 +35,21 @@
             android:text="&gt; START SCANNING"
             android:layout_marginBottom="8dp" />
 
+        <Button
+            android:id="@+id/antTargetButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; SELECT TARGET" />
+
         <TextView
+            android:id="@+id/antTargetLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Target"
+            android:text="No target selected"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
-
-            <Spinner
-                android:id="@+id/antTargetSpinner"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content" />
-
-            <Button
-                android:id="@+id/antRefreshButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="REFRESH" />
-        </LinearLayout>
+            android:textSize="13sp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp" />
 
         <TextView
             android:id="@+id/antRssi"

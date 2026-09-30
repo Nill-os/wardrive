@@ -33,6 +33,7 @@ import shutil
 import string
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -116,6 +117,106 @@ def download_from_rig(host, password, dest, progress=lambda s: None):
         with open(os.path.join(dest, safe), "wb") as f:
             f.write(data)
     return len(names)
+
+
+# ---------- read over the CYD's USB serial (no SD-card removal, no WiFi) ----------
+def _serial_ports():
+    import glob as _g
+    if os.name == "nt":
+        return [f"COM{i}" for i in range(1, 33)]
+    return sorted(_g.glob("/dev/ttyUSB*") + _g.glob("/dev/ttyACM*")
+                  + _g.glob("/dev/tty.usbserial*") + _g.glob("/dev/cu.usb*"))
+
+
+def _import_serial():
+    try:
+        import serial  # pyserial
+        return serial
+    except ImportError:
+        raise ValueError("pyserial isn't installed.\nIn the tool's venv:  pip install pyserial")
+
+
+def _open_cyd(serial, port):
+    """Open a CYD serial port. On this board forcing DTR/RTS low pulses the
+    auto-reset line, so we open with pyserial's defaults (which don't reset it)
+    and just give it a moment in case a particular adapter does bounce."""
+    s = serial.Serial(port, 115200, timeout=2)
+    time.sleep(2.0)          # ride out any adapter-specific reset before talking
+    s.reset_input_buffer()
+    return s
+
+
+def _probe_is_cyd(serial, port):
+    try:
+        s = _open_cyd(serial, port)
+    except Exception:
+        return False
+    try:
+        s.reset_input_buffer()
+        s.write(b"sd list\n"); s.flush()
+        end = time.time() + 3
+        while time.time() < end:
+            line = s.readline().decode("utf-8", "replace")
+            if line.startswith("SDLIST") or line.strip() == "SDLISTEND":
+                return True
+        return False
+    except Exception:
+        return False
+    finally:
+        s.close()
+
+
+def read_from_cyd_serial(port, dest, progress=lambda s: None):
+    """Pull every session CSV off the rig over the CYD's USB serial cable - no
+    WiFi, no SD-card removal. `port` may be a device path or 'auto'."""
+    serial = _import_serial()
+    if not port or port.strip().lower() == "auto":
+        progress("Looking for the rig on a serial port...")
+        found = next((p for p in _serial_ports() if _probe_is_cyd(serial, p)), None)
+        if not found:
+            raise ValueError("Couldn't find the rig on any serial port.\n"
+                             "Plug the CYD in over USB and try again (or type its port).")
+        port = found
+    progress(f"Opening {port}...")
+    try:
+        s = _open_cyd(serial, port)
+    except Exception as e:
+        raise ValueError(f"Couldn't open {port}: {e}")
+    try:
+        s.reset_input_buffer()
+        s.write(b"sd list\n"); s.flush()
+        names, end = [], time.time() + 8
+        while time.time() < end:
+            line = s.readline().decode("utf-8", "replace").strip()
+            if line.startswith("SDLIST name="):
+                names.append(line.split("name=", 1)[1].split(" size=")[0])
+            elif line == "SDLISTEND":
+                break
+        if not names:
+            raise ValueError("Connected, but the card has no session CSVs.")
+        os.makedirs(dest, exist_ok=True)
+        for i, nm in enumerate(names, 1):
+            progress(f"Reading {nm} ({i}/{len(names)})...")
+            s.reset_input_buffer()
+            s.write(("sd get " + nm + "\n").encode()); s.flush()
+            rows, started, end = [], False, time.time() + 45
+            while time.time() < end:
+                line = s.readline().decode("utf-8", "replace").rstrip("\r\n")
+                if not line:
+                    continue
+                if line.startswith("SDBEGIN "):
+                    started = True
+                elif line.startswith("SDEND"):
+                    break
+                elif line.startswith("SDERR"):
+                    raise ValueError("Rig error reading " + nm + ": " + line)
+                elif started and line.startswith("SDROW "):
+                    rows.append(line[6:])
+            with open(os.path.join(dest, os.path.basename(nm)), "w", encoding="utf-8", newline="\n") as f:
+                f.write("\n".join(rows) + ("\n" if rows else ""))
+        return len(names)
+    finally:
+        s.close()
 
 
 # ---------- CSV load + dedup ----------
@@ -516,7 +617,7 @@ def _tactical_button(parent, text, command, font, accent=CYAN):
 def main():
     root = tk.Tk()
     root.title("Nill OS - Wardriver")
-    root.geometry("660x620")
+    root.geometry("680x700")
     root.configure(bg=BG)
     root.resizable(False, False)
 
@@ -526,11 +627,11 @@ def main():
 
     tk.Label(root, text="> NILL OS - WARDRIVER", font=title_f, bg=BG, fg=CYAN, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
     tk.Label(root, text="UPLOAD & FIELD REPORT", font=mono, bg=BG, fg=DIM, anchor="w").pack(fill="x", padx=20, pady=(0, 10))
-    tk.Label(root, text="Get the logs off the rig two ways: plug in the SD card and press\n"
-                        "GET FROM SD CARD, or - without removing the card - put the rig in\n"
-                        "service mode and press GET FROM RIG (WIFI). Either way it builds an\n"
-                        "interactive field report (map + browse / filter / search) under\n"
-                        "~/Wardrive_Reports. Nothing is deleted from the card.",
+    tk.Label(root, text="Get the logs off the rig three ways: the SD card, over the CYD's\n"
+                        "USB cable (no card removal), or over WiFi with the rig in service\n"
+                        "mode. Either way it builds an interactive field report (map +\n"
+                        "browse / filter / search, with Flock/Flipper/skimmer detection)\n"
+                        "under ~/Wardrive_Reports. Nothing is deleted from the card.",
              font=mono, bg=BG, fg=DIM, justify="left", anchor="w").pack(fill="x", padx=20, pady=(0, 10))
 
     # rig address + service password (for GET FROM RIG)
@@ -543,8 +644,13 @@ def main():
     pass_var = tk.StringVar()
     tk.Entry(row, textvariable=pass_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN, show="*",
              relief="flat", highlightbackground="#33334d", highlightthickness=1, width=14).pack(side="left", padx=(6, 0))
+    row2 = tk.Frame(root, bg=BG); row2.pack(fill="x", padx=20, pady=(0, 4))
+    tk.Label(row2, text="USB port:", font=mono, bg=BG, fg=DIM).pack(side="left")
+    port_var = tk.StringVar(value="auto")
+    tk.Entry(row2, textvariable=port_var, font=mono, bg=PANEL, fg="#E8E8F0", insertbackground=CYAN,
+             relief="flat", highlightbackground="#33334d", highlightthickness=1, width=22).pack(side="left", padx=(6, 0))
 
-    status = tk.Text(root, height=8, font=mono, bg=PANEL, fg=CYAN, insertbackground=CYAN,
+    status = tk.Text(root, height=7, font=mono, bg=PANEL, fg=CYAN, insertbackground=CYAN,
                      relief="flat", wrap="word", highlightbackground=DIM, highlightthickness=1, padx=12, pady=10)
     status.pack(fill="both", expand=True, padx=20, pady=(6, 10))
     status.tag_config("dim", foreground=DIM); status.tag_config("ok", foreground=GREEN)
@@ -584,7 +690,7 @@ def main():
         folder_border.pack(pady=(0, 14))
 
     def _busy(on):
-        for b in (sd_btn, wifi_btn):
+        for b in (sd_btn, wifi_btn, usb_btn):
             b.configure(state="disabled" if on else "normal")
 
     def do_sd():
@@ -611,16 +717,29 @@ def main():
             log("ERROR: " + str(e), "err"); _busy(False); return
         _process(tmp); _busy(False)
 
+    def do_usb():
+        _busy(True); report_border.pack_forget(); folder_border.pack_forget(); clear()
+        tmp = os.path.join(tempfile.gettempdir(), "nillos_rig_usb")
+        shutil.rmtree(tmp, ignore_errors=True)
+        try:
+            n = read_from_cyd_serial(port_var.get(), tmp, progress=lambda s: log("  " + s, "dim"))
+            log(f"  read {n} file(s) from the rig over USB", "dim")
+        except Exception as e:
+            log("ERROR: " + str(e), "err"); _busy(False); return
+        _process(tmp); _busy(False)
+
     sd_border, sd_btn = _tactical_button(root, "> GET FROM SD CARD", do_sd, mono_b)
-    sd_border.pack(pady=(0, 8))
+    sd_border.pack(pady=(0, 6))
+    usb_border, usb_btn = _tactical_button(root, "> GET FROM RIG (USB)", do_usb, mono_b)
+    usb_border.pack(pady=(0, 6))
     wifi_border, wifi_btn = _tactical_button(root, "> GET FROM RIG (WIFI)", do_wifi, mono_b, accent=PURPLE)
-    wifi_border.pack(pady=(0, 8))
+    wifi_border.pack(pady=(0, 6))
     report_border, _rb = _tactical_button(root, "> VIEW FIELD REPORT",
                                           lambda: state["report"] and open_path(state["report"]), mono_b)
     folder_border, _fb = _tactical_button(root, "> OPEN FOLDER",
                                           lambda: state["out"] and open_path(state["out"]), mono_b, accent=PURPLE)
 
-    log("Ready. Use SD card, or put the rig in service mode and GET FROM RIG.", "dim")
+    log("Ready. SD card, USB cable, or WiFi (rig in service mode).", "dim")
     root.mainloop()
 
 

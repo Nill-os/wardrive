@@ -481,7 +481,7 @@ static const char *TAB_LABELS[TAB_COUNT] = {"1.MAIN", "2.TGTS", "3.LOGS", "4.CFG
 TouchButton tabRects[TAB_COUNT];
 // Reused per-tab (only one tab's buttons are ever visible/tappable at
 // once) rather than named per-tab - up to 4 action buttons per tab.
-TouchButton actionRects[4];
+TouchButton actionRects[6];
 uint8_t actionRectCount = 0;
 
 void onSingleClickHandler(); // forward-declared - defined below, called by the touch dispatch in loop()
@@ -1061,6 +1061,218 @@ static void drawTabLogs(bool redrawAll) {
 	if (redrawAll) drawButton(actionRects[1], "> FLUSH TO SD", COLOR_PURPLE, 1);
 }
 
+// ======================= On-screen keyboard + network config =======================
+// Lets WiFi credentials and the service-mode password be changed on the CYD's
+// touchscreen (no SD pull, no phone). A tap on the CFG tab's NETWORK button
+// opens a list of the settings; tapping one opens a QWERTY keyboard to enter a
+// new value, which is applied and saved to config.cfg the same way the phone's
+// "cfg <key> <value>" path does.
+static void applyConfigSetting(const String &key, const String &value); // defined in the wdstream section
+
+bool kbActive = false;       // keyboard overlay up
+bool netCfgActive = false;   // network-config list overlay up
+static String kbBuffer, kbTargetKey, kbTitle;
+static bool kbMask = false, kbShift = false, kbSym = false;
+
+struct KbKey { int16_t x, y, w, h; char ch; uint8_t action; }; // action: 0 char,1 shift,2 del,3 space,4 ok,5 cancel,6 symtoggle
+static KbKey kbKeys[64];
+static uint8_t kbKeyCount = 0;
+
+static const char *kbCharRow(int r) {
+	if (kbSym) {
+		switch (r) { case 0: return "1234567890"; case 1: return "!@#$%^&*()"; case 2: return "-_=+/:;,.?"; case 3: return "'\"[]{}|\\"; }
+	} else {
+		switch (r) { case 0: return "1234567890"; case 1: return "qwertyuiop"; case 2: return "asdfghjkl"; case 3: return "zxcvbnm"; }
+	}
+	return "";
+}
+
+static void kbAddKey(int16_t x, int16_t y, int16_t w, int16_t h, char ch, uint8_t action, const char *label, uint16_t color) {
+	if (kbKeyCount < 64) kbKeys[kbKeyCount++] = {x, y, w, h, ch, action};
+	tft.drawRoundRect(x + 1, y + 1, w - 2, h - 2, 3, color);
+	tft.setTextDatum(MC_DATUM);
+	tft.setTextSize(label && strlen(label) > 1 ? 1 : 2);
+	tft.setTextColor(color, COLOR_BG);
+	char one[2] = {ch, 0};
+	tft.drawString(label ? label : one, x + w / 2, y + h / 2);
+	tft.setTextDatum(TL_DATUM);
+}
+
+static void kbDrawText() {
+	const int16_t W = tft.width();
+	const int16_t txtY = 26, txtH = 30;
+	tft.fillRect(HDR_GAP, txtY, W - 2 * HDR_GAP, txtH, COLOR_PANEL);
+	tft.drawRect(HDR_GAP, txtY, W - 2 * HDR_GAP, txtH, COLOR_CYAN);
+	String shown;
+	if (kbMask) { for (uint16_t i = 0; i < kbBuffer.length(); i++) shown += '*'; }
+	else shown = kbBuffer;
+	// keep only the tail that fits (~18 chars at size 2)
+	if (shown.length() > 18) shown = shown.substring(shown.length() - 18);
+	tft.setTextDatum(ML_DATUM);
+	tft.setTextSize(2);
+	tft.setTextColor(COLOR_CYAN, COLOR_PANEL);
+	tft.drawString(shown.length() ? shown : String(" "), HDR_GAP + 6, txtY + txtH / 2);
+	tft.setTextDatum(TL_DATUM);
+}
+
+static void kbDraw(bool full) {
+	const int16_t W = tft.width(), H = tft.height();
+	if (full) {
+		tft.fillScreen(COLOR_BG);
+		tft.setTextDatum(TL_DATUM);
+		tft.setTextSize(1);
+		tft.setTextColor(COLOR_PURPLE, COLOR_BG);
+		tft.setCursor(HDR_GAP, 8);
+		tft.print(kbTitle);
+	}
+	kbDrawText();
+	kbKeyCount = 0;
+	const int16_t rowH = 34;
+	const int16_t kbTop = H - 5 * rowH;
+	// Rows 0-2: plain character rows.
+	for (int r = 0; r <= 2; r++) {
+		const char *row = kbCharRow(r);
+		int n = strlen(row);
+		int16_t kw = W / 10; // fixed 10-column grid; short rows are centred
+		int16_t x0 = (W - kw * n) / 2;
+		for (int i = 0; i < n; i++) {
+			char c = row[i];
+			if (kbShift && !kbSym && c >= 'a' && c <= 'z') c -= 32;
+			kbAddKey(x0 + i * kw, kbTop + r * rowH, kw, rowH, c, 0, nullptr, COLOR_TEXT);
+		}
+	}
+	// Row 3: SHIFT + chars + DEL.
+	{
+		const char *row = kbCharRow(3);
+		int n = strlen(row);
+		int16_t kw = W / 10;
+		int16_t special = (W - kw * n) / 2; // width for shift and del on each side
+		if (special < kw) special = kw;
+		int16_t y = kbTop + 3 * rowH;
+		kbAddKey(0, y, special, rowH, 0, 1, kbSym ? "ABC" : "SHFT", COLOR_CYAN);
+		int16_t x0 = special;
+		for (int i = 0; i < n; i++) {
+			char c = row[i];
+			if (kbShift && !kbSym && c >= 'a' && c <= 'z') c -= 32;
+			kbAddKey(x0 + i * kw, y, kw, rowH, c, 0, nullptr, COLOR_TEXT);
+		}
+		kbAddKey(x0 + n * kw, y, W - (x0 + n * kw), rowH, 0, 2, "DEL", COLOR_ORANGE);
+	}
+	// Row 4: SYM/ABC toggle, SPACE, OK, CANCEL.
+	{
+		int16_t y = kbTop + 4 * rowH;
+		int16_t bw = W / 5;
+		kbAddKey(0, y, bw, rowH, 0, 6, kbSym ? "abc" : "?123", COLOR_CYAN);
+		kbAddKey(bw, y, bw * 2, rowH, 0, 3, "space", COLOR_TEXT);
+		kbAddKey(bw * 3, y, bw, rowH, 0, 4, "OK", COLOR_GREEN);
+		kbAddKey(bw * 4, y, W - bw * 4, rowH, 0, 5, "X", COLOR_RED);
+	}
+}
+
+static void netCfgOpen();
+
+static void kbClose(bool save) {
+	kbActive = false;
+	if (save) applyConfigSetting(kbTargetKey, kbBuffer);
+	netCfgOpen(); // back to the list
+}
+
+static void kbHandleTap(int16_t x, int16_t y) {
+	for (uint8_t i = 0; i < kbKeyCount; i++) {
+		KbKey &k = kbKeys[i];
+		if (x < k.x || x >= k.x + k.w || y < k.y || y >= k.y + k.h) continue;
+		switch (k.action) {
+			case 0: kbBuffer += k.ch; kbDrawText(); break;
+			case 1: kbShift = !kbShift; kbDraw(false); break;      // shift (or ABC in sym mode)
+			case 2: if (kbBuffer.length()) { kbBuffer.remove(kbBuffer.length() - 1); kbDrawText(); } break;
+			case 3: kbBuffer += ' '; kbDrawText(); break;
+			case 4: kbClose(true); break;
+			case 5: kbClose(false); break;
+			case 6: kbSym = !kbSym; kbShift = false; kbDraw(false); break; // toggle symbol layer
+		}
+		flashLed(false, true, false, 40, false);
+		return;
+	}
+}
+
+static void kbOpen(const String &key, const String &title, bool mask, const String &current) {
+	kbTargetKey = key;
+	kbTitle = title;
+	kbMask = mask;
+	kbBuffer = mask ? "" : current; // don't prefill a password field; SSIDs prefill for easy edit
+	kbShift = false;
+	kbSym = false;
+	netCfgActive = false;
+	kbActive = true;
+	kbDraw(true);
+}
+
+// ---- Network config list ----
+struct NetRow { const char *key; const char *label; bool mask; };
+static const NetRow NET_ROWS[] = {
+	{"wifi_ssid", "WiFi SSID", false},
+	{"wifi_pass", "WiFi password", true},
+	{"backup_wifi_ssid", "Backup SSID", false},
+	{"backup_wifi_pass", "Backup password", true},
+	{"service_password", "Service password", true},
+};
+static const uint8_t NET_ROW_COUNT = 5;
+static TouchButton netRects[NET_ROW_COUNT + 1]; // rows + BACK
+
+static String netRowValue(const NetRow &r) {
+	String v;
+	if (strcmp(r.key, "wifi_ssid") == 0) v = config.wifiSsid;
+	else if (strcmp(r.key, "wifi_pass") == 0) v = config.wifiPass;
+	else if (strcmp(r.key, "backup_wifi_ssid") == 0) v = config.backupWifiSsid;
+	else if (strcmp(r.key, "backup_wifi_pass") == 0) v = config.backupWifiPass;
+	else if (strcmp(r.key, "service_password") == 0) v = config.servicePassword;
+	if (r.mask) return v.length() ? "********" : "(not set)";
+	return v.length() ? v : "(not set)";
+}
+
+static void netCfgDraw() {
+	const int16_t W = tft.width();
+	tft.fillScreen(COLOR_BG);
+	drawPanelTitle(HDR_GAP, 8, W - HDR_GAP * 2, "NETWORK & DEBUG", COLOR_PURPLE);
+	int16_t y = 40;
+	const int16_t rowH = 40;
+	tft.setTextSize(1);
+	for (uint8_t i = 0; i < NET_ROW_COUNT; i++) {
+		netRects[i] = {HDR_GAP, y, (int16_t)(W - HDR_GAP * 2), (int16_t)(rowH - 4)};
+		tft.drawRoundRect(netRects[i].x, netRects[i].y, netRects[i].w, netRects[i].h, 4, COLOR_TEXT_DIM);
+		tft.setTextColor(COLOR_CYAN, COLOR_BG);
+		tft.setCursor(HDR_GAP + 6, y + 6);
+		tft.print(NET_ROWS[i].label);
+		tft.setTextColor(COLOR_TEXT, COLOR_BG);
+		tft.setCursor(HDR_GAP + 6, y + 20);
+		tft.print(netRowValue(NET_ROWS[i]));
+		y += rowH;
+	}
+	netRects[NET_ROW_COUNT] = {HDR_GAP, (int16_t)(y + 6), (int16_t)(W - HDR_GAP * 2), 26};
+	drawButton(netRects[NET_ROW_COUNT], "< BACK", COLOR_CYAN, 1);
+}
+
+static void netCfgOpen() {
+	netCfgActive = true;
+	kbActive = false;
+	netCfgDraw();
+}
+
+static void netCfgClose() {
+	netCfgActive = false;
+	forceFullRedraw = true; // repaint the normal CFG tab underneath
+}
+
+static void netCfgHandleTap(int16_t x, int16_t y) {
+	for (uint8_t i = 0; i < NET_ROW_COUNT; i++) {
+		if (inRect(netRects[i], x, y)) {
+			kbOpen(NET_ROWS[i].key, NET_ROWS[i].label, NET_ROWS[i].mask, netRowValue(NET_ROWS[i]));
+			return;
+		}
+	}
+	if (inRect(netRects[NET_ROW_COUNT], x, y)) netCfgClose();
+}
+
 // ---- TAB 4: CFG - storage/GPS/power/operator info. FORMAT SD is
 // implemented as "wipe logged session files" (the closest safe
 // equivalent this SD library actually exposes - a real low-level format
@@ -1112,15 +1324,18 @@ static void drawTabCfg(bool redrawAll) {
 
 	const int16_t btnY = CONTENT_BOTTOM - 26, btnW = (w - HDR_GAP * 3) / 2;
 	const int16_t pairY = btnY - 28;
+	const int16_t netY = pairY - 28;
 	setActionButton(0, HDR_GAP, btnY, btnW, 22);
 	setActionButton(1, HDR_GAP * 2 + btnW, btnY, btnW, 22);
 	setActionButton(2, HDR_GAP, pairY, btnW, 22);
 	setActionButton(3, HDR_GAP * 2 + btnW, pairY, btnW, 22);
-	actionRectCount = 4;
+	setActionButton(4, HDR_GAP, netY, w - HDR_GAP * 2, 22);
+	actionRectCount = 5;
 	drawButton(actionRects[0], "> WIPE LOGS", COLOR_ORANGE, 1);
 	drawButton(actionRects[1], "> REBOOT", COLOR_RED);
 	drawButton(actionRects[2], "> PAIR PHONE", COLOR_CYAN, 1);
 	drawButton(actionRects[3], "> FORGET PHONES", COLOR_TEXT_DIM, 1);
+	drawButton(actionRects[4], "> NETWORK & DEBUG", COLOR_PURPLE, 1);
 }
 
 // ---- Phone pairing (see CydBleLink's "Pairing") ----
@@ -2249,11 +2464,16 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "led_color_ok") { config.ledColorOk = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
 	else if (key == "led_color_fail") { config.ledColorFail = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
 	else if (key == "service_password") config.servicePassword = value; // protects OTA + the log server
+	else if (key == "wifi_ssid") config.wifiSsid = value;
+	else if (key == "wifi_pass") config.wifiPass = value;
+	else if (key == "backup_wifi_ssid") config.backupWifiSsid = value;
+	else if (key == "backup_wifi_pass") config.backupWifiPass = value;
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
-	// Don't echo a password back over serial.
+	// Don't echo any password (or a wifi credential) back over serial.
+	bool secret = key == "service_password" || key == "wifi_pass" || key == "backup_wifi_pass";
 	if (WARDRIVE_DEBUG) Serial.printf("[cfg] %s = %s (applied + saved)\n", key.c_str(),
-									  key == "service_password" ? "********" : value.c_str());
+									  secret ? "********" : value.c_str());
 }
 
 static void relayBroadcastLedColors() {
@@ -2434,6 +2654,23 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			currentTab = (Tab)n;
 			forceFullRedraw = true;
 			Serial.printf("[test] switched to tab %d (%s)\n", n, TAB_LABELS[n]);
+		}
+	} else if (line == "test:netcfg") {
+		// Open the network/debug config list over USB, so the on-screen keyboard
+		// path can be exercised without physically tapping the touchscreen.
+		netCfgOpen();
+		Serial.println("[test] netcfg opened");
+	} else if (line.startsWith("test:touch ")) {
+		// "test:touch X Y" injects a tap at screen coords into whatever overlay
+		// (keyboard / netcfg) is up - the same handlers a real touch calls.
+		String rest = line.substring(11);
+		int sp = rest.indexOf(' ');
+		if (sp > 0) {
+			int16_t tx = rest.substring(0, sp).toInt();
+			int16_t ty = rest.substring(sp + 1).toInt();
+			if (kbActive) kbHandleTap(tx, ty);
+			else if (netCfgActive) netCfgHandleTap(tx, ty);
+			Serial.printf("[test] touch %d,%d (kb=%d net=%d buf='%s')\n", tx, ty, kbActive, netCfgActive, kbBuffer.c_str());
 		}
 	} else if (line.startsWith("test:fakegps ")) {
 		// "test:fakegps <lat> <lon>" / "test:fakegps off" - a pretend fix so
@@ -2966,7 +3203,17 @@ void loop() {
 		return;
 	}
 	if (touch.valid) lastTouchWakeMs = millis();
-	if (touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
+	// Keyboard / network-config overlays capture all touch while up. loop()
+	// still falls through so BLE poll and the links keep running (the phone
+	// stays connected); the normal tab/action dispatch and drawStatus are
+	// skipped so the overlay isn't overwritten.
+	bool overlay = kbActive || netCfgActive;
+	if (overlay && touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
+		lastTouchDispatchMs = millis();
+		if (kbActive) kbHandleTap(touch.x, touch.y);
+		else netCfgHandleTap(touch.x, touch.y);
+	}
+	if (!overlay && touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
 		lastTouchDispatchMs = millis();
 		bool hit = false;
 		for (uint8_t i = 0; i < TAB_COUNT && !hit; i++) {
@@ -2999,6 +3246,7 @@ void loop() {
 					else if (i == 1) onRebootHandler();
 					else if (i == 2) onPairPhoneHandler();
 					else if (i == 3) onForgetPhonesHandler();
+					else if (i == 4) netCfgOpen();
 					break;
 			}
 		}
@@ -3080,7 +3328,7 @@ void loop() {
 		if (millis() - phoneUploadClaimMs > 15000) phoneUploadClaimMs = 0;
 	}
 	serviceRelay();
-	serviceScreenTimeout();
+	if (!overlay) serviceScreenTimeout(); // keep the screen on while entering config
 	phoneWasConnected = phoneConnected;
 
 	if (millis() - lastSdHealthBroadcastMs > SD_HEALTH_BROADCAST_MS) {
@@ -3299,7 +3547,7 @@ void loop() {
 		}
 	}
 
-	if (millis() - lastDisplayRefreshMs > DISPLAY_REFRESH_MS) {
+	if (!overlay && millis() - lastDisplayRefreshMs > DISPLAY_REFRESH_MS) {
 		lastDisplayRefreshMs = millis();
 		drawStatus();
 	}

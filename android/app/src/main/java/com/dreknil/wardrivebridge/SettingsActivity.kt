@@ -115,6 +115,33 @@ class SettingsActivity : AppCompatActivity() {
         Toast.makeText(this, "Sent LED/screen settings to the rig", Toast.LENGTH_SHORT).show()
     }
 
+    /** Push changed rig network settings (WiFi credentials + the service-mode
+     *  password) to the rig over the bonded Bluetooth link. Only non-empty
+     *  fields are sent (blank = keep what the rig already has), and the secret
+     *  fields are cleared from the screen afterwards so passwords don't linger.
+     *  These are never stored in the phone's own settings. */
+    private fun pushRigNetworkSettings() {
+        val fields = listOf(
+            "wifi_ssid" to binding.rigWifiSsidInput.text.toString(),
+            "wifi_pass" to binding.rigWifiPassInput.text.toString(),
+            "backup_wifi_ssid" to binding.rigBackupSsidInput.text.toString(),
+            "backup_wifi_pass" to binding.rigBackupPassInput.text.toString(),
+            "service_password" to binding.rigServicePassInput.text.toString(),
+        ).filter { it.second.isNotEmpty() }
+        if (fields.isEmpty()) return
+        val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+        if (link == null || ScanService.instance?.rigConnected != true) {
+            Toast.makeText(this, "Connect to the rig first to change its network settings", Toast.LENGTH_LONG).show()
+            return
+        }
+        for ((k, v) in fields) link.sendRaw("cfg $k $v")
+        // Don't leave secrets on screen after sending them.
+        binding.rigWifiPassInput.setText("")
+        binding.rigBackupPassInput.setText("")
+        binding.rigServicePassInput.setText("")
+        Toast.makeText(this, "Sent ${fields.size} network setting(s) to the rig", Toast.LENGTH_SHORT).show()
+    }
+
     private fun showPairedRig() {
         val addr = settings.pairedRigAddress
         binding.pairedRigText.text = if (addr.isEmpty()) {
@@ -165,6 +192,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.rigScreenTimeoutSec = binding.rigScreenTimeoutInput.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: settings.rigScreenTimeoutSec
         settings.rigScreenKeepOnScanning = binding.rigScreenKeepOnCheck.isChecked
         pushRigVisualSettings()
+        pushRigNetworkSettings()
         settings.tripMode = binding.tripModeCheck.isChecked
         val wantsSpeech = settings.spokenUpdateMinutes > 0 || settings.spokenTrackerAlerts
         val hasTtsEngine = packageManager.queryIntentServices(

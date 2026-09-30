@@ -335,6 +335,36 @@
         <Button android:id="@+id/rigLedOkButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: OK / start / stop" />
         <Button android:id="@+id/rigLedFailButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: error / fail" />
 
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="&gt; RIG NETWORK &amp; DEBUG" android:textColor="@color/cyan_500"
+            android:textSize="14sp" android:textStyle="bold" android:paddingTop="20dp" android:paddingBottom="4dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary" android:textSize="12sp"
+            android:text="Change the WiFi the rig uploads through, and the service-mode password that protects over-the-air updates and the log server. Sent to the rig over Bluetooth and saved on its SD card. Leave a field blank to keep what the rig already has. Password fields are cleared after saving." />
+
+        <EditText android:id="@+id/rigWifiSsidInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="WiFi network name (SSID)" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="text" android:singleLine="true" />
+        <EditText android:id="@+id/rigWifiPassInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="WiFi password" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="textPassword" android:singleLine="true" />
+        <EditText android:id="@+id/rigBackupSsidInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Backup WiFi name (e.g. phone hotspot)" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="text" android:singleLine="true" />
+        <EditText android:id="@+id/rigBackupPassInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Backup WiFi password" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="textPassword" android:singleLine="true" />
+        <EditText android:id="@+id/rigServicePassInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Service-mode password (OTA + log server)" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="textPassword" android:singleLine="true" />
+
         <Button
             android:id="@+id/saveSettingsButton"
             android:layout_width="match_parent"

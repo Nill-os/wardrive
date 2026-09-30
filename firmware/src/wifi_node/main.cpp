@@ -711,7 +711,10 @@ static void handleBleLinkLine(const String &line) {
 
 
 	double lat, lon, alt, acc;
-	if (!getLoggablePosition(lat, lon, alt, acc)) return; // no usable position, live or recent
+	// No GPS fix: forward at 0,0 anyway so the phone's live tools (Live BLE,
+	// detection, fox-hunt, antenna check) still see it. cyd_node keeps 0,0
+	// sightings out of the SD log/upload, so nothing location-less is wardriven.
+	if (!getLoggablePosition(lat, lon, alt, acc)) { lat = lon = alt = acc = 0.0; }
 
 	cydLinkSendf("B,%s,%s,%s,%d,%.6f,%.6f,%.1f,%.1f,%s",
 				 mac.c_str(), name.c_str(), isoTimestamp().c_str(), rssi, lat, lon, alt, acc, mfgHex.c_str());
@@ -825,7 +828,7 @@ static void drainEspNow() {
 			handleBleLinkLine(line);
 		} else { // ESPNOW_TYPE_WIFI
 			double lat, lon, alt, acc;
-			if (!getLoggablePosition(lat, lon, alt, acc)) continue;
+			if (!getLoggablePosition(lat, lon, alt, acc)) { lat = lon = alt = acc = 0.0; } // forward location-less for live tools; cyd_node keeps 0,0 off the SD log
 			if (!shouldLogAp(s.mac, lat, lon)) continue;
 			String ssid(s.name);
 			ssid.replace(",", " ");
@@ -1056,7 +1059,11 @@ void loop() {
 #endif
 
 			double lat, lon, alt, acc;
-			if (!getLoggablePosition(lat, lon, alt, acc)) continue; // no usable position, live or recent
+			// No GPS fix: forward at 0,0 so the phone's live tools still see the
+			// AP. shouldLogAp still de-dupes (0,0 is one "cell", so each BSSID is
+			// forwarded once per window rather than every beacon); cyd_node keeps
+			// 0,0 rows out of the SD log/upload.
+			if (!getLoggablePosition(lat, lon, alt, acc)) { lat = lon = alt = acc = 0.0; }
 
 			if (!shouldLogAp(obs.bssid, lat, lon)) continue; // seen this BSSID recently nearby, skip the duplicate row
 

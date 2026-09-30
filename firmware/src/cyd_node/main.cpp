@@ -3064,7 +3064,11 @@ static void handleIncomingLine(const String &line) {
 		// row for the same real network.
 		if (!cydShouldLogApByKey(cydMacKeyFromString(bssid), lat, lon)) return;
 
-		wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
+		// A location-less sighting (no GPS fix, forwarded at 0,0) still streams
+		// to the phone's live tools and shows on-screen, but is NOT written to
+		// the SD log/upload - a wardrive point with no position is useless there.
+		bool hasFix = !(lat == 0.0 && lon == 0.0);
+		if (hasFix) wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
 		wifiCountThisRun++;
 		pushApSighting(bssid, ssid, authMode, rssi, true);
 		checkApAlert(bssid, ssid);
@@ -3105,7 +3109,9 @@ static void handleIncomingLine(const String &line) {
 		double acc = c8 < 0 ? rest.substring(c7 + 1).toDouble() : rest.substring(c7 + 1, c8).toDouble();
 		String mfgHex = c8 < 0 ? "" : rest.substring(c8 + 1); // trailing field - only present now that wifi_node forwards ble_node's raw manufacturer data (see its handleBleLinkLine())
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone
-		wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
+		// Location-less BLE (no fix, 0,0) still streams to the phone's live tools
+		// but isn't written to the SD log/upload.
+		if (!(lat == 0.0 && lon == 0.0)) wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
 		bleCountThisRun++;
 		pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
 		checkBleAlert(mac, name, mfgHex);

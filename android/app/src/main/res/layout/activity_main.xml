@@ -1033,6 +1033,15 @@
                             android:visibility="gone" />
                     </LinearLayout>
 
+                    <Button
+                        android:id="@+id/exportAllButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="&gt; EXPORT (CSV / ZIP OF ALL RUNS)"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="16dp"
+                        android:layout_marginBottom="8dp" />
+
                     <EditText
                         android:id="@+id/logsSearchInput"
                         android:layout_width="match_parent"

@@ -237,6 +237,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         binding.recentRunsList.layoutManager = LinearLayoutManager(this)
         binding.recentRunsList.adapter = recentRunsAdapter
         binding.viewAllLogsButton.setOnClickListener { viewAllLogsOnMap() }
+        binding.exportAllButton.setOnClickListener { showExportMenu() }
         binding.browseAllButton.setOnClickListener { toggleBrowseMode() }
         binding.selectModeButton.setOnClickListener { toggleSelectionMode() }
         binding.deleteSelectedButton.setOnClickListener { confirmDeleteSelected() }
@@ -392,6 +393,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         // Logs/Wardriving/Floor Plan already use, see showDetail()) - its nav
         // pill lights up based on currentDetailKind instead of currentSection.
         setNavPillSelected(binding.navLogsLabel, currentDetailKind == DetailKind.LOGS)
+        // Settings opens its own screen rather than a section, so it's never the
+        // "active" tab - but it still gets the same unselected pill styling
+        // (slate border, accent text) as the others so it doesn't look odd.
+        setNavPillSelected(binding.navSettingsLabel, false)
     }
 
     private fun openFeedDetail(title: String, sources: Set<Source>, extra: ((Observation) -> Boolean)? = null) {

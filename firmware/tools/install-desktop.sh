@@ -22,7 +22,7 @@ Comment=Pull rig logs, build field reports, flash and manage the ESP boards
 Exec=$RUN
 Icon=$ICON
 Terminal=false
-Categories=Utility;Network;
+Categories=Utility;
 Keywords=wardrive;wifi;bluetooth;esp32;flock;
 EOF
 chmod +x "$ENTRY"

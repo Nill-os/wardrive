@@ -367,7 +367,7 @@
         <TextView
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textColor="@color/text_secondary" android:textSize="12sp"
-            android:text="Change the WiFi the rig uploads through, and the service-mode password that protects over-the-air updates and the log server. Sent to the rig over Bluetooth and saved on its SD card. Leave a field blank to keep what the rig already has. Password fields are cleared after saving." />
+            android:text="Change the WiFi the rig uploads through, and the service-mode password that protects the log server. Sent to the rig over Bluetooth and saved on its SD card. Leave a field blank to keep what the rig already has. Password fields are cleared after saving." />
 
         <EditText android:id="@+id/rigWifiSsidInput"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -387,7 +387,7 @@
             android:textColor="@color/text_primary" android:inputType="textPassword" android:singleLine="true" />
         <EditText android:id="@+id/rigServicePassInput"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:hint="Service-mode password (OTA + log server)" android:textColorHint="@color/text_secondary"
+            android:hint="Service-mode password (log server)" android:textColorHint="@color/text_secondary"
             android:textColor="@color/text_primary" android:inputType="textPassword" android:singleLine="true" />
 
         <TextView

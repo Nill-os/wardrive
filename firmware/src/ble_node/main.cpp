@@ -86,6 +86,24 @@ static uint8_t scaleBrightness(uint8_t channel) {
 	return (uint16_t)channel * ledBrightnessPct / 100;
 }
 
+// Write the status LED. A board with an addressable onboard RGB LED
+// (esp32-s3-devkitc-1: RGB_BUILTIN on GPIO48) gets full color. A Seeed XIAO
+// ESP32 (C3/C6/S3) has no addressable RGB LED, so fall back to its single
+// builtin LED - lit whenever any channel is on, and active-low as XIAO builtin
+// LEDs are - or to nothing if the board exposes no usable LED. Either way the
+// scanner still runs and links; only the color feedback is reduced.
+static void wardriveLedWrite(uint8_t r, uint8_t g, uint8_t b) {
+#if defined(RGB_BUILTIN)
+	neopixelWrite(RGB_BUILTIN, r, g, b);
+#elif defined(LED_BUILTIN)
+	static bool inited = false;
+	if (!inited) { pinMode(LED_BUILTIN, OUTPUT); inited = true; }
+	digitalWrite(LED_BUILTIN, (r || g || b) ? LOW : HIGH);
+#else
+	(void)r; (void)g; (void)b;
+#endif
+}
+
 // priority=true (clicks, upload status) always shows and can't be cut short
 // by a capture flash. priority=false (per-packet captures) is skipped
 // outright while a priority flash is still active - this board keeps
@@ -96,7 +114,7 @@ static void flashLed(uint8_t r, uint8_t g, uint8_t b, uint32_t durationMs = LED_
 	if (!priority && ledPriority && millis() < ledOffAtMs) return;
 	uint32_t c = remapLedColor(r, g, b);
 	r = (c >> 16) & 0xFF; g = (c >> 8) & 0xFF; b = c & 0xFF;
-	neopixelWrite(RGB_BUILTIN, scaleBrightness(r), scaleBrightness(g), scaleBrightness(b));
+	wardriveLedWrite(scaleBrightness(r), scaleBrightness(g), scaleBrightness(b));
 	ledOffAtMs = millis() + durationMs;
 	ledPriority = priority;
 }
@@ -321,7 +339,7 @@ static void stopScanning() {
 void setup() {
 	Serial.begin(115200);
 
-	neopixelWrite(RGB_BUILTIN, 0, 0, 0);
+	wardriveLedWrite(0, 0, 0);
 
 	LinkSerial.setRxBufferSize(LINK_BUFFER_BYTES);
 	LinkSerial.setTxBufferSize(LINK_BUFFER_BYTES); // sends happen on the NimBLE task - never block it
@@ -361,7 +379,7 @@ void setup() {
 
 void loop() {
 	if (ledOffAtMs != 0 && millis() >= ledOffAtMs) {
-		neopixelWrite(RGB_BUILTIN, 0, 0, 0);
+		wardriveLedWrite(0, 0, 0);
 		ledOffAtMs = 0;
 		ledPriority = false;
 	}

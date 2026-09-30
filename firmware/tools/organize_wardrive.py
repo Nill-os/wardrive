@@ -605,9 +605,17 @@ def write_summary(out_dir, source, stats):
 # ---------- flashing the ESP boards (PlatformIO) ----------
 BOARDS = [
     ("wifi_node", "WiFi sniffer + GPS (ESP32-S3)", "usb"),
-    ("ble_node", "BLE scanner (ESP32-S3)", "usb"),
+    ("ble_node", "BLE scanner", "usb"),
     ("cyd_node", "Screen / storage / uploads (CYD) - USB", "usb"),
     ("cyd_node_ota", "Screen board - over-the-air (rig in service mode)", "ota"),
+]
+
+# The BLE scanner runs the same firmware on more than one board. The label is
+# shown in the Flash tab's "BLE board" picker; the value is the PlatformIO env.
+BLE_BOARDS = [
+    ("ESP32-S3 DevKitC", "ble_node"),
+    ("Seeed XIAO ESP32-C3", "ble_node_xiao_c3"),
+    ("Seeed XIAO ESP32-S3", "ble_node_xiao_s3"),
 ]
 
 
@@ -851,7 +859,7 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
             node_index.set(0); idx_menu.configure(state="disabled")
 
     count_menu = ttk_combo(nrow, node_count, mono, width=4)
-    count_menu["values"] = [str(i) for i in range(1, 9)]
+    count_menu["values"] = [str(i) for i in range(1, 21)]
     count_menu.pack(side="left", padx=(6, 10))
     node_count.trace_add("write", _on_count_change)
     tk.Label(nrow, text="this wifi_node is #", font=mono, bg=BG, fg=DIM).pack(side="left")
@@ -907,13 +915,29 @@ def _build_flash_tab(tab, mono, mono_b, root, host_var, pass_var, port_var):
     tk.Button(prow, text="refresh", command=refresh_ports, font=mono, bg=PANEL, fg=CYAN,
               relief="flat", padx=8, cursor="hand2").pack(side="left")
 
+    # Which board the BLE scanner is flashed to (default the ESP32-S3 DevKitC).
+    ble_labels = [lbl for lbl, _env in BLE_BOARDS]
+    ble_env_of = dict(BLE_BOARDS)
+    ble_choice = tk.StringVar(value=ble_labels[0])
+
     for env, desc, kind in BOARDS:
         f = tk.Frame(tab, bg=BG); f.pack(fill="x", padx=6, pady=2)
-        border, btn = _tactical_button(f, "> FLASH " + env.upper(), (lambda e=env: do_flash(e)), mono_b,
-                                       accent=(PURPLE if kind == "ota" else CYAN))
-        border.pack(side="left")
-        buttons[env] = btn
-        tk.Label(f, text=desc, font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 0))
+        if env == "ble_node":
+            # The button flashes whichever BLE board is picked to its right.
+            border, btn = _tactical_button(f, "> FLASH BLE_NODE",
+                                           (lambda: do_flash(ble_env_of[ble_choice.get()])), mono_b, accent=CYAN)
+            border.pack(side="left")
+            buttons["ble_node"] = btn
+            tk.Label(f, text=desc + " on:", font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 4))
+            ble_menu = ttk_combo(f, ble_choice, mono, width=20)
+            ble_menu["values"] = ble_labels
+            ble_menu.pack(side="left")
+        else:
+            border, btn = _tactical_button(f, "> FLASH " + env.upper(), (lambda e=env: do_flash(e)), mono_b,
+                                           accent=(PURPLE if kind == "ota" else CYAN))
+            border.pack(side="left")
+            buttons[env] = btn
+            tk.Label(f, text=desc, font=mono, bg=BG, fg=DIM).pack(side="left", padx=(10, 0))
 
 
 def _build_manage_tab(tab, mono, mono_b, root, port_var):

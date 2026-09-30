@@ -937,6 +937,18 @@ void loop() {
 		Serial.printf("WD:ID role=wifi idx=%d n=%d\n", (int)NODE_INDEX, (int)NODE_COUNT);
 	}
 
+	// Re-assert the scan state to ble_node every couple seconds. ble_node has no
+	// control of its own and self-heals purely from this broadcast (see its
+	// SCANSTATE handler) - relaying only on change let the two drift out of sync
+	// (ble_node stuck stopped while the rest of the rig scans), so ble_node never
+	// scanned and RIG BT stayed 0. This is the periodic broadcast its comment
+	// always assumed existed.
+	static uint32_t lastScanStateRelayMs = 0;
+	if (millis() - lastScanStateRelayMs > 2000) {
+		lastScanStateRelayMs = millis();
+		relayScanStateToBleNode();
+	}
+
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
 		Serial.printf("[heartbeat] up=%lus scanning=%d cydSdOk=%d gpsFix=%d lat=%.6f lon=%.6f sats=%d "

@@ -15,6 +15,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <unordered_set>
+#include <unordered_map>
 #include "WardriveEspNow.h"
 
 // Flip to false once the rig is proven out - see wifi_node/main.cpp for why.
@@ -240,8 +241,9 @@ static void handleLinkStatusLine(const String &line) {
 // task, so instead of clearing the set itself, it just raises a flag;
 // shouldSendBle() checks and consumes that flag before touching the set,
 // keeping every actual read/write on the one task that owns it.
-std::unordered_set<uint64_t> bleSeenThisRun;
+std::unordered_map<uint64_t, uint32_t> bleSeenThisRun; // MAC -> last time we forwarded it (millis)
 static const size_t BLE_SEEN_MAX_ENTRIES = 4000;
+static const uint32_t BLE_NOFIX_RELOG_MS = 5000; // with no GPS fix, re-forward each device this often so the phone's live BLE stays fresh
 volatile bool bleDedupClearPending = false;
 
 static uint64_t macToKey(const uint8_t *mac) {
@@ -261,9 +263,19 @@ static bool shouldSendBle(const uint8_t *mac) {
 	// heap. Clearing it just means a device may be sent twice in one run.
 	if (bleSeenThisRun.size() >= BLE_SEEN_MAX_ENTRIES) bleSeenThisRun.clear();
 
+	uint32_t now = millis();
+	bool hasFix = wifiNodeHasFix && (now - lastGpsFixLineMs <= GPSFIX_STALE_MS);
 	uint64_t key = macToKey(mac);
-	if (bleSeenThisRun.count(key)) return false; // already sent this one, this run
-	bleSeenThisRun.insert(key);
+	auto it = bleSeenThisRun.find(key);
+	if (it != bleSeenThisRun.end()) {
+		// With a fix (real wardriving) each device is forwarded once per run, so
+		// the CYD writes one SD row per device. With no fix (live desk use) there
+		// are no rows to duplicate, so re-forward on a timer to keep the phone's
+		// live BLE list and fox-hunt RSSI current - matching wifi_node's AP path.
+		if (hasFix) return false;
+		if (now - it->second < BLE_NOFIX_RELOG_MS) return false;
+	}
+	bleSeenThisRun[key] = now;
 	return true;
 }
 
@@ -355,7 +367,10 @@ static void sendObservation(const uint8_t *mac, int rssi, const std::string &raw
 class WardriveScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 	void onResult(NimBLEAdvertisedDevice *device) override {
 		if (!scanningActive) return;
-		if (!wifiNodeHasFix || millis() - lastGpsFixLineMs > GPSFIX_STALE_MS) return; // see wifiNodeHasFix
+		// Note: no GPS-fix gate here. Forward BLE even with no fix so the phone's
+		// live tools (Live BLE, fox-hunt, antenna check) still see it - wifi_node
+		// tags it 0,0 and cyd_node keeps location-less rows out of the SD
+		// log/upload, exactly like the WiFi path. shouldSendBle() de-dupes.
 
 		// getAddress() returns a temporary NimBLEAddress by value, and
 		// getNative() points into that temporary's own storage - it's

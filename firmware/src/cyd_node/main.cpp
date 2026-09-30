@@ -1823,6 +1823,9 @@ std::unordered_map<uint64_t, CydApDedupEntry> cydApDedupState;
 // but the run's WiFi count must only tick once per device (else it climbs
 // forever like a broken odometer). Cleared each run in startScanning().
 std::unordered_set<uint64_t> cydWifiNoFixCounted;
+// Same idea for BLE: ble_node re-forwards a location-less device every few
+// seconds for live RSSI, so count each one once per run. Cleared in startScanning().
+std::unordered_set<uint64_t> cydBleNoFixCounted;
 
 static uint64_t cydMacToKey(const uint8_t *mac) {
 	uint64_t key = 0;
@@ -1914,6 +1917,7 @@ static bool startScanning() {
 	bool bleFileOk = wigleBle.begin(sessionDir(), "ble");
 	cydApDedupState.clear();
 	cydWifiNoFixCounted.clear();
+	cydBleNoFixCounted.clear();
 	alertedDevices.clear(); // fresh detection alerts each run
 	lastSdFlushMs = millis();
 	initSnifferRadio();
@@ -3165,11 +3169,22 @@ static void handleIncomingLine(const String &line) {
 		String mfgHex = c8 < 0 ? "" : rest.substring(c8 + 1); // trailing field - only present now that wifi_node forwards ble_node's raw manufacturer data (see its handleBleLinkLine())
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone
 		// Location-less BLE (no fix, 0,0) still streams to the phone's live tools
-		// but isn't written to the SD log/upload.
-		if (!(lat == 0.0 && lon == 0.0)) wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
-		bleCountThisRun++;
-		pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
-		checkBleAlert(mac, name, mfgHex);
+		// but isn't written to the SD log/upload, and is counted once per run
+		// (ble_node re-forwards it every few seconds for live RSSI).
+		bool bleHasFix = !(lat == 0.0 && lon == 0.0);
+		bool bleIsNew;
+		if (bleHasFix) {
+			wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
+			bleCountThisRun++;
+			bleIsNew = true;
+		} else {
+			bleIsNew = cydBleNoFixCounted.insert(cydMacKeyFromString(mac)).second;
+			if (bleIsNew) bleCountThisRun++;
+		}
+		if (bleIsNew) {
+			pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
+			checkBleAlert(mac, name, mfgHex);
+		}
 
 		if (wdstreamActive && !relayActive) {
 			phonePrintf("WD:BLE ts=%lu mac=%s name_hex=%s rssi=%d mfg_hex=%s",

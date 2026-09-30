@@ -83,6 +83,9 @@ struct WardriveConfig {
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever (age-based cap off by default)
 	uint32_t minFreeMB = 1024;  // keep everything until free space drops below this, then delete oldest uploaded files; 0 = never delete for space
 	uint32_t channelHopMs = 150;
+	// CYD headline counters: 0 = WIGLE (WiFi) / WDGW (WiFi+BLE) upload framing
+	// (default), 1 = raw "found" counts: APs (WiFi) / BT (BLE) / ALL.
+	uint8_t countMode = 0;
 	// Password for service mode's log web server. When set, every web request
 	// must supply it; when empty, service mode is open to anyone on the same
 	// WiFi (see docs/SECURITY.md). Firmware is flashed over USB - no OTA.

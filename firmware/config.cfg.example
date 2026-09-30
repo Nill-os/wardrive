@@ -31,6 +31,8 @@ led_color_fail=FF0000
 retention_days=0
 min_free_mb=1024
 channel_hop_ms=150
+# CYD headline counters: 0 = WIGLE (WiFi) / WDGW (WiFi+BLE), 1 = found APs / BT / ALL.
+count_mode=0
 # Password for service mode's log web server. Strongly recommended: when set,
 # the web page/downloads need this password. Left blank, service mode is open
 # to anyone on the same WiFi while it's running - only fine on a trusted network.

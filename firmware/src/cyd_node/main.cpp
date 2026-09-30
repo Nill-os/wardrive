@@ -952,11 +952,17 @@ static void drawTabMain(bool redrawAll) {
 			const char *label;
 			uint16_t color;
 		};
-		const StatCol cols[3] = {
-			{wigleCount, "WIGLE", COLOR_CYAN},
-			{wdgwCount, "WDGW", COLOR_PURPLE},
-			{bleCountThisRun, "BT", COLOR_GREEN},
-		};
+		StatCol cols[3];
+		if (config.countMode == 1) {
+			// Raw "found" counts instead of the WiGLE/WDGW upload framing.
+			cols[0] = {wifiCountThisRun, "APS", COLOR_CYAN};
+			cols[1] = {bleCountThisRun, "BT", COLOR_GREEN};
+			cols[2] = {wifiCountThisRun + bleCountThisRun, "ALL", COLOR_PURPLE};
+		} else {
+			cols[0] = {wigleCount, "WIGLE", COLOR_CYAN};
+			cols[1] = {wdgwCount, "WDGW", COLOR_PURPLE};
+			cols[2] = {bleCountThisRun, "BT", COLOR_GREEN};
+		}
 		tft.setTextDatum(MC_DATUM);
 		for (uint8_t i = 0; i < 3; i++) {
 			int16_t cx = boxX + colW * i + colW / 2;
@@ -2408,6 +2414,24 @@ static void wdstreamEmitStatus() {
 // they go over the line-based link as-is (WD:FROW <row>), no encoding.
 File relayFile;
 bool relayActive = false;
+
+// Re-send the APs this board currently knows (its on-screen list, up to
+// MAX_AP_SIGHTINGS) as WD:AP lines. The phone clears its live list when a run
+// starts, and the rig otherwise de-dupes its stream, so without this a phone
+// that connects or (re)starts a run sees an empty Rig WiFi list even though the
+// rig already knows plenty. Called on a fresh wdstream handshake and on a phone
+// "scan start". (BLE has no persistent on-screen list to snapshot; it fills as
+// devices are re-heard.)
+static void emitApSnapshot() {
+	if (!wdstreamActive || relayActive) return;
+	for (uint8_t i = 0; i < apSightingCount; i++) {
+		const ApSighting &s = apSightings[i];
+		phonePrintf("WD:AP ts=%lu bssid=%s ssid_hex=%s rssi=%d ch=%u auth=%s hidden=%u",
+					  (unsigned long)millis(), s.bssid.c_str(),
+					  hexEncode((const uint8_t *)s.ssid.c_str(), s.ssid.length()).c_str(),
+					  s.rssi, 0U, wdstreamAuthToken(s.auth), s.ssid.length() == 0 ? 1U : 0U);
+	}
+}
 String relayName;
 uint32_t relayRows = 0;
 static const uint8_t RELAY_ROWS_PER_TICK = 1;
@@ -2489,6 +2513,7 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "home_lon") config.homeLon = value.toDouble();
 	else if (key == "home_radius_m") config.homeRadiusM = value.toDouble();
 	else if (key == "exclude_radius_m") config.excludeRadiusM = value.toDouble();
+	else if (key == "count_mode") { config.countMode = (uint8_t)value.toInt(); forceFullRedraw = true; }
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
 	// Don't echo any password (or a wifi credential) back over serial.
@@ -2613,6 +2638,7 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		// run the rig is already in. Separate from WD:SCANSTATE (a change) on purpose: a snapshot
 		// of "stopped" must never stop a phone that's mid-run - that phone sends "scan start".
 		phonePrintf("WD:RIGSTATE:%d", scanningActive ? 1 : 0);
+		emitApSnapshot(); // fill the phone's Rig WiFi list right away with what we already know
 		// Snapshot of this board's own mesh link to wifi_node, for the phone app's "is the rig
 		// actually linked together" indicator - see drawHeader()'s matching mirror for why a
 		// snapshot here too (not just on-change there) matters: a phone that just (re)connected
@@ -2629,6 +2655,7 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		// scanning, not just subscribe to whatever it's already doing -
 		// same effect as touching START/STOP here, just triggered remotely.
 		setScanning(true);
+		emitApSnapshot(); // the phone clears its live list on run start - re-seed it with what we already know
 		if (WARDRIVE_DEBUG) Serial.println("[wdstream] remote start requested");
 	} else if (line == "scan stop") {
 		setScanning(false);

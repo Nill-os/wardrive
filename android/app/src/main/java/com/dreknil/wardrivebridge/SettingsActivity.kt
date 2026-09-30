@@ -76,6 +76,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.rigScreenBrightnessInput.setText(settings.rigScreenBrightness.toString())
         binding.rigScreenTimeoutInput.setText(settings.rigScreenTimeoutSec.toString())
         binding.rigScreenKeepOnCheck.isChecked = settings.rigScreenKeepOnScanning
+        binding.rigCountFoundCheck.isChecked = settings.rigCountFoundMode
         fun rigColorBtn(btn: android.widget.Button, name: String, get: () -> Int, set: (Int) -> Unit) {
             fun label() { btn.text = "$name  #%06X".format(get() and 0xFFFFFF) }
             label()
@@ -159,6 +160,7 @@ class SettingsActivity : AppCompatActivity() {
         link.sendRaw("cfg screen_brightness ${settings.rigScreenBrightness}")
         link.sendRaw("cfg screen_timeout_sec ${settings.rigScreenTimeoutSec}")
         link.sendRaw("cfg screen_keep_on_scanning ${if (settings.rigScreenKeepOnScanning) 1 else 0}")
+        link.sendRaw("cfg count_mode ${if (settings.rigCountFoundMode) 1 else 0}")
         link.sendRaw("cfg led_color_ap %06X".format(settings.rigLedAp and 0xFFFFFF))
         link.sendRaw("cfg led_color_ble %06X".format(settings.rigLedBle and 0xFFFFFF))
         link.sendRaw("cfg led_color_ok %06X".format(settings.rigLedOk and 0xFFFFFF))
@@ -283,6 +285,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.rigScreenBrightness = binding.rigScreenBrightnessInput.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: settings.rigScreenBrightness
         settings.rigScreenTimeoutSec = binding.rigScreenTimeoutInput.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: settings.rigScreenTimeoutSec
         settings.rigScreenKeepOnScanning = binding.rigScreenKeepOnCheck.isChecked
+        settings.rigCountFoundMode = binding.rigCountFoundCheck.isChecked
         pushRigVisualSettings()
         pushRigNetworkSettings()
         settings.tripMode = binding.tripModeCheck.isChecked

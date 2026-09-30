@@ -109,6 +109,8 @@ class AppSettings(context: Context) {
     var rigScreenBrightness: Int get() = prefs.getInt("rig_screen_brightness", 100); set(v) = prefs.edit().putInt("rig_screen_brightness", v).apply()
     var rigScreenTimeoutSec: Int get() = prefs.getInt("rig_screen_timeout", 0); set(v) = prefs.edit().putInt("rig_screen_timeout", v).apply()
     var rigScreenKeepOnScanning: Boolean get() = prefs.getBoolean("rig_screen_keepon", true); set(v) = prefs.edit().putBoolean("rig_screen_keepon", v).apply()
+    // false = rig shows WiGLE/WDGW counters (default), true = raw found APs / Bluetooth
+    var rigCountFoundMode: Boolean get() = prefs.getBoolean("rig_count_found", false); set(v) = prefs.edit().putBoolean("rig_count_found", v).apply()
 
     fun macBlacklist(): Set<String> =
         macBlacklistRaw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()

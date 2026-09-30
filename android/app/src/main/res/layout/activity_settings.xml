@@ -379,6 +379,9 @@
         <CheckBox android:id="@+id/rigScreenKeepOnCheck"
             android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:textColor="@color/text_primary" android:text="Keep the rig screen on while a run is active" />
+        <CheckBox android:id="@+id/rigCountFoundCheck"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/text_primary" android:text="Rig counters show found APs / Bluetooth (instead of WiGLE / WDGW)" />
         <Button android:id="@+id/rigLedApButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: AP seen" />
         <Button android:id="@+id/rigLedBleButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: BLE seen" />
         <Button android:id="@+id/rigLedOkButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: OK / start / stop" />

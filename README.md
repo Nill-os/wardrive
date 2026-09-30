@@ -20,7 +20,10 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 - **Smart de-duplication:** distance-based for WiFi, per-run for BLE. It rides out GPS gaps of up to 15 s.
 - **Idle auto-stop** after 30 minutes parked, to protect the car battery.
 - **Status LEDs** on every board, so you can read the rig without a screen.
+- **Detection alerts:** the rig and phone flag notable devices as you pass them - Flock cameras, Flipper Zeros, card skimmers, police body cams, smart glasses, action cams and WiFi Pineapples - each category togglable on its own. The car screen shows a red banner and flashes an LED; the phone speaks the alert and vibrates.
 - **Service mode:** park the rig on WiFi to download its session logs from any browser and flash new firmware **over the air** - no unplugging. Started from the phone app or a touch on the screen; scanning pauses while it's up.
+- **Modular, multi-node scaling:** add more ESP32 sniffer nodes (e.g. Seeed XIAO boards) and the firmware splits the 2.4 GHz channels across them automatically from two build flags - each node dwells on fewer channels and revisits them faster. See [Design notes → Scaling to more sniffer nodes](docs/DESIGN_NOTES.md#scaling-to-more-sniffer-nodes).
+- **Desktop app** ([`firmware/tools/`](firmware/tools/)): the go-to tool for the rig. Pull logs off the SD card, over USB, or over WiFi (no card removal); build an interactive **field report** (map, search, filters, plus the same Flock/Flipper/skimmer detection); **flash** any board over USB or the CYD over the air; and **manage** the rig from a serial console. One-click launcher with an app icon (`tools/install-desktop.sh`).
 - **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile.
 - **Map and car display** ([Organic Maps overlay](organic-maps-overlay/)): live status on the map and in Android Auto, with a start/stop button in the car.
 

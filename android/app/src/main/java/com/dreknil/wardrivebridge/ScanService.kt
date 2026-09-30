@@ -578,7 +578,13 @@ class ScanService : Service(), RigLinkManager.Listener {
             isReturning = previousSighting != null,
         )
 
-        if (isFiltered(tagged)) { if (excludedMacs.add(tagged.mac)) excludedCount++; return } // _nomap / blacklist / home exclusion zone - dropped entirely; counted once per unique device
+        // _nomap / blacklist / home exclusion zone. These are still SHOWN in the
+        // live tools/feed (so Live WiFi, fox-hunt and antenna check work at home,
+        // inside your own exclusion zone), but a filtered sighting is never logged,
+        // counted, exported, uploaded or alerted on - that's the privacy guarantee
+        // that actually matters. See the short-circuit right after the group add.
+        val filtered = isFiltered(tagged)
+        if (filtered && excludedMacs.add(tagged.mac)) excludedCount++ // unique excluded devices, for the dashboard
 
         val map = groups.getValue(tagged.source)
         val existing = map[tagged.mac]
@@ -601,6 +607,15 @@ class ScanService : Service(), RigLinkManager.Listener {
             tagged
         }
         map[tagged.mac] = tagged2
+
+        // Filtered (home zone / _nomap / blacklist): shown live above, but stop
+        // here - no DB row, no new-find tally, no alert, nothing that persists
+        // or leaves the device. The live tools still update via the listener.
+        if (filtered) {
+            listener?.onObservation(tagged2)
+            updateExternalUi()
+            return
+        }
 
         // Only a genuinely new device this run gets written to the DB -
         // matches the rig's own "log once per run" philosophy instead of

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-label="Two ways to scale the rig: the wired base chain of three boards, and an ESP-NOW mesh where many WiFi and BLE nodes broadcast to the aggregator">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-label="Two ways to scale the rig: the wired base chain ble_node to wifi_node to cyd_node to phone, and an ESP-NOW mesh where WiFi and BLE satellite nodes broadcast to an aggregator that reaches the CYD">
   <style>
     .mono { font-family: ui-monospace, 'SFMono-Regular', 'DejaVu Sans Mono', Menlo, Consolas, monospace; }
     .flow { stroke-dasharray: 6 8; animation: dash 1.2s linear infinite; }
@@ -9,77 +9,72 @@
   <rect x="1.5" y="1.5" width="1197" height="557" fill="none" stroke="#1E293B" stroke-width="3"/>
 
   <g class="mono">
-    <!-- ============ PANEL A: base wired chain ============ -->
+    <!-- ============ PANEL A: base wired chain (ble -> wifi -> cyd -> phone) ============ -->
     <text x="40" y="42" font-size="20" fill="#E8E8F0">Base rig — wired (what ships today)</text>
     <line x1="40" y1="54" x2="1160" y2="54" stroke="#1E293B" stroke-width="1.5"/>
 
-    <rect x="40" y="80" width="200" height="70" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="140" y="110" font-size="17" fill="#00F0FF" text-anchor="middle">wifi_node #0</text>
-    <text x="140" y="132" font-size="12" fill="#4A607A" text-anchor="middle">WiFi sniffer + GPS</text>
+    <rect x="40" y="110" width="180" height="80" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="130" y="145" font-size="17" fill="#00F0FF" text-anchor="middle">ble_node #0</text>
+    <text x="130" y="168" font-size="12" fill="#4A607A" text-anchor="middle">BLE scanner</text>
 
-    <rect x="40" y="185" width="200" height="70" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="140" y="215" font-size="17" fill="#00F0FF" text-anchor="middle">ble_node #0</text>
-    <text x="140" y="237" font-size="12" fill="#4A607A" text-anchor="middle">BLE scanner</text>
+    <rect x="280" y="110" width="180" height="80" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="370" y="145" font-size="17" fill="#00F0FF" text-anchor="middle">wifi_node #0</text>
+    <text x="370" y="168" font-size="12" fill="#4A607A" text-anchor="middle">WiFi sniffer + GPS</text>
 
-    <rect x="420" y="130" width="210" height="80" fill="#080C10" stroke="#9D00FF" stroke-width="2"/>
-    <text x="525" y="162" font-size="17" fill="#9D00FF" text-anchor="middle">cyd_node</text>
-    <text x="525" y="185" font-size="12" fill="#4A607A" text-anchor="middle">screen · SD · uploads</text>
+    <rect x="520" y="110" width="180" height="80" fill="#080C10" stroke="#9D00FF" stroke-width="2"/>
+    <text x="610" y="145" font-size="17" fill="#9D00FF" text-anchor="middle">cyd_node</text>
+    <text x="610" y="168" font-size="12" fill="#4A607A" text-anchor="middle">screen · SD · uploads</text>
 
-    <rect x="800" y="130" width="180" height="80" fill="#080C10" stroke="#22C55E" stroke-width="2"/>
-    <text x="890" y="162" font-size="17" fill="#22C55E" text-anchor="middle">phone (opt.)</text>
-    <text x="890" y="185" font-size="12" fill="#4A607A" text-anchor="middle">dashboard · 5 GHz</text>
+    <rect x="760" y="110" width="180" height="80" fill="#080C10" stroke="#22C55E" stroke-width="2"/>
+    <text x="850" y="145" font-size="17" fill="#22C55E" text-anchor="middle">phone (opt.)</text>
+    <text x="850" y="168" font-size="12" fill="#4A607A" text-anchor="middle">dashboard · 5 GHz</text>
 
-    <!-- wires -->
-    <path class="flow" d="M240 210 H330 V170 H420" fill="none" stroke="#00F0FF" stroke-width="2"/>
-    <path class="flow" d="M240 115 H330 V170 H420" fill="none" stroke="#00F0FF" stroke-width="2"/>
-    <path class="flow" d="M630 170 H800" fill="none" stroke="#9D00FF" stroke-width="2"/>
-    <text x="315" y="102" font-size="11" fill="#4A607A">UART</text>
-    <text x="700" y="160" font-size="11" fill="#4A607A" text-anchor="middle">BLE</text>
-    <text x="335" y="300" font-size="12" fill="#4A607A">wifi_node's 3 UARTs (GPS · ble_node · cyd_node) are all used — no spare wire for more nodes.</text>
+    <!-- links: each board TX to the next board RX, left to right -->
+    <path class="flow" d="M220 150 H280" fill="none" stroke="#00F0FF" stroke-width="2"/>
+    <path class="flow" d="M460 150 H520" fill="none" stroke="#00F0FF" stroke-width="2"/>
+    <path class="flow" d="M700 150 H760" fill="none" stroke="#9D00FF" stroke-width="2"/>
+    <text x="250" y="140" font-size="11" fill="#4A607A" text-anchor="middle">UART</text>
+    <text x="490" y="140" font-size="11" fill="#4A607A" text-anchor="middle">UART</text>
+    <text x="730" y="140" font-size="11" fill="#4A607A" text-anchor="middle">BLE</text>
 
-    <!-- ============ PANEL B: ESP-NOW mesh ============ -->
+    <text x="40" y="250" font-size="12" fill="#4A607A">wifi_node's 3 UARTs (GPS · ble_node · cyd_node) are all used — no spare wire for more nodes.</text>
+
+    <!-- ============ PANEL B: ESP-NOW mesh (satellites -> aggregator -> cyd) ============ -->
     <text x="40" y="360" font-size="20" fill="#E8E8F0">Scaling out — ESP-NOW mesh (recommended direction)</text>
     <line x1="40" y1="372" x2="1160" y2="372" stroke="#1E293B" stroke-width="1.5"/>
 
-    <!-- sniffer nodes -->
-    <rect x="40" y="398" width="150" height="52" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="115" y="420" font-size="14" fill="#00F0FF" text-anchor="middle">wifi_node #0</text>
-    <text x="115" y="438" font-size="10.5" fill="#4A607A" text-anchor="middle">ch 1,4,7,10,13</text>
+    <!-- satellite nodes, one per row so every link has a clear path -->
+    <rect x="40" y="388" width="190" height="44" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="135" y="408" font-size="14" fill="#00F0FF" text-anchor="middle">wifi_node #1</text>
+    <text x="135" y="424" font-size="10.5" fill="#4A607A" text-anchor="middle">ch 2,5,8,11</text>
 
-    <rect x="40" y="462" width="150" height="52" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="115" y="484" font-size="14" fill="#00F0FF" text-anchor="middle">wifi_node #1</text>
-    <text x="115" y="502" font-size="10.5" fill="#4A607A" text-anchor="middle">ch 2,5,8,11</text>
+    <rect x="40" y="440" width="190" height="44" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="135" y="460" font-size="14" fill="#00F0FF" text-anchor="middle">wifi_node #2</text>
+    <text x="135" y="476" font-size="10.5" fill="#4A607A" text-anchor="middle">ch 3,6,9,12</text>
 
-    <rect x="210" y="398" width="150" height="52" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="285" y="420" font-size="14" fill="#00F0FF" text-anchor="middle">wifi_node #2</text>
-    <text x="285" y="438" font-size="10.5" fill="#4A607A" text-anchor="middle">ch 3,6,9,12</text>
+    <rect x="40" y="492" width="190" height="44" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
+    <text x="135" y="512" font-size="14" fill="#00F0FF" text-anchor="middle">ble_node #1</text>
+    <text x="135" y="528" font-size="10.5" fill="#4A607A" text-anchor="middle">MAC % N == 1</text>
 
-    <rect x="210" y="462" width="150" height="52" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="285" y="484" font-size="14" fill="#00F0FF" text-anchor="middle">ble_node #0</text>
-    <text x="285" y="502" font-size="10.5" fill="#4A607A" text-anchor="middle">MAC % N == 0</text>
+    <!-- aggregator + cyd -->
+    <rect x="470" y="430" width="190" height="72" fill="#080C10" stroke="#F59E0B" stroke-width="2"/>
+    <text x="565" y="462" font-size="15" fill="#F59E0B" text-anchor="middle">aggregator</text>
+    <text x="565" y="483" font-size="11" fill="#4A607A" text-anchor="middle">wifi_node #0 or cyd</text>
 
-    <rect x="380" y="430" width="150" height="52" fill="#080C10" stroke="#00F0FF" stroke-width="2"/>
-    <text x="455" y="452" font-size="14" fill="#00F0FF" text-anchor="middle">ble_node #1</text>
-    <text x="455" y="470" font-size="10.5" fill="#4A607A" text-anchor="middle">MAC % N == 1</text>
+    <rect x="750" y="430" width="180" height="72" fill="#080C10" stroke="#9D00FF" stroke-width="2"/>
+    <text x="840" y="462" font-size="15" fill="#9D00FF" text-anchor="middle">cyd_node</text>
+    <text x="840" y="483" font-size="11" fill="#4A607A" text-anchor="middle">SD · uploads</text>
 
-    <text x="285" y="540" font-size="11" fill="#4A607A" text-anchor="middle">… up to 20 of each</text>
+    <!-- RF links (broadcast, no wires): node right edge -> aggregator left edge, clear of every box -->
+    <path class="rf" d="M230 410 L470 452" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
+    <path class="rf" d="M230 462 L470 466" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
+    <path class="rf" d="M230 514 L470 482" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
+    <text x="350" y="398" font-size="11" fill="#4A607A" text-anchor="middle">ESP-NOW (no wires)</text>
 
-    <!-- aggregator -->
-    <rect x="640" y="418" width="190" height="76" fill="#080C10" stroke="#F59E0B" stroke-width="2"/>
-    <text x="735" y="448" font-size="15" fill="#F59E0B" text-anchor="middle">aggregator</text>
-    <text x="735" y="470" font-size="11" fill="#4A607A" text-anchor="middle">wifi_node #0 or cyd</text>
+    <!-- aggregator -> cyd over the one remaining wire -->
+    <path class="flow" d="M660 466 H750" fill="none" stroke="#9D00FF" stroke-width="2"/>
+    <text x="705" y="456" font-size="11" fill="#4A607A" text-anchor="middle">UART</text>
 
-    <rect x="900" y="418" width="180" height="76" fill="#080C10" stroke="#9D00FF" stroke-width="2"/>
-    <text x="990" y="448" font-size="15" fill="#9D00FF" text-anchor="middle">cyd_node</text>
-    <text x="990" y="470" font-size="11" fill="#4A607A" text-anchor="middle">SD · uploads</text>
-
-    <!-- rf links (no wires) -->
-    <path class="rf" d="M190 424 H640" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
-    <path class="rf" d="M190 488 H360 M360 488 Q500 488 640 470" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
-    <path class="rf" d="M360 424 H640" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
-    <path class="rf" d="M530 456 H640" fill="none" stroke="#00F0FF" stroke-width="1.5"/>
-    <text x="560" y="416" font-size="11" fill="#4A607A" text-anchor="middle">ESP-NOW (no wires)</text>
-    <path class="flow" d="M830 456 H900" fill="none" stroke="#9D00FF" stroke-width="2"/>
-    <text x="865" y="448" font-size="10.5" fill="#4A607A" text-anchor="middle">UART</text>
+    <text x="480" y="548" font-size="11" fill="#4A607A" text-anchor="middle">… scale to up to 20 WiFi and 20 BLE nodes</text>
   </g>
 </svg>

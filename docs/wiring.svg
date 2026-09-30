@@ -77,7 +77,7 @@
     <!-- legend -->
     <g transform="translate(40,580)">
       <text x="0" y="0" font-size="16" fill="#00F0FF">&gt; CONNECTIONS &lt;</text>
-      <text x="0" y="30" class="note">GPS TX -&gt; wifi_node GPIO18 · GPS RX &lt;- wifi_node GPIO17 (for 5 Hz) · VCC -&gt; 3V3 · GND -&gt; GND</text>
+      <text x="0" y="30" class="note">GPS TX -&gt; wifi_node GPIO18 · GPS RX &lt;- wifi_node GPIO17 (optional) · VCC -&gt; 3V3 · GND -&gt; GND</text>
       <text x="0" y="55" class="note">ble_node GPIO8 (TX) -&gt; wifi_node GPIO8 (RX) · wifi_node GPIO3 (TX) -&gt; ble_node GPIO3 (RX) · GND -&gt; GND</text>
       <text x="0" y="80" class="note">wifi_node GPIO13 (TX) -&gt; CYD CN1 IO27 (RX) · CYD CN1 IO22 (TX) -&gt; wifi_node GPIO14 (RX) · GND -&gt; GND</text>
       <text x="0" y="105" class="note">Power each board from USB (5V). All grounds must be common - run the GND wires even if everything shares one USB hub.</text>

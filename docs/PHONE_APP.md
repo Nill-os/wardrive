@@ -7,7 +7,7 @@ The rig works on its own, and **the phone is optional**. With the phone you get:
 - tracker and skimmer detection alerts
 - start/stop from the phone, the map and the car screen
 
-## Wardrive Bridge (Android)
+## Nill OS - Wardriver (Android)
 
 Source: [`android/`](../android) in this repo. It needs Android 8.0 or newer.
 
@@ -54,13 +54,13 @@ If Bluetooth isn't available, plug the phone into the CYD's USB port with a USB-
 
 ## Organic Maps overlay (optional)
 
-A lightly patched Organic Maps build ([organic-maps-overlay/](../organic-maps-overlay)) shows a one-line Wardrive Bridge status on the map, for example:
+A lightly patched Organic Maps build ([organic-maps-overlay/](../organic-maps-overlay)) shows a one-line Nill OS - Wardriver status on the map, for example:
 
 ```
 ON · WIGLE 12 · WDGW 9 · BT 30 · CYD BLE · Rig ✓
 ```
 
-Tap the overlay to open Wardrive Bridge. The overlay only **reads** status from Wardrive Bridge through a content provider; it never scans or talks to the rig itself, so the two apps can't conflict.
+Tap the overlay to open Nill OS - Wardriver. The overlay only **reads** status from Nill OS - Wardriver through a content provider; it never scans or talks to the rig itself, so the two apps can't conflict.
 
 The provider only answers the approved Organic Maps build. It checks the caller's package name **and** the SHA-256 of its signing certificate (`ALLOWED` in `BridgeProvider.kt`). If you build Organic Maps yourself, put **your** certificate's SHA-256 there:
 
@@ -74,10 +74,10 @@ Use the hex digits in lowercase, without colons.
 
 Both apps show up on the car screen:
 
-- **Wardrive Bridge** has its own car screen, with the live counts and link status.
+- **Nill OS - Wardriver** has its own car screen, with the live counts and link status.
 - **Organic Maps** (the patched build) shows the same status line during navigation. The navigation action strip gets a **record** button that starts and stops the run.
 
-The overlay text on the car map isn't tappable, because Android Auto doesn't allow taps on map drawings. Use the record button, or open Wardrive Bridge from the car launcher.
+The overlay text on the car map isn't tappable, because Android Auto doesn't allow taps on map drawings. Use the record button, or open Nill OS - Wardriver from the car launcher.
 
 Sideloaded apps are hidden from Android Auto by default. To show them:
 

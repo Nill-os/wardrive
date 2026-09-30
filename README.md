@@ -20,7 +20,8 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 - **Smart de-duplication:** distance-based for WiFi, per-run for BLE. It rides out GPS gaps of up to 15 s.
 - **Idle auto-stop** after 30 minutes parked, to protect the car battery.
 - **Status LEDs** on every board, so you can read the rig without a screen.
-- **Optional phone app** ([Wardrive Bridge](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning, detections, exports, a widget and a quick-settings tile.
+- **Service mode:** park the rig on WiFi to download its session logs from any browser and flash new firmware **over the air** - no unplugging. Started from the phone app or a touch on the screen; scanning pauses while it's up.
+- **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile.
 - **Map and car display** ([Organic Maps overlay](organic-maps-overlay/)): live status on the map and in Android Auto, with a start/stop button in the car.
 
 ## Get started
@@ -29,7 +30,7 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 2. **[Build and flash](docs/BUILD_AND_FLASH.md):** PlatformIO setup and flashing each board.
 3. **[Config](docs/CONFIG.md):** `config.cfg` on the SD card (WiFi, upload keys, home geofence).
 4. **[Using the rig](docs/USING_THE_RIG.md):** screen, buttons, LEDs, dock-mode uploads and power behaviour.
-5. **[Phone app](docs/PHONE_APP.md):** Wardrive Bridge, the Organic Maps overlay, Android Auto and the BLE protocol.
+5. **[Phone app](docs/PHONE_APP.md):** Nill OS - Wardriver, the Organic Maps overlay, Android Auto and the BLE protocol.
 6. **[Troubleshooting](docs/TROUBLESHOOTING.md)**
 7. **[Design notes](docs/DESIGN_NOTES.md):** internals, link protocols and known limitations.
 
@@ -65,7 +66,7 @@ firmware/                the three ESP32 boards - PlatformIO project
   lib/WardriveShared/    CSV writer, uploader, config parser, BLE link
   tools/                 BLE link tester, SD-card CSV organizer
   config.cfg.example     template for the SD card
-android/                 Wardrive Bridge - the Android app (Gradle project)
+android/                 Nill OS - Wardriver - the Android app (Gradle project)
 organic-maps-overlay/    patch that adds the status overlay to Organic Maps + apply script
 ```
 

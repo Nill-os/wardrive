@@ -90,3 +90,21 @@ tools/run.sh
 ```
 
 It needs Tk (`sudo apt install python3-tk` on Debian/Ubuntu).
+
+## Over-the-air updates (cyd_node)
+
+The CYD can be reflashed over WiFi, so you don't have to pull it out of the car and plug in a cable for every firmware change. The two node boards (wifi_node, ble_node) are still flashed over USB - they spend their time in scan modes that don't hold a normal WiFi connection.
+
+1. Put the rig in **service mode**: tap **RIG SERVICE MODE** in the phone app's Settings, or send `rig service on` over the CYD's USB serial. The rig joins the WiFi in `config.cfg`, pauses scanning, and shows its address (e.g. `http://192.168.1.198`) on screen and in the app.
+2. Flash over the air:
+
+```
+cd firmware
+pio run -e cyd_node_ota -t upload
+```
+
+`cyd_node_ota` is the same firmware as `cyd_node`, uploaded over WiFi to the mDNS host `nillos-wardriver` instead of a serial port. If `.local` mDNS doesn't resolve on your network, pass the address the rig showed: `pio run -e cyd_node_ota -t upload --upload-port 192.168.1.198`.
+
+3. The rig reboots into the new firmware. Tap its screen (or send `rig service off`) to leave service mode and go back to normal.
+
+The very first flash after changing the partition layout (or a brand-new board) still has to be over USB (`pio run -e cyd_node -t upload`) - OTA needs the two-slot partition table already running.

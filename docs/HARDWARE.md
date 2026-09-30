@@ -14,7 +14,7 @@
 | ~10 | Dupont jumper wires (female-female) or hookup wire | For the GPS and the board-to-board links. |
 | 3 | USB cables | USB-C for the S3 boards. For the CYD, use **USB-A to USB-C** or its micro-USB port: its USB-C port has no CC resistors, so a C-to-C cable won't power it. |
 | 1 | USB power source with at least 3 ports | A car USB adapter or powered hub. Budget about 1.5 A for the whole rig. |
-| 1 | Android phone (optional) | Android 8.0 or newer with Bluetooth LE, for the Wardrive Bridge app. |
+| 1 | Android phone (optional) | Android 8.0 or newer with Bluetooth LE, for the Nill OS - Wardriver app. |
 
 Tools: a soldering iron if your S3 boards came without headers. A multimeter helps too.
 

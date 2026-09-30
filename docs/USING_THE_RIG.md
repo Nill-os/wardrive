@@ -36,7 +36,7 @@ What the buttons do:
 - **START/STOP** starts or stops scanning and logging on all three boards. The rig remembers this through power cuts (see below).
 - **UPLOAD** uploads every session file that hasn't been uploaded yet, straight away. The phone's BLE link drops during the upload to free memory, and reconnects by itself afterwards. If there's nothing new, it says so and flashes green.
 - **RE-LINK ALL** re-sends the rig state to wifi_node, restarts the CYD's Bluetooth so the phone reconnects fresh, and re-announces itself to the phone. Try this first whenever a link looks stuck.
-- **PAIR PHONE** opens a 60-second window with a 6-digit code on screen, for pairing the Wardrive Bridge app (see [Phone app](PHONE_APP.md#first-run)). **FORGET PHONES** removes every paired phone.
+- **PAIR PHONE** opens a 60-second window with a 6-digit code on screen, for pairing the Nill OS - Wardriver app (see [Phone app](PHONE_APP.md#first-run)). **FORGET PHONES** removes every paired phone.
 - **WIPE LOGS** ⚠ deletes **every** session file on the card, including ones not yet uploaded. There is no confirmation. It only works while scanning is stopped.
 
 ## Status LEDs
@@ -86,3 +86,14 @@ The CYD has no GPS of its own. It uses the position relayed by wifi_node, so doc
 - **De-duplication:** a WiFi AP is logged again only after you've moved more than about 40 m. A BLE device is logged once per run. Both reset at every START.
 - **GPS gaps:** for up to 15 s after losing the fix, the last known position is used, with a worse accuracy value. After that, nothing is logged until the fix returns.
 - **Storage:** about 100–130 bytes per row. Even heavy daily urban driving takes years to fill a 32 GB card.
+
+## Service mode (download logs, update firmware)
+
+When you're parked, you can put the rig on your WiFi to grab its logs or update it without any cables. Start it from the phone app (**Settings → RIG SERVICE MODE**) or by sending `rig service on` over USB. The rig:
+
+- pauses scanning and joins the WiFi in `config.cfg`,
+- shows its address on screen (e.g. `http://192.168.1.198`) and pops it up in the app,
+- serves a page listing every session CSV on the card - open it in a browser on the same network and click to download,
+- accepts over-the-air firmware updates on the mDNS host `nillos-wardriver` (see [Build and flash → Over-the-air updates](BUILD_AND_FLASH.md#over-the-air-updates-cyd_node)).
+
+The phone stays connected over Bluetooth the whole time (it only drops for the few seconds an actual firmware flash takes). Tap the rig's screen, tap **Exit service mode** in the app, or send `rig service off` to return to normal. It also times out on its own after 10 minutes.

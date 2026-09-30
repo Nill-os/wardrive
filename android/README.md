@@ -1,4 +1,4 @@
-# Wardrive Bridge
+# Nill OS - Wardriver
 
 Android companion app for the wardriving rig in [`../firmware`](../firmware).
 

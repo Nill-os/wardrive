@@ -47,7 +47,7 @@ channel_hop_ms=150
 
 - It is listed in `.gitignore`. Never commit it, and never post a photo of it.
 - The session CSVs on the card contain GPS coordinates of everywhere you drove, including the start and end of every trip. Treat them as location history.
-- `home_radius_m` (the geofence) only controls **when uploads happen**. To keep sightings near home out of the logs entirely, set **`exclude_radius_m`** — the rig drops any sighting within that many metres of `home_lat`/`home_lon` before writing or uploading it. This is separate from the Wardrive Bridge app's own exclusion zone; set both if you use the phone too.
+- `home_radius_m` (the geofence) only controls **when uploads happen**. To keep sightings near home out of the logs entirely, set **`exclude_radius_m`** — the rig drops any sighting within that many metres of `home_lat`/`home_lon` before writing or uploading it. This is separate from the Nill OS - Wardriver app's own exclusion zone; set both if you use the phone too.
 - SSIDs ending in `_nomap` or `_optout` are never logged (WiGLE's opt-out convention).
 
 ## Files the rig writes

@@ -17,6 +17,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        ThemeManager.apply(binding.root, this)
         settings = AppSettings(this)
 
         binding.wigleTokenInput.setText(settings.wigleToken)
@@ -44,6 +45,36 @@ class SettingsActivity : AppCompatActivity() {
             binding.wdgwarsKeyInput.inputType = type
             binding.showKeysButton.text = if (masked) "> HIDE KEYS" else "> SHOW KEYS"
         }
+        // App theme accents
+        fun colorBtn(btn: android.widget.Button, name: String, get: () -> Int, set: (Int) -> Unit) {
+            fun label() { btn.text = "$name  #%06X".format(get() and 0xFFFFFF) }
+            label()
+            btn.setOnClickListener {
+                ColorPickerDialog.show(this, name, get() and 0xFFFFFF) { rgb -> set(0xFF000000.toInt() or rgb); label() }
+            }
+        }
+        colorBtn(binding.primaryAccentButton, "Primary accent", { settings.accentPrimary }, { settings.accentPrimary = it })
+        colorBtn(binding.secondaryAccentButton, "Secondary accent", { settings.accentSecondary }, { settings.accentSecondary = it })
+        binding.resetThemeButton.setOnClickListener {
+            settings.accentPrimary = ThemeManager.DEFAULT_PRIMARY
+            settings.accentSecondary = ThemeManager.DEFAULT_SECONDARY
+            Toast.makeText(this, "Theme reset - reopen the app to see it", Toast.LENGTH_SHORT).show()
+        }
+        // Rig LEDs & screen
+        if (settings.rigLedBrightness in 0..100) binding.rigLedBrightnessInput.setText(settings.rigLedBrightness.toString())
+        binding.rigScreenBrightnessInput.setText(settings.rigScreenBrightness.toString())
+        binding.rigScreenTimeoutInput.setText(settings.rigScreenTimeoutSec.toString())
+        binding.rigScreenKeepOnCheck.isChecked = settings.rigScreenKeepOnScanning
+        fun rigColorBtn(btn: android.widget.Button, name: String, get: () -> Int, set: (Int) -> Unit) {
+            fun label() { btn.text = "$name  #%06X".format(get() and 0xFFFFFF) }
+            label()
+            btn.setOnClickListener { ColorPickerDialog.show(this, name, get() and 0xFFFFFF) { rgb -> set(rgb and 0xFFFFFF); label() } }
+        }
+        rigColorBtn(binding.rigLedApButton, "AP seen", { settings.rigLedAp }, { settings.rigLedAp = it })
+        rigColorBtn(binding.rigLedBleButton, "BLE seen", { settings.rigLedBle }, { settings.rigLedBle = it })
+        rigColorBtn(binding.rigLedOkButton, "OK / start / stop", { settings.rigLedOk }, { settings.rigLedOk = it })
+        rigColorBtn(binding.rigLedFailButton, "Error / fail", { settings.rigLedFail }, { settings.rigLedFail = it })
+
         showPairedRig()
         binding.forgetRigButton.setOnClickListener {
             // rigLink is lateinit - only touch it on a service that got far enough to set it.
@@ -54,6 +85,24 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.useCurrentLocationButton.setOnClickListener { fillCurrentLocation() }
         binding.saveSettingsButton.setOnClickListener { save() }
+    }
+
+    /** Push the LED/screen settings to the rig over Bluetooth (it applies live and saves them). */
+    private fun pushRigVisualSettings() {
+        val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+        if (link == null || ScanService.instance?.rigConnected != true) {
+            Toast.makeText(this, "Rig LED/screen settings saved - they'll apply when the rig connects", Toast.LENGTH_SHORT).show()
+            return
+        }
+        link.sendRaw("cfg led_brightness ${settings.rigLedBrightness}")
+        link.sendRaw("cfg screen_brightness ${settings.rigScreenBrightness}")
+        link.sendRaw("cfg screen_timeout_sec ${settings.rigScreenTimeoutSec}")
+        link.sendRaw("cfg screen_keep_on_scanning ${if (settings.rigScreenKeepOnScanning) 1 else 0}")
+        link.sendRaw("cfg led_color_ap %06X".format(settings.rigLedAp and 0xFFFFFF))
+        link.sendRaw("cfg led_color_ble %06X".format(settings.rigLedBle and 0xFFFFFF))
+        link.sendRaw("cfg led_color_ok %06X".format(settings.rigLedOk and 0xFFFFFF))
+        link.sendRaw("cfg led_color_fail %06X".format(settings.rigLedFail and 0xFFFFFF))
+        Toast.makeText(this, "Sent LED/screen settings to the rig", Toast.LENGTH_SHORT).show()
     }
 
     private fun showPairedRig() {
@@ -101,6 +150,11 @@ class SettingsActivity : AppCompatActivity() {
         settings.spokenUpdateMinutes = binding.spokenMinutesInput.text.toString().toIntOrNull()?.coerceIn(0, 120) ?: 0
         settings.spokenTrackerAlerts = binding.spokenTrackerCheck.isChecked
         settings.autoUploadOnWifi = binding.autoUploadCheck.isChecked
+        settings.rigLedBrightness = binding.rigLedBrightnessInput.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: settings.rigLedBrightness
+        settings.rigScreenBrightness = binding.rigScreenBrightnessInput.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: settings.rigScreenBrightness
+        settings.rigScreenTimeoutSec = binding.rigScreenTimeoutInput.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: settings.rigScreenTimeoutSec
+        settings.rigScreenKeepOnScanning = binding.rigScreenKeepOnCheck.isChecked
+        pushRigVisualSettings()
         settings.tripMode = binding.tripModeCheck.isChecked
         val wantsSpeech = settings.spokenUpdateMinutes > 0 || settings.spokenTrackerAlerts
         val hasTtsEngine = packageManager.queryIntentServices(

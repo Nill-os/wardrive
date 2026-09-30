@@ -129,6 +129,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        ThemeManager.apply(binding.root, this)
 
         appSettings = AppSettings(this)
         if (intent?.action == ScanService.ACTION_START) startRunRequested = true
@@ -1070,6 +1071,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             binding.speedValueText.text = "0 mph"
             binding.distanceValueText.text = "0.0 mi"
         }
+    
+        ThemeManager.apply(binding.root, this)
     }
 
     // Always-visible corner readout on the map screen (as opposed to the Dashboard tab's own

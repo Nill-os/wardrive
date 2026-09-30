@@ -2036,6 +2036,59 @@ static bool relaySafeName(const String &name) {
 	return name.endsWith(".csv");
 }
 
+// Writes key=value into /config.cfg (replacing the key if present, appending if not) so a
+// setting changed from the phone survives a reboot. Best-effort - a write failure just means the
+// change is live-only until the next boot.
+static void persistConfigKey(const String &key, const String &value) {
+	if (!sdOk) return;
+	String out;
+	bool replaced = false;
+	File in = SD.open("/config.cfg", FILE_READ);
+	if (in) {
+		while (in.available()) {
+			String line = in.readStringUntil('\n');
+			String trimmed = line; trimmed.trim();
+			int eq = trimmed.indexOf('=');
+			String k = eq > 0 ? trimmed.substring(0, eq) : "";
+			k.trim();
+			if (k == key) { out += key + "=" + value + "\n"; replaced = true; }
+			else { line.replace("\r", ""); out += line + "\n"; }
+		}
+		in.close();
+	}
+	if (!replaced) out += key + "=" + value + "\n";
+	File o = SD.open("/config.cfg.tmp", FILE_WRITE);
+	if (!o) return;
+	o.print(out);
+	o.close();
+	SD.remove("/config.cfg");
+	SD.rename("/config.cfg.tmp", "/config.cfg");
+}
+
+// Applies a setting from the phone live and persists it. Colours also re-broadcast to the boards.
+static void relayBroadcastLedColors();
+static void applyConfigSetting(const String &key, const String &value) {
+	if (key == "led_brightness") { config.ledBrightness = constrain(value.toInt(), 0, 100); applyBrightness(); }
+	else if (key == "screen_brightness") { config.screenBrightness = constrain(value.toInt(), 0, 100); applyBrightness(); }
+	else if (key == "screen_timeout_sec") { config.screenTimeoutSec = value.toInt(); lastTouchWakeMs = millis(); }
+	else if (key == "screen_keep_on_scanning") config.screenKeepOnScanning = (value == "1" || value == "true");
+	else if (key == "led_color_ap") { config.ledColorAp = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
+	else if (key == "led_color_ble") { config.ledColorBle = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
+	else if (key == "led_color_ok") { config.ledColorOk = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
+	else if (key == "led_color_fail") { config.ledColorFail = strtoul(value.c_str(), nullptr, 16); relayBroadcastLedColors(); }
+	else return; // unknown key - don't persist
+	persistConfigKey(key, value);
+	if (WARDRIVE_DEBUG) Serial.printf("[cfg] %s = %s (applied + saved)\n", key.c_str(), value.c_str());
+}
+
+static void relayBroadcastLedColors() {
+	char c[64];
+	snprintf(c, sizeof(c), "CFG:ledColors=%06lX,%06lX,%06lX,%06lX",
+			 (unsigned long)config.ledColorAp, (unsigned long)config.ledColorBle,
+			 (unsigned long)config.ledColorOk, (unsigned long)config.ledColorFail);
+	wifiLinkSend(c);
+}
+
 static void relayMarkUploaded(const String &name) {
 	if (!relaySafeName(name)) return;
 	String path = String(sessionDir()) + "/" + name;
@@ -2158,6 +2211,10 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		relayListPending();
 	} else if (line.startsWith("rig send ")) {
 		relayStartSend(line.substring(9));
+	} else if (line.startsWith("cfg ")) {
+		// "cfg <key> <value>" from the phone - apply live and save to config.cfg.
+		String rest = line.substring(4); int sp = rest.indexOf(' ');
+		if (sp > 0) applyConfigSetting(rest.substring(0, sp), rest.substring(sp + 1));
 	} else if (line.startsWith("rig ack ")) {
 		relayMarkUploaded(line.substring(8));
 	} else if (line == "rig autoupload off") {
@@ -2844,10 +2901,7 @@ void loop() {
 		wifiLinkSend(cfgLine);
 		snprintf(cfgLine, sizeof(cfgLine), "CFG:ledBrightness=%u", (unsigned)config.ledBrightness);
 		wifiLinkSend(cfgLine);
-		snprintf(cfgLine, sizeof(cfgLine), "CFG:ledColors=%06lX,%06lX,%06lX,%06lX",
-				 (unsigned long)config.ledColorAp, (unsigned long)config.ledColorBle,
-				 (unsigned long)config.ledColorOk, (unsigned long)config.ledColorFail);
-		wifiLinkSend(cfgLine);
+		relayBroadcastLedColors();
 	}
 
 	if (millis() - lastScanStateBroadcastMs > SCANSTATE_BROADCAST_MS) {

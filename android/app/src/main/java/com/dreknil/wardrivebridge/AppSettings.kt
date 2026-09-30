@@ -77,6 +77,25 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("trip_mode", false)
         set(value) = prefs.edit().putBoolean("trip_mode", value).apply()
 
+    /** App UI accent colours (ARGB Int). Default to the built-in cyan / purple. */
+    var accentPrimary: Int
+        get() = prefs.getInt("accent_primary", 0xFF00F0FF.toInt())
+        set(value) = prefs.edit().putInt("accent_primary", value).apply()
+
+    var accentSecondary: Int
+        get() = prefs.getInt("accent_secondary", 0xFF9D00FF.toInt())
+        set(value) = prefs.edit().putInt("accent_secondary", value).apply()
+
+    // Rig LED colours (RRGGBB, no alpha) and screen settings, mirrored to the rig over Bluetooth.
+    var rigLedAp: Int get() = prefs.getInt("rig_led_ap", 0xFF00FF); set(v) = prefs.edit().putInt("rig_led_ap", v).apply()
+    var rigLedBle: Int get() = prefs.getInt("rig_led_ble", 0x00FFFF); set(v) = prefs.edit().putInt("rig_led_ble", v).apply()
+    var rigLedOk: Int get() = prefs.getInt("rig_led_ok", 0x00FF00); set(v) = prefs.edit().putInt("rig_led_ok", v).apply()
+    var rigLedFail: Int get() = prefs.getInt("rig_led_fail", 0xFF0000); set(v) = prefs.edit().putInt("rig_led_fail", v).apply()
+    var rigLedBrightness: Int get() = prefs.getInt("rig_led_brightness", 3); set(v) = prefs.edit().putInt("rig_led_brightness", v).apply()
+    var rigScreenBrightness: Int get() = prefs.getInt("rig_screen_brightness", 100); set(v) = prefs.edit().putInt("rig_screen_brightness", v).apply()
+    var rigScreenTimeoutSec: Int get() = prefs.getInt("rig_screen_timeout", 0); set(v) = prefs.edit().putInt("rig_screen_timeout", v).apply()
+    var rigScreenKeepOnScanning: Boolean get() = prefs.getBoolean("rig_screen_keepon", true); set(v) = prefs.edit().putBoolean("rig_screen_keepon", v).apply()
+
     fun macBlacklist(): Set<String> =
         macBlacklistRaw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
 

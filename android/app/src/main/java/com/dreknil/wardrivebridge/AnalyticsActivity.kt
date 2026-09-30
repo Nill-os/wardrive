@@ -35,6 +35,7 @@ class AnalyticsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityAnalyticsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        ThemeManager.apply(binding.root, this)
 
         binding.analyticsBackButton.setOnClickListener { finish() }
         runLogAdapter = RunLogAdapter()

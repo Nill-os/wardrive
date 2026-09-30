@@ -275,6 +275,50 @@
             android:textSize="12sp"
             android:text="For trips away from home WiFi. While on, the rig sends its logs over Bluetooth and this phone uploads them over its own connection; the rig holds off its own upload so nothing is sent twice. Off = the rig uploads over its own WiFi as usual." />
 
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="&gt; APP THEME" android:textColor="@color/cyan_500"
+            android:textSize="14sp" android:textStyle="bold" android:paddingTop="20dp" android:paddingBottom="4dp" />
+
+        <Button android:id="@+id/primaryAccentButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Primary accent colour" />
+        <Button android:id="@+id/secondaryAccentButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Secondary accent colour" />
+        <Button android:id="@+id/resetThemeButton"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="&gt; RESET THEME" />
+
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="&gt; RIG LEDS &amp; SCREEN" android:textColor="@color/cyan_500"
+            android:textSize="14sp" android:textStyle="bold" android:paddingTop="20dp" android:paddingBottom="4dp" />
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary" android:textSize="12sp"
+            android:text="Applied to the rig over Bluetooth and saved on its SD card. The CYD screen keeps its own look; these are just the status LEDs and screen brightness/timeout." />
+
+        <EditText android:id="@+id/rigLedBrightnessInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="LED brightness 0-100" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="number" android:singleLine="true" />
+        <EditText android:id="@+id/rigScreenBrightnessInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Screen brightness 0-100" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="number" android:singleLine="true" />
+        <EditText android:id="@+id/rigScreenTimeoutInput"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Screen timeout seconds, 0 = never" android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary" android:inputType="number" android:singleLine="true" />
+        <CheckBox android:id="@+id/rigScreenKeepOnCheck"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/text_primary" android:text="Keep the rig screen on while a run is active" />
+        <Button android:id="@+id/rigLedApButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: AP seen" />
+        <Button android:id="@+id/rigLedBleButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: BLE seen" />
+        <Button android:id="@+id/rigLedOkButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: OK / start / stop" />
+        <Button android:id="@+id/rigLedFailButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LED colour: error / fail" />
+
         <Button
             android:id="@+id/saveSettingsButton"
             android:layout_width="match_parent"

@@ -46,15 +46,6 @@
 // Set to a nonzero value only if you actually want old uploaded files
 // cleaned up after that many days.
 //
-// pcap_capture: 1/true to also write a raw .pcap file (radiotap + full
-// 802.11 management frames - beacons, probe requests/responses, assoc/
-// deauth/etc) alongside the usual WigleWifi CSV each session, for opening
-// directly in Wireshark. Off by default: most people only ever want the
-// summarized CSV, and raw captures use meaningfully more SD space per
-// session. Scoped to management frames only - it never captures WPA's
-// EAPOL handshake, since that rides in DATA frames, a type this rig's
-// promiscuous filter never receives in the first place.
-//
 // channel_hop_ms: how long wifi_node's promiscuous sniffer dwells on each
 // 2.4GHz channel before moving to the next one, 1-11 in sequence. Lower
 // catches more distinct APs per minute of driving at highway speed (more
@@ -87,7 +78,6 @@ struct WardriveConfig {
 	bool screenKeepOnScanning = true; // don't blank while a run is active
 	uint32_t retentionDays = 0; // 0 = keep uploaded files forever
 	uint32_t channelHopMs = 150;
-	bool pcapCaptureEnabled = false;
 	// Password for service mode (OTA firmware updates + the log web server).
 	// When set, an OTA push and every web request must supply it; when empty,
 	// service mode is open to anyone on the same WiFi (see docs/SECURITY.md).

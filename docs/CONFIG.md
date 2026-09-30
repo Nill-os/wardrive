@@ -40,6 +40,16 @@ channel_hop_ms=150
 | `screen_keep_on_scanning` | no | Keep the screen on while a run is active (`true`, default), or let it time out anyway (`false`). |
 | `led_color_ap` / `led_color_ble` / `led_color_ok` / `led_color_fail` | no | Status-LED colors on all three boards, hex `RRGGBB`. AP seen (default purple), BLE seen (cyan), ok/start/stop (green), error (red). |
 | `channel_hop_ms` | no | How long each board dwells on a channel before hopping. Default 150 (just over one beacon interval). wifi_node hops 1/6/11; the CYD sweeps 1–11. |
+| `service_password` | no | Password for [service mode](USING_THE_RIG.md#service-mode-download-logs-update-firmware) (over-the-air updates + the log web server). When set, the OTA push needs `--auth=<this>` and the web page/downloads need it too. Left blank, service mode is open to anyone on the same WiFi — see [SECURITY.md](../SECURITY.md). Recommended if you use service mode. |
+
+## Changing these without the SD card
+
+You don't have to pull the card to edit the WiFi networks or `service_password`:
+
+- **On the rig:** CFG tab → **NETWORK & DEBUG** → tap a field to type a new value on the on-screen keyboard.
+- **From the phone app:** Settings → **RIG NETWORK & DEBUG**.
+
+Both apply the change live and save it back to `config.cfg`. Everything else is edited in the file.
 
 ## Keep it private
 

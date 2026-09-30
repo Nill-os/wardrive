@@ -912,7 +912,7 @@ static void drawTabMain(bool redrawAll) {
 	// above and the button stack flush at the bottom (replaces the old
 	// single-line WIFI/BLE counter and, before that, the footer ticker -
 	// user asked for bigger numbers on a bordered background, matching
-	// the WIGLE/WDGW/BT layout from the Wardrive Bridge phone app,
+	// the WIGLE/WDGW/BT layout from the Nill OS Wardriver phone app,
 	// 2026-09-27). No CELL column: none of these boards has cellular radio
 	// hardware, so a permanent 0 there would only be misleading, not
 	// informative - dropped per user request rather than kept for layout
@@ -1377,7 +1377,7 @@ static void drawPairingBox(bool force) {
 	tft.drawString(code, w / 2, boxY + 50);
 	tft.setTextSize(1);
 	tft.setTextColor(COLOR_TEXT_DIM, COLOR_PANEL);
-	tft.drawString(String("in Wardrive Bridge - ") + secs + "s left", w / 2, boxY + 88);
+	tft.drawString(String("in Nill OS Wardriver - ") + secs + "s left", w / 2, boxY + 88);
 	tft.setTextDatum(TL_DATUM);
 }
 
@@ -2368,7 +2368,7 @@ static const char *wdstreamAuthToken(const String &authMode) {
 
 static void wdstreamEmitStatus() {
 	uint32_t uptimeS = (millis() - wdstreamStartMs) / 1000;
-	// gps/sats/sd/pend are extra fields for the Wardrive Bridge app's rig-health line;
+	// gps/sats/sd/pend are extra fields for the Nill OS Wardriver app's rig-health line;
 	// wdstream clients that don't know them just ignore them.
 	// rw/rb are this screen's own WIGLE/BT counts, so the phone can show the same numbers.
 	// heap (free RAM, KB), sdfree (free card space, MB) and wnode (wifi_node link up:
@@ -2620,7 +2620,7 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 	} else if (line == "rig autoupload off") {
 		phoneUploadClaimMs = millis(); // the phone is handling uploads - hold off the rig's WiFi one
 	} else if (line == "rig upload") {
-		// The Wardrive Bridge app's "upload the rig's runs now" - same as tapping UPLOAD.
+		// The Nill OS Wardriver app's "upload the rig's runs now" - same as tapping UPLOAD.
 		// Safe to accept over BLE: only a paired phone can send commands (see CydBleLink).
 		onDoubleClickHandler();
 		if (WARDRIVE_DEBUG) Serial.println("[wdstream] remote upload requested");

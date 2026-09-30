@@ -50,7 +50,6 @@ bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 			uint32_t parsed = (uint32_t)value.toInt();
 			if (parsed >= 20 && parsed <= 5000) outCfg.channelHopMs = parsed; // sane floor/ceiling - outside this is almost certainly a typo, not intent
 		}
-		else if (key == "pcap_capture") outCfg.pcapCaptureEnabled = (value == "1" || value == "true" || value == "yes");
 		else if (key == "service_password") outCfg.servicePassword = value;
 	}
 	f.close();

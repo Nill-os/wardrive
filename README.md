@@ -24,6 +24,19 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 - **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile.
 - **Map and car display** ([Organic Maps overlay](organic-maps-overlay/)): live status on the map and in Android Auto, with a start/stop button in the car.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/phone-dashboard.png" width="205" alt="Dashboard">
+  <img src="docs/screenshots/phone-wifi-tools.png" width="205" alt="WiFi tools">
+  <img src="docs/screenshots/phone-bluetooth-tools.png" width="205" alt="Bluetooth tools">
+  <img src="docs/screenshots/phone-settings.png" width="205" alt="Settings">
+</p>
+<p align="center"><em>The Nill OS - Wardriver phone app: live dashboard, WiFi &amp; Bluetooth tools, and rig customization. (Account totals and map are hidden here for privacy.)</em></p>
+
+<p align="center"><img src="docs/screenshots/desktop-uploader.png" width="440" alt="Desktop upload & organize tool"></p>
+<p align="center"><em>The desktop upload &amp; organize tool: plug in the SD card, click Upload, and it sorts every log into dated folders.</em></p>
+
 ## Get started
 
 1. **[Hardware](docs/HARDWARE.md):** parts list, wiring diagram, pin tables and assembly.

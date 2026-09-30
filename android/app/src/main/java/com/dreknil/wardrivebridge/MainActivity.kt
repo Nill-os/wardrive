@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (intent?.action == ScanService.ACTION_START) startRunRequested = true
         adapter = ObservationAdapter(
             onHeaderClick = { source -> toggleGroup(source) },
-            onRowLongClick = { obs -> showTargetActions(obs) },
+            onRowLongClick = { obs -> startHunt(obs) },
             onRowClick = { obs -> showObservationDetail(obs) },
         )
         binding.detailFeedList.layoutManager = LinearLayoutManager(this)
@@ -870,18 +870,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     // Fox-hunting: long-press a row to track that one device's live signal.
     // Only one hunt at a time - starting a new one replaces whatever was
     // showing. See HuntDialog for why this is signal-strength feedback, not
-    // triangulation.
-    // Long-press a device: pick what to do with it as a signal target.
-    private fun showTargetActions(obs: Observation) {
-        val label = obs.label.ifBlank { obs.mac }
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(label)
-            .setItems(arrayOf("Fox hunt (find it)", "Antenna check (compare antennas)")) { _, which ->
-                if (which == 0) startHunt(obs) else startAntennaCheck(obs)
-            }
-            .show()
-    }
-
+    // triangulation. Antenna check lives only in Settings, so long-press goes
+    // straight into the hunt rather than offering a picker.
     private fun startHunt(obs: Observation) {
         huntDialog?.dismiss()
         val dialog = HuntDialog(this, obs.mac, obs.label)
@@ -889,10 +879,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         huntDialog = dialog
         dialog.show()
         dialog.onSample(obs) // seed it with the reading that triggered the long-press
-    }
-
-    private fun startAntennaCheck(obs: Observation) {
-        startActivity(AntennaActivity.intent(this, obs.mac))
     }
 
     // Tap a row for the full picture on one device - everything the live

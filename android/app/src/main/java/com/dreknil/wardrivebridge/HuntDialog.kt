@@ -67,11 +67,21 @@ class HuntDialog(
         binding.huntRssi.text = "--"
         binding.huntTrend.text = "Waiting for a signal…"
         binding.huntSources.text = ""
-        setOnDismissListener {
-            handler.removeCallbacks(tick)
-            toneGenerator?.release()
-        }
         handler.post(tick)
+    }
+
+    // Cleanup lives here, not in setOnDismissListener, because the caller sets
+    // its own OnDismissListener (to null out its reference) and a Dialog only
+    // keeps ONE - so a dismiss listener here would be silently overwritten,
+    // leaving the tick loop (and its beep/vibrate) running after the dialog
+    // closed. dismiss() is called for the STOP button, back press and outside
+    // tap alike (cancel() routes through it), so this covers every close path.
+    override fun dismiss() {
+        handler.removeCallbacks(tick)
+        try { toneGenerator?.stopTone() } catch (_: Exception) {}
+        try { toneGenerator?.release() } catch (_: Exception) {}
+        try { vibrator?.cancel() } catch (_: Exception) {}
+        super.dismiss()
     }
 
     fun matches(mac: String): Boolean = mac.equals(targetMac, ignoreCase = true)

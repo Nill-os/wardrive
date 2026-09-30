@@ -27,6 +27,26 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 - **Desktop app** ([`firmware/tools/`](firmware/tools/)): the go-to tool for the rig, in three tabs. **1 · Logs & Report** - plug in the SD card or the rig and hit one **GET MY LOGS** button; it finds the source automatically (SD, USB or WiFi, no card removal) and builds an interactive **field report** (map, search, filters, plus the same Flock/Flipper/skimmer detection). **2 · Flash boards** - it **detects** what's plugged into each port and its node number, and flashes any board over USB (WiFi/BLE board pickers for the Seeed XIAO variants, node-count/number controls, and a bulk "flash all"). **3 · Console** - a live serial console to the rig. One-click launcher with an app icon (`tools/install-desktop.sh`).
 - **Optional phone app** ([Nill OS - Wardriver](android/)): paired Bluetooth LE link with USB as a fallback, phone scanning (incl. 5 GHz), **live tools** (Live WiFi/BLE, Pineapple/AirTag/Flipper/Flock/skimmer/drone/mesh/glasses detection) that pull from **both the rig and the phone** and work indoors with no GPS fix, **fox-hunt** (long-press a device to home in on its signal) and an **antenna checker** with a per-radio selector, detections, live rig telemetry (RAM, SD space, link health), a "new finds this run" counter, exports (WigleWifi CSV, GPX, KML, Aircrack/airodump CSV), a widget and a quick-settings tile. Save the home exclusion zone and it syncs to the rig too.
 - **Map and car display** ([Organic Maps overlay](organic-maps-overlay/)): live status on the map and in Android Auto, with a start/stop button in the car.
+- **Device watchlist:** list specific WiFi/BLE devices (by MAC or name) and get a phone notification when one **comes into range** or **leaves** - each direction toggleable.
+
+## By the numbers
+
+| Spec | Value |
+|---|---|
+| WiFi channel dwell | 150 ms default (configurable); one node sweeps 2.4 GHz ch 1/6/11 every **~0.45 s** |
+| Multi-node scaling | each extra sniffer node splits the channels, so **N nodes revisit ~N× faster** (up to 20 nodes) |
+| Speed range | catches an AP within **~12 m of travel at 100 km/h** (60 mph) on its channel - works from walking pace to highway |
+| Capture rate | roughly **hundreds to a few thousand unique devices per hour** in a built-up area (varies with density and speed) |
+| BLE | continuous active scan; de-duplicated per run |
+| GPS | **1 fix/second** (u-blox NEO-6M, 9600 baud) |
+| Inter-board link | **460800 baud** wired UART; phone link is Bluetooth LE (or USB) |
+| Live latency | rig sightings reach the phone in **a few hundred ms** |
+| De-duplication | WiFi re-logged after moving **40 m**; location-less sightings re-stream every 5 s to the phone's live tools |
+| Storage | **~100 bytes per device row** - a 32 GB card holds tens of millions of sightings (years of driving); auto-trims the oldest uploaded files once free space drops below ~1 GB |
+| Power | **~1.5 A at 5 V** for the whole three-board rig |
+| Idle auto-stop | **30 minutes** parked, to protect the car battery |
+
+*(Capture rate and speed figures are rough real-world estimates; the fixed specs above are the actual firmware settings.)*
 
 ## Screenshots
 

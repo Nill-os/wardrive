@@ -8,6 +8,7 @@ The rig works on its own, and **the phone is optional**. With the phone you get:
 - **fox-hunt**: long-press any device in a tool to track its live signal (hot/cold + rising beep) and home in on it
 - an **antenna checker** (Settings → Antenna check) that reads a chosen device's live signal with peak hold and A/B capture - pick **which radio** to measure (Rig WiFi, Rig BLE, Phone WiFi, Phone Bluetooth, or strongest) so you can test the rig's own antenna
 - tracker and skimmer detection alerts
+- a **device watchlist** - list specific WiFi/BLE devices (by MAC or name) and get a notification when one comes into range or leaves, each direction toggleable
 - start/stop from the phone, the map and the car screen
 
 ## Nill OS - Wardriver (Android)
@@ -38,6 +39,7 @@ You need JDK 17 and the Android SDK. Android Studio installs both; `local.proper
    - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is never logged, exported or uploaded (your home stays private), but still shows briefly in the live tools so fox-hunt and antenna check work at home. Saving also **pushes this zone to the rig** so its own logs match.
    - **CYD counters:** a toggle switches the rig screen's headline numbers between **WiGLE / WDGW** and raw **found APs / Bluetooth**.
    - **Blacklists:** any MACs or SSIDs you never want logged, such as your own devices.
+   - **Watchlist:** one device per line (a MAC like `AA:BB:CC:DD:EE:FF`, or part of a WiFi/BLE name) to be notified about, with separate toggles for coming into range and leaving. It matches the rig's and the phone's radios while scanning (a run or an open live tool).
    - Tap **SAVE**.
 3. **Pair with your rig (once).** On the rig, open the **4.CFG** tab and tap **PAIR PHONE**. A 6-digit code appears for 60 seconds. With the app open, Android asks you to pair with *WardriveCYD*: type the code and tap OK. The dashboard shows `CYD: PAIR` until this is done.
 

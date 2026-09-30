@@ -28,6 +28,11 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     private var scanService: ScanService? = null
     private var targetMac: String? = null
     private var macOptions: List<String> = emptyList()
+    // Which radio to read the target's signal from. null = strongest across all
+    // that hear it. Picking Source.RIG_WIFI/RIG_BLE isolates the rig's antenna
+    // (that's the whole point of testing an antenna on the rig), and RIG_BLE /
+    // PHONE_BLE let you antenna-check a Bluetooth target, not just WiFi.
+    private var selectedSource: Source? = null
 
     private val perSource = mutableMapOf<Source, Pair<Int, Long>>()
     private var peak = Int.MIN_VALUE
@@ -42,8 +47,9 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
             val bound = (service as ScanService.LocalBinder).service
             scanService = bound
             bound.listener = this@AntennaActivity
-            updateScanButton(bound.running)
+            updateScanButton()
             updateTargetLabel()
+            updateSourceLabel()
         }
         override fun onServiceDisconnected(name: ComponentName?) { scanService = null }
     }
@@ -62,15 +68,22 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
 
         binding.antScanButton.setOnClickListener {
             val s = scanService ?: return@setOnClickListener
+            // Live signal without logging a drive: preview scanning turns on the
+            // phone radios AND asks the rig to scan (so RIG WiFi/BLE readings are
+            // available to test the rig's antenna), with no run/GPS/DB writes. If
+            // a real run happens to be active, leave it be - it already feeds us.
             if (s.running) s.stopRun(notifyRig = true, reason = "antenna check")
-            else s.startRun(notifyRig = true, reason = "antenna check")
-            updateScanButton(s.running)
+            else if (s.previewing) s.stopPreview()
+            else s.startPreview(wifi = true, ble = true, cell = false)
+            updateScanButton()
         }
         binding.antTargetButton.setOnClickListener { showTargetPicker() }
+        binding.antSourceButton.setOnClickListener { showSourcePicker() }
         binding.antResetButton.setOnClickListener { resetStats() }
         binding.antCaptureAButton.setOnClickListener { captureA = snapshot(); updateCompare() }
         binding.antCaptureBButton.setOnClickListener { captureB = snapshot(); updateCompare() }
         updateTargetLabel()
+        updateSourceLabel()
     }
 
     override fun onStart() {
@@ -82,6 +95,9 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     override fun onStop() {
         super.onStop()
         handler.removeCallbacks(tick)
+        // Don't leave the radios (and the rig) scanning once we're off-screen;
+        // a real run, if any, keeps going (stopPreview no-ops while running).
+        scanService?.stopPreview()
         scanService?.listener = null
         try { unbindService(connection) } catch (_: Exception) {}
         scanService = null
@@ -103,9 +119,10 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun showTargetPicker() {
         val devices = currentDevices()
         if (devices.isEmpty()) {
+            val scanning = scanService?.let { it.running || it.previewing } == true
             android.widget.Toast.makeText(
                 this,
-                if (scanService?.running == true) "No devices heard yet - give it a few seconds"
+                if (scanning) "No devices heard yet - give it a few seconds"
                 else "Tap START SCANNING first", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
@@ -132,8 +149,56 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
         }
     }
 
-    private fun updateScanButton(running: Boolean) {
-        binding.antScanButton.text = if (running) "> STOP SCANNING" else "> START SCANNING"
+    private fun updateScanButton() {
+        val scanning = scanService?.let { it.running || it.previewing } == true
+        binding.antScanButton.text = if (scanning) "> STOP SCANNING" else "> START SCANNING"
+    }
+
+    // ---- radio/source selection ----
+    // The rig's two radios (RIG WiFi = wifi_node, RIG BLE = ble_node) are the
+    // rig's "nodes" for this single-rig setup. Per-sniffer-node selection with
+    // several ESP-NOW nodes needs the rig to tag each sighting with its node
+    // index, which its WD:AP/WD:BLE stream doesn't carry yet.
+    private val sourceChoices: List<Pair<String, Source?>> = listOf(
+        "Strongest (any radio)" to null,
+        "Rig WiFi (wifi_node antenna)" to Source.RIG_WIFI,
+        "Rig BLE (ble_node antenna)" to Source.RIG_BLE,
+        "Phone WiFi" to Source.PHONE_WIFI,
+        "Phone Bluetooth" to Source.PHONE_BLE,
+    )
+
+    private fun showSourcePicker() {
+        val labels = sourceChoices.map { it.first }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Measure from which radio?")
+            .setItems(labels) { _, which ->
+                selectedSource = sourceChoices[which].second
+                resetStats()
+                updateSourceLabel()
+            }
+            .show()
+    }
+
+    private fun updateSourceLabel() {
+        val name = sourceChoices.firstOrNull { it.second == selectedSource }?.first ?: "Strongest (any radio)"
+        binding.antSourceButton.text = "> RADIO: ${name.substringBefore(" (").uppercase()}"
+        binding.antSourceLabel.text = when (selectedSource) {
+            null -> "Measuring the strongest radio that hears the target. Pick the rig's radio to test the rig's antenna."
+            Source.RIG_WIFI -> "Measuring the rig's wifi_node only - swap its antenna and compare."
+            Source.RIG_BLE -> "Measuring the rig's ble_node only."
+            Source.PHONE_WIFI -> "Measuring the phone's WiFi radio only."
+            Source.PHONE_BLE -> "Measuring the phone's Bluetooth radio only."
+            else -> ""
+        }
+    }
+
+    // The reading to display/track, honoring the chosen radio: a specific source
+    // when one is picked (null if it isn't currently heard on that radio), or the
+    // strongest across every radio that hears the target when set to "any".
+    private fun selectedBest(): Int? {
+        val entries = if (selectedSource == null) perSource.values
+        else perSource.filterKeys { it == selectedSource }.values
+        return if (entries.isEmpty()) null else entries.maxOf { it.first }
     }
 
     // ---- meter ----
@@ -150,14 +215,18 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun refreshMeter() {
         val now = System.currentTimeMillis()
         perSource.filter { now - it.value.second > 45_000L }.keys.forEach { perSource.remove(it) }
-        if (targetMac == null || perSource.isEmpty()) {
+        val best = selectedBest()
+        if (targetMac == null || best == null) {
             binding.antRssi.text = "--"
             binding.antRssi.setTextColor(Color.parseColor("#7A7A92"))
             binding.antBar.progress = 0
-            binding.antSources.text = if (targetMac == null) "" else "No signal (target out of range?)"
+            binding.antSources.text = when {
+                targetMac == null -> ""
+                selectedSource != null -> "No signal on ${selectedSource!!.label} (target not heard on that radio?)"
+                else -> "No signal (target out of range?)"
+            }
             return
         }
-        val best = perSource.values.maxOf { it.first }
         binding.antRssi.text = "$best dBm"
         val strength = ((best.coerceIn(-100, -30) + 100) / 70.0)
         binding.antRssi.setTextColor(strengthColor(strength))
@@ -196,11 +265,13 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     override fun onObservation(tagged: Observation) {
         if (!tagged.mac.equals(targetMac, ignoreCase = true)) return
         perSource[tagged.source] = tagged.rssi to System.currentTimeMillis()
-        val best = perSource.values.maxOf { it.first }
+        // Peak/avg track the radio being measured, so a strong reading from a
+        // radio you're NOT testing can't skew the antenna comparison.
+        val best = selectedBest() ?: return
         if (best > peak) peak = best
         sum += best; count++
     }
-    override fun onRunStateChanged(running: Boolean) { updateScanButton(running) }
+    override fun onRunStateChanged(running: Boolean) { updateScanButton() }
     override fun onRigConnected() {}
     override fun onRigDisconnected() {}
     override fun onMeshLinkStateChanged(state: RigLinkManager.MeshLinkState) {}

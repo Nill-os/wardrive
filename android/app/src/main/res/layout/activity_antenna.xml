@@ -49,6 +49,22 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/antSourceButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="&gt; RADIO: STRONGEST" />
+
+        <TextView
+            android:id="@+id/antSourceLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Measuring the strongest radio that hears the target. Pick the rig's radio to test the rig's antenna."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp"
             android:layout_marginBottom="12dp" />
 
         <TextView

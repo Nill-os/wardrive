@@ -966,7 +966,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(0, dp(4), 0, dp(4))
                 }
-                row.addView(android.widget.TextView(this).apply { text = e.label; maxLines = 2; setTextColor(primary) },
+                row.addView(android.widget.TextView(this).apply { text = e.label; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(primary) },
                     android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 row.addView(android.widget.CheckBox(this).apply {
                     text = "In"; isChecked = e.enter
@@ -978,6 +978,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 })
                 row.addView(android.widget.Button(this).apply {
                     text = "✕"
+                    minWidth = 0; minimumWidth = 0; setPadding(dp(20), 0, dp(20), 0)
                     setOnClickListener { entries.removeAt(i); rebuildAll() }
                 })
                 watchContainer.addView(row)
@@ -1003,10 +1004,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(0, dp(2), 0, dp(2))
                 }
-                row.addView(android.widget.TextView(this).apply { text = kd.display; textSize = 13f; maxLines = 1; setTextColor(primary) },
+                row.addView(android.widget.TextView(this).apply { text = kd.display; textSize = 13f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(primary) },
                     android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 row.addView(android.widget.Button(this).apply {
                     text = "+"
+                    minWidth = 0; minimumWidth = 0; setPadding(dp(20), 0, dp(20), 0)
                     setOnClickListener {
                         entries.add(AppSettings.WatchEntry(kd.key, kd.label, enter = true, leave = true))
                         rebuildAll()

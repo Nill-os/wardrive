@@ -1839,6 +1839,38 @@ std::unordered_set<uint64_t> cydWifiNoFixCounted;
 // seconds for live RSSI, so count each one once per run. Cleared in startScanning().
 std::unordered_set<uint64_t> cydBleNoFixCounted;
 
+// "Unique devices this run" for the on-screen WIGLE/WDGW/BT counts. The dedup
+// map above forgets devices (it prunes at 600 entries and re-logs an AP every
+// 40 m), and a std::set of every MAC would cost ~40 bytes each - far too much
+// of the ~84 KB free heap - so each run keeps a Bloom filter instead: 20 KB for
+// WiFi, 8 KB for BLE, ~1% error at 8,000 devices (a rare undercount, never an
+// overcount). Allocated at run start, freed at run stop so uploads get the heap.
+struct CydUniqueFilter {
+	uint8_t *bits = nullptr;
+	uint32_t nbits = 0;
+	bool begin(uint32_t bytes) {
+		end();
+		bits = (uint8_t *)calloc(bytes, 1);
+		nbits = bits ? bytes * 8 : 0;
+		return bits != nullptr;
+	}
+	void end() { free(bits); bits = nullptr; nbits = 0; }
+	// True the first time this key is seen since begin(); if the filter couldn't
+	// be allocated, every call is "new" (falls back to counting each row).
+	bool firstSeen(uint64_t key) {
+		if (!bits) return true;
+		bool added = false;
+		uint64_t h = key * 0x9E3779B97F4A7C15ULL;
+		for (int i = 0; i < 3; i++) {
+			h ^= h >> 29; h *= 0xBF58476D1CE4E5B9ULL; h ^= h >> 32;
+			uint32_t bit = (uint32_t)(h % nbits);
+			if (!(bits[bit >> 3] & (1 << (bit & 7)))) { bits[bit >> 3] |= (1 << (bit & 7)); added = true; }
+		}
+		return added;
+	}
+};
+CydUniqueFilter cydUniqueWifi, cydUniqueBle;
+
 static uint64_t cydMacToKey(const uint8_t *mac) {
 	uint64_t key = 0;
 	for (int i = 0; i < 6; i++) key = (key << 8) | mac[i];
@@ -1925,6 +1957,8 @@ uint32_t lastSdFlushMs = 0;
 static bool startScanning() {
 	wifiCountThisRun = 0;
 	bleCountThisRun = 0;
+	cydUniqueWifi.begin(20 * 1024);
+	cydUniqueBle.begin(8 * 1024);
 	bool wifiFileOk = wigleWifi.begin(sessionDir(), "wifi");
 	bool bleFileOk = wigleBle.begin(sessionDir(), "ble");
 	cydApDedupState.clear();
@@ -1950,6 +1984,8 @@ static void stopScanning() {
 	// start, since an upload (TLS) usually comes next and needs it.
 	cydApDedupState.clear();
 	std::unordered_map<uint64_t, CydApDedupEntry>().swap(cydApDedupState);
+	cydUniqueWifi.end();
+	cydUniqueBle.end();
 }
 
 static UploadResult doUpload(bool force) {
@@ -3141,13 +3177,14 @@ static void handleIncomingLine(const String &line) {
 		// the SD log/upload - a wardrive point with no position is useless there.
 		bool hasFix = !(lat == 0.0 && lon == 0.0);
 		bool isNew;
+		// The on-screen count is UNIQUE devices this run: a re-log of the same AP
+		// at a new spot (every 40 m) is a new CSV row but not a new device.
+		if (cydUniqueWifi.firstSeen(cydMacKeyFromString(bssid))) wifiCountThisRun++;
 		if (hasFix) {
 			wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
-			wifiCountThisRun++; // positioned: each accepted sighting is a real logged row
 			isNew = true;
 		} else {
-			isNew = cydWifiNoFixCounted.insert(cydMacKeyFromString(bssid)).second;
-			if (isNew) wifiCountThisRun++; // location-less: count once per run, even though we re-stream it for live RSSI
+			isNew = cydWifiNoFixCounted.insert(cydMacKeyFromString(bssid)).second; // location-less: re-streamed for live RSSI, alert/log once
 		}
 		pushApSighting(bssid, ssid, authMode, rssi, true); // always: refreshes the on-screen RSSI
 		if (isNew) {
@@ -3195,13 +3232,12 @@ static void handleIncomingLine(const String &line) {
 		// (ble_node re-forwards it every few seconds for live RSSI).
 		bool bleHasFix = !(lat == 0.0 && lon == 0.0);
 		bool bleIsNew;
+		if (cydUniqueBle.firstSeen(cydMacKeyFromString(mac))) bleCountThisRun++; // unique devices this run
 		if (bleHasFix) {
 			wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
-			bleCountThisRun++;
 			bleIsNew = true;
 		} else {
 			bleIsNew = cydBleNoFixCounted.insert(cydMacKeyFromString(mac)).second;
-			if (bleIsNew) bleCountThisRun++;
 		}
 		if (bleIsNew) {
 			pushLogLine(String("[BLE] ") + (name.length() > 0 ? name : mac) + " " + String(rssi) + "dB", COLOR_PURPLE);
@@ -3759,7 +3795,7 @@ void loop() {
 			String iso = cydIsoTimestampFromEpoch(lastKnownEpoch);
 			wigleWifi.logWifi(bssid, ssid, authMode, iso, obs.channel, cydChannelToFreqMHz(obs.channel),
 							  obs.rssi, lastKnownLat, lastKnownLon, 0.0, 30.0);
-			wifiCountThisRun++;
+			if (cydUniqueWifi.firstSeen(cydMacToKey(obs.bssid))) wifiCountThisRun++; // unique devices this run
 			pushApSighting(bssid, ssid, authMode, obs.rssi, true);
 			checkApAlert(bssid, ssid);
 			pushLogLine(String("[AP] ") + (ssid.length() > 0 ? ssid : bssid) + " " + String(obs.rssi) + "dB (cyd)", COLOR_CYAN);

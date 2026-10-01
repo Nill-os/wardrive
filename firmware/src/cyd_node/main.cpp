@@ -2500,7 +2500,7 @@ static void wdstreamEmitStatus() {
 	uint32_t uptimeS = (millis() - wdstreamStartMs) / 1000;
 	// gps/sats/sd/pend are extra fields for the Nill OS Wardriver app's rig-health line;
 	// wdstream clients that don't know them just ignore them.
-	// rw/rb are this screen's own WIGLE/BT counts, so the phone can show the same numbers.
+	// rw/rb are this screen's displayed WiFi/BT counts (max of the rig's own and the phone's last report), so the phone shows the same numbers.
 	// heap (free RAM, KB), sdfree (free card space, MB) and wnode (wifi_node link up:
 	// 1 = fresh UART traffic, 0 = the sniffer/GPS board is unreachable) are extra rig
 	// self-telemetry the app surfaces on its rig-health line - all trailing and named,
@@ -2512,7 +2512,7 @@ static void wdstreamEmitStatus() {
 				  (unsigned long)wdstreamApCount, (unsigned long)wdstreamBleCount,
 				  (unsigned)lastKnownChannel, (unsigned long)(uptimeS / 60), (unsigned long)(uptimeS % 60),
 				  gpsFixKnown ? 1 : 0, (int)lastKnownSatCount, sdOk ? 1 : 0, (unsigned)pendingUploadFiles, scanningActive ? 1 : 0,
-				  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun,
+				  (unsigned long)max(wifiCountThisRun, appCountWifi), (unsigned long)max(bleCountThisRun, appCountBle), // what the screen shows: the phone adopts it, so a phone that restarted mid-run converges
 				  (unsigned long)heapKB, sdFreeMB, wnodeUp);
 }
 

@@ -413,6 +413,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         binding.mapTabContent.visibility = if (kind == DetailKind.MAP) View.VISIBLE else View.GONE
         binding.logsTabContent.visibility = if (kind == DetailKind.LOGS) View.VISIBLE else View.GONE
         binding.floorPlanTabContent.visibility = if (kind == DetailKind.FLOOR_PLAN) View.VISIBLE else View.GONE
+        updateNavHighlight() // so the tab pills follow the open screen (TOOLS un-lights, LOGS lights up)
         syncPreviewScanning()
         when (kind) {
             DetailKind.FEED -> refreshDetailFeedIfShown()

@@ -592,7 +592,9 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         val mac = fields["mac"] ?: return
         val name = hexDecode(fields["name_hex"] ?: "")
         val rssi = fields["rssi"]?.toIntOrNull() ?: 0
-        val mfgBytes = hexDecodeBytes(fields["mfg"] ?: "")
+        // The CYD sends this as mfg_hex= (older notes said mfg=); read either, or every rig-side
+        // tracker / Flock / company-ID detection silently gets no manufacturer data.
+        val mfgBytes = hexDecodeBytes(fields["mfg_hex"] ?: fields["mfg"] ?: "")
         val companyId = mfgCompanyId(mfgBytes)
         val tracker = isTrackerFromMfgBytes(mfgBytes)
         val flipper = DeviceSignatureDetection.isFlipperZero(mac, name)

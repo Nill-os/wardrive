@@ -8,7 +8,7 @@ A small patch to [Organic Maps](https://github.com/organicmaps/organicmaps) (And
 ON · WIGLE 12 · WDGW 9 · BT 30 · CYD BLE · Rig ✓
 ```
 
-- **On the phone map:** a status line at the top. Tap it to open Nill OS Wardriver. The overlay patch also removes the "V: Scale / FPS" debug label that debug builds draw at the top of the map.
+- **On the phone map:** a status line at the top. Tap it to open Nill OS Wardriver. The overlay patch also removes the "V: Scale / FPS" debug label that debug builds draw at the top of the map. While you navigate or plan a route the line moves down to sit just below the turn-by-turn banner (or the route-planning header) instead of being covered by it.
 - **In Android Auto:** the same line on the car's map, plus a **record** button in the navigation action strip that starts and stops the run.
 
 Organic Maps never scans or talks to the rig. It reads status from Nill OS Wardriver's `BridgeProvider` every 2 s and asks it to start or stop, so the two apps can't fight over the hardware.

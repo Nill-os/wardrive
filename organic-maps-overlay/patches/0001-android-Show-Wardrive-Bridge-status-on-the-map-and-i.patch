@@ -1,4 +1,4 @@
-From d3dbdc09548eaab94795df81ced04dcff9c08e11 Mon Sep 17 00:00:00 2001
+From 9b439e710af9f7eb1fe367ec7c3c0aed7f445d44 Mon Sep 17 00:00:00 2001
 From: dreknil <>
 Date: Mon, 28 Sep 2026 21:40:21 -0700
 Subject: [PATCH] [android] Show Wardrive Bridge status on the map and in
@@ -20,9 +20,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Signed-off-by: dreknil <>
 ---
  android/app/build.gradle                      |  1 +
- .../java/app/organicmaps/MwmActivity.java     | 57 +++++++++++
+ .../java/app/organicmaps/MwmActivity.java     | 89 +++++++++++++++++
  .../main/res/drawable/bg_wardrive_status.xml  | 10 ++
- .../app/src/main/res/layout/activity_map.xml  | 24 +++++
+ .../app/src/main/res/layout/activity_map.xml  | 25 +++++
  android/libs/car/build.gradle                 |  1 +
  .../organicmaps/car/CarAppSessionBase.java    | 42 ++++++++
  .../car/screens/NavigationScreen.java         | 96 ++++++++++++++++++-
@@ -39,7 +39,7 @@ Signed-off-by: dreknil <>
  .../car/src/main/res/layout/car_layout.xml    | 18 ++++
  .../main/java/app/organicmaps/sdk/Map.java    |  6 +-
  android/settings.gradle                       |  1 +
- 20 files changed, 491 insertions(+), 6 deletions(-)
+ 20 files changed, 524 insertions(+), 6 deletions(-)
  create mode 100644 android/app/src/main/res/drawable/bg_wardrive_status.xml
  create mode 100644 android/libs/wardrive/build.gradle
  create mode 100644 android/libs/wardrive/src/main/AndroidManifest.xml
@@ -60,7 +60,7 @@ index ee2c54156b..95961eecfd 100644
    implementation project(':sdk')
    implementation project(':sdk:car')
 diff --git a/android/app/src/main/java/app/organicmaps/MwmActivity.java b/android/app/src/main/java/app/organicmaps/MwmActivity.java
-index 41c70edea0..238e6304fe 100644
+index 41c70edea0..3872f326f5 100644
 --- a/android/app/src/main/java/app/organicmaps/MwmActivity.java
 +++ b/android/app/src/main/java/app/organicmaps/MwmActivity.java
 @@ -23,11 +23,14 @@ import android.location.Location;
@@ -87,7 +87,7 @@ index 41c70edea0..238e6304fe 100644
  import app.organicmaps.widget.placepage.PlacePageController;
  import app.organicmaps.widget.placepage.PlacePageViewModel;
  import com.google.android.material.bottomsheet.BottomSheetBehavior;
-@@ -160,6 +165,32 @@ public class MwmActivity extends BaseMwmFragmentActivity
+@@ -160,6 +165,33 @@ public class MwmActivity extends BaseMwmFragmentActivity
    private TextView mPointChooserTitle;
    private TextView mPointChooserHint;
  
@@ -111,6 +111,7 @@ index 41c70edea0..238e6304fe 100644
 +            return;
 +          mWardriveStatusView.setText(text);
 +          mWardriveStatusView.setVisibility(View.VISIBLE);
++          positionWardriveOverlay();
 +        });
 +      });
 +      mWardriveHandler.postDelayed(this, WARDRIVE_POLL_INTERVAL_MS);
@@ -120,7 +121,7 @@ index 41c70edea0..238e6304fe 100644
    private NavigationController mNavigationController;
    @Nullable
    private OnmapDownloader mOnmapDownloader;
-@@ -544,6 +575,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
+@@ -544,6 +576,7 @@ public class MwmActivity extends BaseMwmFragmentActivity
      final boolean isLaunchByDeepLink = intent != null && !intent.hasCategory(Intent.CATEGORY_LAUNCHER);
      initViews(isLaunchByDeepLink);
      updateViewsInsets();
@@ -128,7 +129,7 @@ index 41c70edea0..238e6304fe 100644
  
      if (getIntent().getBooleanExtra(EXTRA_UPDATE_THEME, false))
        ThemeSwitcher.INSTANCE.synchronizeApplicationTheme();
-@@ -1048,6 +1080,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
+@@ -1048,6 +1081,9 @@ public class MwmActivity extends BaseMwmFragmentActivity
      LocationState.nativeSetListener(this);
      MwmApplication.from(this).getLocationHelper().addListener(this);
      Utils.keepScreenOn(Config.isKeepScreenOnEnabled() || RoutingController.get().isNavigating(), getWindow());
@@ -138,7 +139,7 @@ index 41c70edea0..238e6304fe 100644
    }
  
    @Override
-@@ -1065,11 +1100,33 @@ public class MwmActivity extends BaseMwmFragmentActivity
+@@ -1065,11 +1101,64 @@ public class MwmActivity extends BaseMwmFragmentActivity
      MwmApplication.from(getApplicationContext()).getIsolinesManager().detach();
      Utils.keepScreenOn(false, getWindow());
  
@@ -158,15 +159,46 @@ index 41c70edea0..238e6304fe 100644
 +      if (bridge != null)
 +        startActivity(bridge);
 +    });
-+    final int topMarginBase = getResources().getDimensionPixelSize(R.dimen.margin_base);
++    mWardriveTopMarginBase = getResources().getDimensionPixelSize(R.dimen.margin_base);
 +    ViewCompat.setOnApplyWindowInsetsListener(mWardriveStatusView, (v, insets) -> {
-+      final int top =
++      mWardriveSystemTop =
 +          insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()).top;
-+      final ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
-+      params.topMargin = top + topMarginBase;
-+      v.setLayoutParams(params);
++      positionWardriveOverlay();
 +      return insets;
 +    });
++  }
++
++  private int mWardriveSystemTop;
++  private int mWardriveTopMarginBase;
++
++  /**
++   * Keeps the status line at the top of the map, but below the turn-by-turn banner (street name, next turn,
++   * lanes) while navigating and below the route-planning header while planning - otherwise those panels cover it.
++   */
++  private void positionWardriveOverlay()
++  {
++    if (mWardriveStatusView == null)
++      return;
++    final View parent = (View) mWardriveStatusView.getParent();
++    final int[] loc = new int[2];
++    parent.getLocationInWindow(loc);
++    final int parentTop = loc[1];
++    int top = mWardriveSystemTop + mWardriveTopMarginBase;
++    final int[] panelIds = {R.id.street_frame, R.id.nav_next_turn_container, R.id.lanes, R.id.routing_types_header};
++    for (int id : panelIds)
++    {
++      final View panel = findViewById(id);
++      if (panel == null || !panel.isShown() || panel.getHeight() == 0)
++        continue;
++      panel.getLocationInWindow(loc);
++      top = Math.max(top, loc[1] + panel.getHeight() - parentTop + mWardriveTopMarginBase / 2);
++    }
++    final ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) mWardriveStatusView.getLayoutParams();
++    if (params.topMargin != top)
++    {
++      params.topMargin = top;
++      mWardriveStatusView.setLayoutParams(params);
++    }
 +  }
 +
    @CallSuper
@@ -189,40 +221,39 @@ index 0000000000..00575d40db
 +  </item>
 +</ripple>
 diff --git a/android/app/src/main/res/layout/activity_map.xml b/android/app/src/main/res/layout/activity_map.xml
-index e1c10b81f5..cf1652390c 100644
+index e1c10b81f5..96dce16c8a 100644
 --- a/android/app/src/main/res/layout/activity_map.xml
 +++ b/android/app/src/main/res/layout/activity_map.xml
-@@ -36,6 +36,30 @@
-       android:visibility="gone"
-       tools:visibility="visible" />
+@@ -63,4 +63,29 @@
+     android:layout_width="match_parent"
+     android:layout_height="match_parent" />
  
-+    <TextView
-+      android:id="@+id/wardrive_status_view"
-+      android:layout_width="match_parent"
-+      android:layout_height="wrap_content"
-+      android:layout_alignParentTop="true"
-+      android:layout_marginStart="64dp"
-+      android:layout_marginEnd="12dp"
-+      android:autoSizeTextType="uniform"
-+      android:autoSizeMinTextSize="9sp"
-+      android:autoSizeMaxTextSize="13sp"
-+      android:maxLines="1"
-+      android:background="@drawable/bg_wardrive_status"
-+      android:clickable="true"
-+      android:focusable="true"
-+      android:gravity="center"
-+      android:paddingHorizontal="12dp"
-+      android:paddingVertical="6dp"
-+      android:textColor="#FFFFFFFF"
-+      android:textSize="13sp"
-+      android:textStyle="bold"
-+      android:visibility="gone"
-+      tools:text="12 WiFi · 4 BLE · Rig ✓"
-+      tools:visibility="visible" />
++  <TextView
++    android:id="@+id/wardrive_status_view"
++    android:layout_width="match_parent"
++    android:layout_height="wrap_content"
++    android:layout_gravity="top"
++    android:elevation="16dp"
++    android:layout_marginStart="64dp"
++    android:layout_marginEnd="12dp"
++    android:autoSizeTextType="uniform"
++    android:autoSizeMinTextSize="9sp"
++    android:autoSizeMaxTextSize="13sp"
++    android:maxLines="1"
++    android:background="@drawable/bg_wardrive_status"
++    android:clickable="true"
++    android:focusable="true"
++    android:gravity="center"
++    android:paddingHorizontal="12dp"
++    android:paddingVertical="6dp"
++    android:textColor="#FFFFFFFF"
++    android:textSize="13sp"
++    android:textStyle="bold"
++    android:visibility="gone"
++    tools:text="12 WiFi · 4 BLE · Rig ✓"
++    tools:visibility="visible" />
 +
-     <androidx.fragment.app.FragmentContainerView
-       android:id="@+id/map_buttons"
-       android:layout_width="match_parent"
+ </androidx.coordinatorlayout.widget.CoordinatorLayout>
 diff --git a/android/libs/car/build.gradle b/android/libs/car/build.gradle
 index 24546ca8b3..df99f783f9 100644
 --- a/android/libs/car/build.gradle

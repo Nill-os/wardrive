@@ -80,8 +80,12 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
         binding.antTargetButton.setOnClickListener { showTargetPicker() }
         binding.antSourceButton.setOnClickListener { showSourcePicker() }
         binding.antResetButton.setOnClickListener { resetStats() }
-        binding.antCaptureAButton.setOnClickListener { captureA = snapshot(); updateCompare() }
-        binding.antCaptureBButton.setOnClickListener { captureB = snapshot(); updateCompare() }
+        // Each capture snapshots the current window, then clears the live
+        // peak/avg so the next antenna is measured from scratch - otherwise B's
+        // average carries over all of A's samples. Flow: aim antenna 1, Capture
+        // A; swap to antenna 2, Capture B; then read the comparison.
+        binding.antCaptureAButton.setOnClickListener { captureA = snapshot(); resetLive(); updateCompare() }
+        binding.antCaptureBButton.setOnClickListener { captureB = snapshot(); resetLive(); updateCompare() }
         updateTargetLabel()
         updateSourceLabel()
     }
@@ -205,11 +209,17 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun snapshot(): Snapshot? =
         if (count == 0L) null else Snapshot(peak, (sum / count).toInt())
 
-    private fun resetStats() {
+    // Clear only the live meter accumulators (peak/avg window), keeping any A/B
+    // captures - used after a capture so the next antenna starts fresh.
+    private fun resetLive() {
         peak = Int.MIN_VALUE; sum = 0; count = 0; perSource.clear()
+        binding.antStats.text = "Peak --   ·   Avg --"
+    }
+
+    private fun resetStats() {
+        resetLive()
         captureA = null; captureB = null
         binding.antCompare.text = ""
-        binding.antStats.text = "Peak --   ·   Avg --"
     }
 
     private fun refreshMeter() {

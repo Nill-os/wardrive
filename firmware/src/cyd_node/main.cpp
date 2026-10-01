@@ -146,6 +146,12 @@ uint32_t appCountWifi = 0, appCountBle = 0;
 // its use in handleIncomingLine()'s SCANSTATE case below.
 volatile uint32_t lastLocalScanSetMs = 0;
 volatile uint32_t lastKnownEpoch = 0;
+volatile uint32_t epochSyncMs = 0; // millis() when lastKnownEpoch was last refreshed
+// lastKnownEpoch only changes when wifi_node relays a GPS time, so after the fix is lost
+// (parked in a garage) it freezes. This keeps it ticking so "uploaded 3 min ago" stays true.
+static uint32_t nowEpochEstimate() {
+	return lastKnownEpoch == 0 ? 0 : lastKnownEpoch + (millis() - epochSyncMs) / 1000;
+}
 bool gpsFixKnown = false;
 
 // Whether the phone is actively talking to this board over USB (see the
@@ -577,6 +583,7 @@ uint32_t lastDisplayRefreshMs = 0;
 // refreshUploadStatus() - never computed per frame, since counting pending
 // files means walking the SD folder.
 uint16_t pendingUploadFiles = 0;
+uint32_t lastUploadOkMs = 0; // millis() of the last upload that finished this boot (works even with no clock)
 uint32_t lastUploadOkEpoch = 0; // cached from the uploader's NVS copy - read at boot and after each upload
 String lastUploadProblem = ""; // set by a failed upload, cleared by a good one
 String lastUploadStatusText = "";
@@ -1492,8 +1499,15 @@ static void refreshUploadStatus() {
 		// Kept under ~30 characters - that's all the width MAIN has.
 		text = pendingUploadFiles == 0 ? String("all sent") : String(pendingUploadFiles) + " waiting";
 		uint32_t last = lastUploadOkEpoch;
+		// Age of the last good upload: from the wall clock when we have one, and from
+		// the boot-relative timer for an upload that happened this boot (it may have
+		// run before any GPS time arrived, so it has no epoch). Show the fresher one.
+		uint32_t now = nowEpochEstimate();
+		uint32_t ageSec = 0xFFFFFFFFu;
+		if (last != 0 && now > last) ageSec = now - last;
+		if (lastUploadOkMs != 0) ageSec = min(ageSec, (uint32_t)((millis() - lastUploadOkMs) / 1000));
 		if (lastUploadProblem.length() > 0) text += " - " + lastUploadProblem;
-		else if (last != 0 && lastKnownEpoch > last) text += " - OK " + ageText(lastKnownEpoch - last) + " ago";
+		else if (ageSec != 0xFFFFFFFFu) text += " - OK " + ageText(ageSec) + " ago";
 		else if (last == 0 && pendingUploadFiles == 0) text = "nothing to send yet";
 	}
 	lastUploadStatusText = text;
@@ -2026,7 +2040,7 @@ static UploadResult doUpload(bool force) {
 	// minute.
 	bool pendingNow = uploader->configValid() && uploader->hasPending(sessionDir());
 	bool pendingAfterStop = scanningActive && uploader->configValid(); // the open run's files become pending once closed
-	if ((!pendingNow && !pendingAfterStop) || (!force && !uploader->autoUploadDue(lastKnownEpoch))) {
+	if ((!pendingNow && !pendingAfterStop) || (!force && !uploader->autoUploadDue(nowEpochEstimate()))) {
 		if (force) {
 			const char *why = !uploader->configValid() ? "no config.cfg / keys" : "nothing new";
 			logEvent(String("upload: ") + why, COLOR_TEXT_DIM);
@@ -2054,14 +2068,14 @@ static UploadResult doUpload(bool force) {
 	// app reconnects on its own once resumeServer() re-advertises (a
 	// USB-connected phone never notices).
 	CydBleLink::suspendServer();
-	UploadResult result = uploader->uploadPending(sessionDir(), lastKnownEpoch, force, onUploadProgress);
+	UploadResult result = uploader->uploadPending(sessionDir(), nowEpochEstimate(), force, onUploadProgress);
 	CydBleLink::resumeServer();
 
 	if (WARDRIVE_DEBUG) {
 		Serial.printf("[upload] force=%d nowEpoch=%lu result=%s\n",
-					  force, (unsigned long)lastKnownEpoch, uploadResultStr(result));
+					  force, (unsigned long)nowEpochEstimate(), uploadResultStr(result));
 	}
-	if (result == UploadResult::Ok) lastUploadProblem = "";
+	if (result == UploadResult::Ok) { lastUploadProblem = ""; lastUploadOkMs = millis(); }
 	else if (result == UploadResult::WifiFailed) lastUploadProblem = "WiFi failed";
 	else if (result == UploadResult::UploadFailed) lastUploadProblem = "server failed";
 	lastUploadOkEpoch = uploader->lastUploadEpoch();
@@ -2629,7 +2643,7 @@ static void relayMarkUploaded(const String &name, uint32_t ackEpoch = 0) {
 	if (!SD.exists(path)) return;
 	// Prefer the phone's wall clock (ackEpoch) for the marker and the last-upload
 	// time; fall back to the rig's own GPS-derived clock.
-	uint32_t stamp = ackEpoch != 0 ? ackEpoch : (uint32_t)lastKnownEpoch;
+	uint32_t stamp = ackEpoch != 0 ? ackEpoch : nowEpochEstimate();
 	File f = SD.open(path + ".uploaded", FILE_WRITE);
 	if (f) {
 		f.println(stamp);
@@ -2639,6 +2653,7 @@ static void relayMarkUploaded(const String &name, uint32_t ackEpoch = 0) {
 	// A phone upload counts exactly like the rig's own upload, so reset the
 	// "last upload OK" age the screen shows instead of leaving it stuck at the
 	// time of the rig's last self-upload.
+	lastUploadOkMs = millis(); // a phone upload counts even when neither side has a clock
 	if (stamp != 0 && uploader) {
 		uploader->setLastUploadEpoch(stamp);
 		lastUploadOkEpoch = stamp;
@@ -3137,6 +3152,7 @@ static void handleIncomingLine(const String &line) {
 	}
 	if (line.startsWith("EPOCH:")) {
 		lastKnownEpoch = (uint32_t)line.substring(6).toInt();
+		epochSyncMs = millis();
 		return;
 	}
 	if (line.startsWith("GPSPOS:")) {
@@ -3884,7 +3900,7 @@ void loop() {
 		}
 		if (uploader && millis() - lastCleanupMs > CLEANUP_INTERVAL_MS) {
 			lastCleanupMs = millis();
-			uploader->cleanupOldFiles(sessionDir(), lastKnownEpoch);
+			uploader->cleanupOldFiles(sessionDir(), nowEpochEstimate());
 		}
 	}
 

@@ -761,11 +761,21 @@ class ScanService : Service(), RigLinkManager.Listener {
     // ---- Watchlist: notify when specific devices enter / leave range ----
 
     private val watchLastSeen = HashMap<String, Long>() // watch entry -> last time a matching device was seen
+    private val watchLastNotify = HashMap<String, Long>() // watch entry -> last time we posted an enter/leave notification
     private var watchNotifId = 4000
 
     private fun watchMatches(key: String, obs: Observation): Boolean =
         if (key.contains(":")) obs.mac.equals(key, ignoreCase = true)
         else obs.label.contains(key, ignoreCase = true) || obs.mac.contains(key, ignoreCase = true)
+
+    // Rate-limit per entry so a device hovering at the edge of the leave window
+    // can't post a stream of enter/leave alerts.
+    private fun watchCanNotify(key: String, now: Long): Boolean {
+        val last = watchLastNotify[key]
+        if (last != null && now - last < WATCH_NOTIFY_COOLDOWN_MS) return false
+        watchLastNotify[key] = now
+        return true
+    }
 
     private fun checkWatchlist(obs: Observation) {
         val entries = appSettings.watchEntries()
@@ -775,7 +785,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             if (!watchMatches(e.key, obs)) continue
             val wasPresent = watchLastSeen.containsKey(e.key)
             watchLastSeen[e.key] = now
-            if (!wasPresent && e.enter) {
+            if (!wasPresent && e.enter && watchCanNotify(e.key, now)) {
                 watchNotify("Watchlist: in range", "${e.label}  ·  ${obs.label.ifBlank { obs.mac }}  ·  ${obs.rssi} dBm")
             }
         }
@@ -792,7 +802,7 @@ class ScanService : Service(), RigLinkManager.Listener {
                 if (now - last > WATCH_LEAVE_MS) {
                     it.remove()
                     val e = entries.firstOrNull { it.key == key }
-                    if (e != null && e.leave) watchNotify("Watchlist: left range", e.label)
+                    if (e != null && e.leave && watchCanNotify(key, now)) watchNotify("Watchlist: left range", e.label)
                 }
             }
             mainHandler.postDelayed(this, WATCH_SWEEP_MS)
@@ -944,8 +954,14 @@ class ScanService : Service(), RigLinkManager.Listener {
         private const val WATCH_CHANNEL_ID = "wardrive_watchlist"
         private const val NOTIF_ID = 1
         private const val JOIN_NOTIF_ID = 2
-        private const val WATCH_LEAVE_MS = 60_000L  // no sighting for this long = the device left range
-        private const val WATCH_SWEEP_MS = 15_000L  // how often we check the watchlist for departures
+        // BLE sightings are bursty - a stationary device isn't reported every
+        // scan cycle (advertising duty-cycle, Android coalescing duplicate
+        // adverts, the rig's per-run BLE dedup), so a short window flaps
+        // left/entered on a device that never actually moved. Three minutes
+        // rides out those gaps while still catching a genuine departure.
+        private const val WATCH_LEAVE_MS = 180_000L  // no sighting for this long = the device left range
+        private const val WATCH_SWEEP_MS = 15_000L   // how often we check the watchlist for departures
+        private const val WATCH_NOTIFY_COOLDOWN_MS = 120_000L // min gap between notifications for one entry, so edge flapping can't spam
         // How far the current sighting has to be from where a flagged
         // tracker was last logged before it's treated as "traveling with
         // you" rather than "same spot as last time" - GPS/RSSI-position

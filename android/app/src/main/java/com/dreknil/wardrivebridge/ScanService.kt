@@ -763,20 +763,20 @@ class ScanService : Service(), RigLinkManager.Listener {
     private val watchLastSeen = HashMap<String, Long>() // watch entry -> last time a matching device was seen
     private var watchNotifId = 4000
 
-    private fun watchMatches(entry: String, obs: Observation): Boolean =
-        if (entry.contains(":")) obs.mac.equals(entry, ignoreCase = true)
-        else obs.label.contains(entry, ignoreCase = true) || obs.mac.contains(entry, ignoreCase = true)
+    private fun watchMatches(key: String, obs: Observation): Boolean =
+        if (key.contains(":")) obs.mac.equals(key, ignoreCase = true)
+        else obs.label.contains(key, ignoreCase = true) || obs.mac.contains(key, ignoreCase = true)
 
     private fun checkWatchlist(obs: Observation) {
-        val entries = appSettings.watchlist()
+        val entries = appSettings.watchEntries()
         if (entries.isEmpty()) return
         val now = System.currentTimeMillis()
         for (e in entries) {
-            if (!watchMatches(e, obs)) continue
-            val wasPresent = watchLastSeen.containsKey(e)
-            watchLastSeen[e] = now
-            if (!wasPresent && appSettings.watchNotifyEnter) {
-                watchNotify("Watchlist: in range", "${obs.label.ifBlank { obs.mac }}  ·  $e  ·  ${obs.rssi} dBm")
+            if (!watchMatches(e.key, obs)) continue
+            val wasPresent = watchLastSeen.containsKey(e.key)
+            watchLastSeen[e.key] = now
+            if (!wasPresent && e.enter) {
+                watchNotify("Watchlist: in range", "${e.label}  ·  ${obs.label.ifBlank { obs.mac }}  ·  ${obs.rssi} dBm")
             }
         }
     }
@@ -785,12 +785,14 @@ class ScanService : Service(), RigLinkManager.Listener {
     private val watchSweep = object : Runnable {
         override fun run() {
             val now = System.currentTimeMillis()
+            val entries = appSettings.watchEntries()
             val it = watchLastSeen.entries.iterator()
             while (it.hasNext()) {
-                val (entry, last) = it.next()
+                val (key, last) = it.next()
                 if (now - last > WATCH_LEAVE_MS) {
                     it.remove()
-                    if (appSettings.watchNotifyLeave) watchNotify("Watchlist: left range", entry)
+                    val e = entries.firstOrNull { it.key == key }
+                    if (e != null && e.leave) watchNotify("Watchlist: left range", e.label)
                 }
             }
             mainHandler.postDelayed(this, WATCH_SWEEP_MS)

@@ -703,6 +703,8 @@
                 android:textStyle="bold"
                 android:layout_marginBottom="12dp" />
 
+            <include android:id="@+id/menuBrowseLogs" layout="@layout/item_menu_row" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -748,19 +750,6 @@
 
             <include android:id="@+id/menuAntennaCheck" layout="@layout/item_menu_row" />
             <include android:id="@+id/menuWatchlist" layout="@layout/item_menu_row" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="MAPPING &amp; LOGS"
-                android:textColor="@color/cyan_500"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="4dp" />
-
-            <include android:id="@+id/menuFloorPlan" layout="@layout/item_menu_row" />
-            <include android:id="@+id/menuBrowseLogs" layout="@layout/item_menu_row" />
 
         </LinearLayout>
         </ScrollView>

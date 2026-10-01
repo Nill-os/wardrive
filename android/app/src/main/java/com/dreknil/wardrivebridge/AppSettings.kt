@@ -37,20 +37,29 @@ class AppSettings(context: Context) {
         set(value) = prefs.edit().putString("ssid_blacklist", value).apply()
 
     // Watchlist: specific WiFi/BLE devices to be notified about when they come
-    // into range or leave. One entry per line; an entry with ':' matches a MAC,
-    // otherwise it matches an SSID/device-name substring (case-insensitive).
+    // into range or leave, each with its own enter/leave toggles. `key` matches a
+    // MAC (if it contains ':') or an SSID/device-name substring; `label` is just
+    // for display. Stored one entry per line as "key\tlabel\tenter\tleave".
+    data class WatchEntry(val key: String, val label: String, val enter: Boolean, val leave: Boolean)
+
     var watchlistRaw: String
         get() = prefs.getString("watchlist", "") ?: ""
         set(value) = prefs.edit().putString("watchlist", value).apply()
-    var watchNotifyEnter: Boolean
-        get() = prefs.getBoolean("watch_notify_enter", true)
-        set(value) = prefs.edit().putBoolean("watch_notify_enter", value).apply()
-    var watchNotifyLeave: Boolean
-        get() = prefs.getBoolean("watch_notify_leave", true)
-        set(value) = prefs.edit().putBoolean("watch_notify_leave", value).apply()
 
-    fun watchlist(): List<String> =
-        watchlistRaw.split("\n", ",").map { it.trim() }.filter { it.isNotEmpty() }
+    fun watchEntries(): List<WatchEntry> =
+        watchlistRaw.split("\n").mapNotNull { line ->
+            val t = line.trim()
+            if (t.isEmpty()) return@mapNotNull null
+            val p = t.split("\t")
+            if (p.size >= 4) WatchEntry(p[0], p[1].ifBlank { p[0] }, p[2] == "1", p[3] == "1")
+            else WatchEntry(t, t, true, true) // legacy plain line - default both toggles on
+        }
+
+    fun setWatchEntries(list: List<WatchEntry>) {
+        watchlistRaw = list.joinToString("\n") {
+            "${it.key.replace("\t", " ")}\t${it.label.replace("\t", " ")}\t${if (it.enter) "1" else "0"}\t${if (it.leave) "1" else "0"}"
+        }
+    }
 
     // 0 = keep forever, matching the firmware's own retentionDays convention.
     var retentionDays: Int

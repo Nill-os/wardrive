@@ -306,9 +306,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         setupMenuRow(binding.menuBrowseLogs, "Browse Logs", "Past runs and saved sessions") {
             showDetail(DetailKind.LOGS, "Logs")
         }
-        setupMenuRow(binding.menuFloorPlan, "Floor Plan", "Indoor mapping, no GPS needed") {
-            showDetail(DetailKind.FLOOR_PLAN, "Floor Plan")
-        }
         setupMenuRow(binding.menuPineapple, "Pineapple Detection", "Find possible WiFi Pineapple rogue APs") {
             openFeedDetail("Pineapple Detection", setOf(Source.RIG_WIFI, Source.PHONE_WIFI)) { it.isPineapple }
         }
@@ -891,46 +888,108 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         dialog.onSample(obs) // seed it with the reading that triggered the long-press
     }
 
-    // The Watchlist tool: edit the devices to be notified about and the
-    // enter/leave toggles. ScanService reads these live, so changes take effect
-    // on the next sighting without restarting a run.
+    // Known devices currently/recently heard (rig + phone, deduped by MAC,
+    // strongest first) - the choices in the Watchlist "add" dropdown.
+    private fun knownDevices(): List<Triple<String, String, String>> {
+        val s = scanService ?: return emptyList()
+        val best = LinkedHashMap<String, Observation>()
+        for (map in s.groups.values) for ((mac, obs) in map) {
+            val cur = best[mac]
+            if (cur == null || obs.rssi > cur.rssi) best[mac] = obs
+        }
+        return best.values.sortedByDescending { it.rssi }.map { obs ->
+            val label = obs.label.ifBlank { "(hidden)" }
+            Triple("$label  ·  ${obs.mac}  ·  ${obs.rssi} dBm", obs.mac, label) // (dropdown text, key=MAC, display label)
+        }
+    }
+
+    // The Watchlist tool: pick devices from a dropdown of what's nearby, each
+    // with its own "In"/"Out" notification toggles. ScanService reads the list
+    // live, so changes apply on the next sighting without restarting a run.
     private fun showWatchlistDialog() {
         val s = AppSettings(this)
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val container = android.widget.LinearLayout(this).apply {
+        val entries = s.watchEntries().toMutableList()
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val secondary = ContextCompat.getColor(this, R.color.text_secondary)
+
+        val root = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
+            setPadding(dp(16), dp(8), dp(16), 0)
         }
-        val note = android.widget.TextView(this).apply {
-            text = "One device per line: a MAC (AA:BB:CC:DD:EE:FF) or part of a WiFi/BLE name. Matches the rig and the phone while scanning."
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
-            textSize = 12f
+        root.addView(android.widget.TextView(this).apply {
+            text = "Pick a nearby device to watch, then toggle In (comes into range) / Out (leaves). Needs scanning (a run or an open live tool) to see devices and to notify."
+            setTextColor(secondary); textSize = 12f
+        })
+
+        val known = knownDevices()
+        val spinner = android.widget.Spinner(this)
+        spinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            if (known.isEmpty()) listOf("(no devices seen yet - start scanning)") else known.map { it.first },
+        )
+        val addBtn = android.widget.Button(this).apply { text = "ADD" }
+        root.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(8))
+            addView(spinner, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(addBtn)
+        })
+
+        val listContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        root.addView(listContainer)
+
+        fun rebuild() {
+            listContainer.removeAllViews()
+            if (entries.isEmpty()) {
+                listContainer.addView(android.widget.TextView(this).apply {
+                    text = "No devices watched yet."; setTextColor(secondary); setPadding(0, dp(8), 0, 0)
+                })
+                return
+            }
+            for (i in entries.indices) {
+                val e = entries[i]
+                val row = android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(4), 0, dp(4))
+                }
+                row.addView(android.widget.TextView(this).apply {
+                    text = e.label; maxLines = 2
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+                }, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(android.widget.CheckBox(this).apply {
+                    text = "In"; isChecked = e.enter
+                    setOnCheckedChangeListener { _, c -> entries[i] = entries[i].copy(enter = c) }
+                })
+                row.addView(android.widget.CheckBox(this).apply {
+                    text = "Out"; isChecked = e.leave
+                    setOnCheckedChangeListener { _, c -> entries[i] = entries[i].copy(leave = c) }
+                })
+                row.addView(android.widget.Button(this).apply {
+                    text = "✕" // ✕
+                    setOnClickListener { entries.removeAt(i); rebuild() }
+                })
+                listContainer.addView(row)
+            }
         }
-        val input = EditText(this).apply {
-            setText(s.watchlistRaw)
-            hint = "One MAC or name per line"
-            minLines = 4
-            gravity = android.view.Gravity.TOP
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+
+        addBtn.setOnClickListener {
+            val pos = spinner.selectedItemPosition
+            if (known.isEmpty() || pos !in known.indices) return@setOnClickListener
+            val (_, key, label) = known[pos]
+            if (entries.none { it.key.equals(key, ignoreCase = true) }) {
+                entries.add(AppSettings.WatchEntry(key, label, enter = true, leave = true))
+                rebuild()
+            }
         }
-        val enter = android.widget.CheckBox(this).apply {
-            text = "Notify when a device comes into range"; isChecked = s.watchNotifyEnter
-        }
-        val leave = android.widget.CheckBox(this).apply {
-            text = "Notify when a device leaves range"; isChecked = s.watchNotifyLeave
-        }
-        container.addView(note)
-        container.addView(input)
-        container.addView(enter)
-        container.addView(leave)
+        rebuild()
+
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Watchlist")
-            .setView(android.widget.ScrollView(this).apply { addView(container) })
-            .setPositiveButton("Save") { _, _ ->
-                s.watchlistRaw = input.text.toString()
-                s.watchNotifyEnter = enter.isChecked
-                s.watchNotifyLeave = leave.isChecked
+            .setView(android.widget.ScrollView(this).apply { addView(root) })
+            .setPositiveButton("Done") { _, _ ->
+                s.setWatchEntries(entries)
                 Toast.makeText(this, "Watchlist saved", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)

@@ -680,11 +680,9 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- ==================== WIFI TOOLS MENU ==================== -->
-        <!-- ScrollView carries the toggled id (MainActivity.showSection()
-             flips its visibility) since the row list outgrew one screen once
-             Pineapple Detection was added - the inner LinearLayout is just
-             its scrollable content now, no id needed on it. -->
+        <!-- ==================== TOOLS MENU (WiFi + Bluetooth + more) ==================== -->
+        <!-- One combined menu. MainActivity.showSection() flips the ScrollView's
+             visibility; the inner LinearLayout is just its scrollable content. -->
         <ScrollView
             android:id="@+id/wifiMenuContent"
             android:layout_width="match_parent"
@@ -699,95 +697,70 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="&gt; WIFI TOOLS &lt;"
+                android:text="&gt; TOOLS &lt;"
                 android:textColor="@color/text_primary"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="16dp" />
-
-            <include
-                android:id="@+id/menuLiveWifi"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuWardriving"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuBrowseLogs"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuFloorPlan"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuPineapple"
-                layout="@layout/item_menu_row" />
-
-        </LinearLayout>
-        </ScrollView>
-
-        <!-- ==================== BLUETOOTH TOOLS MENU ==================== -->
-        <ScrollView
-            android:id="@+id/bluetoothMenuContent"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+                android:layout_marginBottom="12dp" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="&gt; BLUETOOTH TOOLS &lt;"
-                android:textColor="@color/text_primary"
-                android:textSize="18sp"
+                android:text="WIFI"
+                android:textColor="@color/cyan_500"
+                android:textSize="12sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="4dp" />
 
-            <include
-                android:id="@+id/menuLiveBle"
-                layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuLiveWifi" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuPineapple" layout="@layout/item_menu_row" />
 
-            <include
-                android:id="@+id/menuAirTag"
-                layout="@layout/item_menu_row" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="BLUETOOTH"
+                android:textColor="@color/cyan_500"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp" />
 
-            <include
-                android:id="@+id/menuFlipper"
-                layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuLiveBle" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuAirTag" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuFlipper" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuFlock" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuSkimmer" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuDrone" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuMeshRadio" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuGlasses" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuActionCam" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuPoliceCam" layout="@layout/item_menu_row" />
 
-            <include
-                android:id="@+id/menuFlock"
-                layout="@layout/item_menu_row" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SIGNAL &amp; ALERTS"
+                android:textColor="@color/cyan_500"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp" />
 
-            <include
-                android:id="@+id/menuSkimmer"
-                layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuAntennaCheck" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuWatchlist" layout="@layout/item_menu_row" />
 
-            <include
-                android:id="@+id/menuDrone"
-                layout="@layout/item_menu_row" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="MAPPING &amp; LOGS"
+                android:textColor="@color/cyan_500"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp" />
 
-            <include
-                android:id="@+id/menuMeshRadio"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuGlasses"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuActionCam"
-                layout="@layout/item_menu_row" />
-
-            <include
-                android:id="@+id/menuPoliceCam"
-                layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuFloorPlan" layout="@layout/item_menu_row" />
+            <include android:id="@+id/menuBrowseLogs" layout="@layout/item_menu_row" />
 
         </LinearLayout>
         </ScrollView>
@@ -1184,32 +1157,7 @@
                 android:id="@+id/navWifiLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="2. WIFI"
-                android:maxLines="1"
-                android:ellipsize="none"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/navBluetooth"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:clickable="true"
-            android:focusable="true">
-
-            <TextView
-                android:id="@+id/navBluetoothLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="3. BT"
+                android:text="2. TOOLS"
                 android:maxLines="1"
                 android:ellipsize="none"
                 android:textColor="@color/text_secondary"
@@ -1234,7 +1182,7 @@
                 android:id="@+id/navTerminalLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="4. TRM"
+                android:text="3. TRM"
                 android:maxLines="1"
                 android:ellipsize="none"
                 android:textColor="@color/text_secondary"
@@ -1259,7 +1207,7 @@
                 android:id="@+id/navLogsLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="5. LOG"
+                android:text="4. LOG"
                 android:maxLines="1"
                 android:ellipsize="none"
                 android:textColor="@color/text_secondary"
@@ -1284,7 +1232,7 @@
                 android:id="@+id/navSettingsLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="6. SET"
+                android:text="5. SET"
                 android:maxLines="1"
                 android:ellipsize="none"
                 android:textColor="@color/text_secondary"

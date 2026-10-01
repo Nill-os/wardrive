@@ -6,7 +6,7 @@ The rig works on its own, and **the phone is optional**. With the phone you get:
 - the phone's own WiFi, BLE and cell scanning, merged in with the rig's
 - **live tools** (WiFi/Bluetooth tabs) - Live WiFi, Live BLE, Pineapple, AirTag/Flipper/Flock/skimmer/drone/mesh/glasses/action-cam/police-cam detection. Opening a tool starts scanning for it right away (no run needed); the list pulls from **both the rig and the phone**, and works indoors with no GPS fix.
 - **fox-hunt**: long-press any device in a tool to track its live signal (hot/cold + rising beep) and home in on it
-- an **antenna checker** (Settings → Antenna check) that reads a chosen device's live signal with peak hold and A/B capture - pick **which radio** to measure (Rig WiFi, Rig BLE, Phone WiFi, Phone Bluetooth, or strongest) so you can test the rig's own antenna
+- an **antenna checker** (Tools → Antenna check) that reads a chosen device's live signal with peak hold and A/B capture - pick **which radio** to measure (Rig WiFi, Rig BLE, Phone WiFi, Phone Bluetooth, or strongest) so you can test the rig's own antenna
 - tracker and skimmer detection alerts
 - a **device watchlist** - list specific WiFi/BLE devices (by MAC or name) and get a notification when one comes into range or leaves, each direction toggleable
 - start/stop from the phone, the map and the car screen
@@ -33,15 +33,14 @@ You need JDK 17 and the Android SDK. Android Studio installs both; `local.proper
 1. Grant **Location** (choose **Precise** - Bluetooth scanning withholds results with only Approximate, and select "Allow all the time" if you want it scanning with the screen off), **Nearby devices** (Bluetooth) and **Notifications**.
 2. Open **Settings**:
    - **Background:** tap **ALLOW BACKGROUND USAGE** so Android's battery optimizer doesn't pause scanning when the screen is off or the app is backgrounded.
-   - **Tools → Antenna check:** compare antennas on a live signal - it starts scanning itself (no run needed) and lets you pick which radio to measure, so you can test the rig's antenna against the phone's.
    - **Upload credentials:** your WiGLE "Encoded for use" token and your wdgwars API key. These are only needed if the phone should upload its own logs.
    - **Trip mode** (off by default): for trips away from home WiFi. While on, the phone pulls the rig's own log files over the Bluetooth link and uploads them with your keys over whatever connection the phone has (cell or WiFi); the rig holds off its own upload, so nothing is sent twice. Off = the rig uploads over its own WiFi (`config.cfg`) as usual.
    - **Home exclusion zone:** tap **USE CURRENT GPS FIX AS HOME** while at home, and set a radius (for example 300 m). Anything seen inside it is never logged, exported or uploaded (your home stays private), but still shows briefly in the live tools so fox-hunt and antenna check work at home. Saving also **pushes this zone to the rig** so its own logs match.
    - **CYD counters:** a toggle switches the rig screen's headline numbers between **WiGLE / WDGW** and raw **found APs / Bluetooth**.
    - **Blacklists:** any MACs or SSIDs you never want logged, such as your own devices.
-   - **Watchlist:** one device per line (a MAC like `AA:BB:CC:DD:EE:FF`, or part of a WiFi/BLE name) to be notified about, with separate toggles for coming into range and leaving. It matches the rig's and the phone's radios while scanning (a run or an open live tool).
    - Tap **SAVE**.
-3. **Pair with your rig (once).** On the rig, open the **4.CFG** tab and tap **PAIR PHONE**. A 6-digit code appears for 60 seconds. With the app open, Android asks you to pair with *WardriveCYD*: type the code and tap OK. The dashboard shows `CYD: PAIR` until this is done.
+3. The **Tools** tab (bottom nav) holds everything else: the live WiFi/Bluetooth feeds and detections, **Antenna check** (compare antennas on a live signal, pick which radio), **Watchlist** (devices to be notified about when they enter/leave range, with a toggle for each direction), Floor Plan and Browse Logs.
+4. **Pair with your rig (once).** On the rig, open the **4.CFG** tab and tap **PAIR PHONE**. A 6-digit code appears for 60 seconds. With the app open, Android asks you to pair with *WardriveCYD*: type the code and tap OK. The dashboard shows `CYD: PAIR` until this is done.
 
 From then on the phone connects to **that rig only**, and the rig only accepts phones it has paired with. Two rigs and two phones in the same car park never cross over. To move the phone to a different rig, use **Settings → FORGET THIS RIG**. To remove every phone from a rig, use **FORGET PHONES** on its CFG tab.
 

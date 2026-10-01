@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     // ---- Navigation shell (Dashboard/WiFi/Bluetooth/Terminal bottom nav +
     // a menu->detail overlay for WiFi/Bluetooth tool screens) ----
-    private enum class AppSection { DASHBOARD, WIFI, BLUETOOTH, TERMINAL }
+    private enum class AppSection { DASHBOARD, TOOLS, TERMINAL }
     private enum class DetailKind { NONE, FEED, MAP, LOGS, FLOOR_PLAN }
     private var currentSection = AppSection.DASHBOARD
     private var currentDetailKind = DetailKind.NONE
@@ -291,8 +291,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     private fun setupNavigation() {
         binding.navDashboard.setOnClickListener { showSection(AppSection.DASHBOARD) }
-        binding.navWifi.setOnClickListener { showSection(AppSection.WIFI) }
-        binding.navBluetooth.setOnClickListener { showSection(AppSection.BLUETOOTH) }
+        binding.navWifi.setOnClickListener { showSection(AppSection.TOOLS) }
         binding.navTerminal.setOnClickListener { showSection(AppSection.TERMINAL) }
         binding.navLogs.setOnClickListener { showDetail(DetailKind.LOGS, "Logs"); updateNavHighlight() }
         binding.detailBackButton.setOnClickListener { hideDetail() }
@@ -304,9 +303,6 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         setupMenuRow(binding.menuLiveWifi, "Live WiFi", "WiFi networks detected this run") {
             openFeedDetail("Live WiFi", setOf(Source.RIG_WIFI, Source.PHONE_WIFI))
         }
-        setupMenuRow(binding.menuWardriving, "Wardriving", "GPS-enabled AP mapping") {
-            showDetail(DetailKind.MAP, "Wardriving")
-        }
         setupMenuRow(binding.menuBrowseLogs, "Browse Logs", "Past runs and saved sessions") {
             showDetail(DetailKind.LOGS, "Logs")
         }
@@ -315,6 +311,12 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }
         setupMenuRow(binding.menuPineapple, "Pineapple Detection", "Find possible WiFi Pineapple rogue APs") {
             openFeedDetail("Pineapple Detection", setOf(Source.RIG_WIFI, Source.PHONE_WIFI)) { it.isPineapple }
+        }
+        setupMenuRow(binding.menuAntennaCheck, "Antenna Check", "Compare antennas on a device's live signal (rig or phone)") {
+            startActivity(AntennaActivity.intent(this))
+        }
+        setupMenuRow(binding.menuWatchlist, "Watchlist", "Get notified when chosen devices enter or leave range") {
+            showWatchlistDialog()
         }
 
         val bleSources = setOf(Source.RIG_BLE, Source.PHONE_BLE)
@@ -366,8 +368,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         currentSection = section
         if (currentDetailKind != DetailKind.NONE) hideDetail()
         binding.dashboardContent.visibility = if (section == AppSection.DASHBOARD) View.VISIBLE else View.GONE
-        binding.wifiMenuContent.visibility = if (section == AppSection.WIFI) View.VISIBLE else View.GONE
-        binding.bluetoothMenuContent.visibility = if (section == AppSection.BLUETOOTH) View.VISIBLE else View.GONE
+        binding.wifiMenuContent.visibility = if (section == AppSection.TOOLS) View.VISIBLE else View.GONE
         binding.terminalContent.visibility = if (section == AppSection.TERMINAL) View.VISIBLE else View.GONE
         updateNavHighlight()
         if (section == AppSection.DASHBOARD) refreshRecentRuns()
@@ -387,8 +388,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         // overlay (Logs/Map/etc, see showDetail()) is currently covering it.
         val noDetailOpen = currentDetailKind == DetailKind.NONE
         setNavPillSelected(binding.navDashboardLabel, currentSection == AppSection.DASHBOARD && noDetailOpen)
-        setNavPillSelected(binding.navWifiLabel, currentSection == AppSection.WIFI && noDetailOpen)
-        setNavPillSelected(binding.navBluetoothLabel, currentSection == AppSection.BLUETOOTH && noDetailOpen)
+        setNavPillSelected(binding.navWifiLabel, currentSection == AppSection.TOOLS && noDetailOpen)
         setNavPillSelected(binding.navTerminalLabel, currentSection == AppSection.TERMINAL && noDetailOpen)
         // Logs isn't an AppSection (it's the same "detail" overlay Browse
         // Logs/Wardriving/Floor Plan already use, see showDetail()) - its nav
@@ -889,6 +889,52 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         huntDialog = dialog
         dialog.show()
         dialog.onSample(obs) // seed it with the reading that triggered the long-press
+    }
+
+    // The Watchlist tool: edit the devices to be notified about and the
+    // enter/leave toggles. ScanService reads these live, so changes take effect
+    // on the next sighting without restarting a run.
+    private fun showWatchlistDialog() {
+        val s = AppSettings(this)
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val note = android.widget.TextView(this).apply {
+            text = "One device per line: a MAC (AA:BB:CC:DD:EE:FF) or part of a WiFi/BLE name. Matches the rig and the phone while scanning."
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            textSize = 12f
+        }
+        val input = EditText(this).apply {
+            setText(s.watchlistRaw)
+            hint = "One MAC or name per line"
+            minLines = 4
+            gravity = android.view.Gravity.TOP
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        val enter = android.widget.CheckBox(this).apply {
+            text = "Notify when a device comes into range"; isChecked = s.watchNotifyEnter
+        }
+        val leave = android.widget.CheckBox(this).apply {
+            text = "Notify when a device leaves range"; isChecked = s.watchNotifyLeave
+        }
+        container.addView(note)
+        container.addView(input)
+        container.addView(enter)
+        container.addView(leave)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Watchlist")
+            .setView(android.widget.ScrollView(this).apply { addView(container) })
+            .setPositiveButton("Save") { _, _ ->
+                s.watchlistRaw = input.text.toString()
+                s.watchNotifyEnter = enter.isChecked
+                s.watchNotifyLeave = leave.isChecked
+                Toast.makeText(this, "Watchlist saved", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // Tap a row for the full picture on one device - everything the live

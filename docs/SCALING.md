@@ -34,6 +34,35 @@ aggregator sees no extra duplicates.
 See [Design notes → Scaling to more sniffer nodes](DESIGN_NOTES.md#scaling-to-more-sniffer-nodes)
 and [→ Scaling BLE nodes](DESIGN_NOTES.md#scaling-ble-nodes) for the internals.
 
+## Scaling statistics
+
+At the default 150 ms channel dwell, more WiFi nodes buy you two things at once:
+**full channel coverage** (not just the popular 1/6/11) and a **faster revisit**
+of every channel, because the nodes hop in parallel. Each node also adds its own
+antenna, so weak APs are more likely to be caught on some pass.
+
+| Sniffer nodes | 2.4 GHz channels covered | Max channels on one node | Each channel revisited every |
+|---|---|---|---|
+| 1 | 1 / 6 / 11 (popular only) | 3 | ~0.45 s |
+| 2 | all of 1–13 | 7 | ~1.05 s |
+| 3 | all of 1–13 | 5 | ~0.75 s |
+| 4 | all of 1–13 | 4 | ~0.60 s |
+| 5 | all of 1–13 | 3 | ~0.45 s |
+| 13 | all of 1–13 | 1 | ~0.15 s (no hopping - each node camps a channel) |
+
+So **5 nodes cover all 13 channels at the same revisit rate a single node gives
+just 1/6/11**, and by **13 nodes nothing is missed to channel-hopping** - every
+channel has a radio parked on it full-time. In practice unique-AP throughput
+rises roughly linearly with node count until you reach that channel-camping
+point. (Lower `channel_hop_ms` to trade dwell time for faster revisit on any
+node count.)
+
+**BLE** scales differently: every node already hears all three advertising
+channels, so adding `ble_node` boards multiplies the **reporting** capacity
+rather than the coverage - *N* nodes carry roughly *N×* the forwarding
+throughput, which is what keeps a dense area from overflowing one node's link
+and dropping sightings.
+
 ## Flashing and identifying nodes (desktop app)
 
 The desktop app's **Flash** tab does the assignment for you — no `platformio.ini`

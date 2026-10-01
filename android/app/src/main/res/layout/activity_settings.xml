@@ -22,30 +22,6 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="&gt; TOOLS"
-            android:textColor="@color/cyan_500"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:paddingBottom="4dp" />
-
-        <Button
-            android:id="@+id/antennaCheckButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="&gt; ANTENNA CHECK"
-            android:layout_marginBottom="2dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Pick a target and compare antennas by its live signal (peak + A/B capture)."
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:paddingBottom="16dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
             android:text="&gt; RIG PAIRING"
             android:textColor="@color/cyan_500"
             android:textSize="14sp"
@@ -210,43 +186,6 @@
             android:textColorHint="@color/text_secondary"
             android:textColor="@color/text_primary"
             android:layout_marginTop="8dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="&gt; WATCHLIST"
-            android:textColor="@color/cyan_500"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:paddingTop="20dp"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Get a notification when a specific device comes into range or leaves. One entry per line: a MAC (e.g. AA:BB:CC:DD:EE:FF) or part of a WiFi/BLE name. Works for both the rig's and the phone's radios while scanning (a run or an open live tool)."
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp"
-            android:paddingBottom="8dp" />
-
-        <EditText
-            android:id="@+id/watchlistInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="One MAC or name per line"
-            android:textColorHint="@color/text_secondary"
-            android:textColor="@color/text_primary"
-            android:gravity="top"
-            android:minLines="3"
-            android:inputType="textMultiLine" />
-
-        <CheckBox android:id="@+id/watchEnterCheck"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:textColor="@color/text_primary" android:text="Notify when a watched device comes into range" />
-
-        <CheckBox android:id="@+id/watchLeaveCheck"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:textColor="@color/text_primary" android:text="Notify when a watched device leaves range" />
 
         <TextView
             android:layout_width="match_parent"

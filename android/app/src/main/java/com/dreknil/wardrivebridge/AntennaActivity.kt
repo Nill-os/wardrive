@@ -41,6 +41,9 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     private var captureA: Snapshot? = null
     private var captureB: Snapshot? = null
     private data class Snapshot(val peak: Int, val avg: Int)
+    // After capturing A the meter pauses so you can physically swap antennas
+    // without the swap's junk readings polluting B's window; RESUME un-pauses.
+    private var swapPaused = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -83,9 +86,14 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
         // Each capture snapshots the current window, then clears the live
         // peak/avg so the next antenna is measured from scratch - otherwise B's
         // average carries over all of A's samples. Flow: aim antenna 1, Capture
-        // A; swap to antenna 2, Capture B; then read the comparison.
-        binding.antCaptureAButton.setOnClickListener { captureA = snapshot(); resetLive(); updateCompare() }
+        // A; it pauses so you can swap antennas, tap RESUME; Capture B; read it.
+        binding.antCaptureAButton.setOnClickListener {
+            captureA = snapshot(); resetLive(); swapPaused = true; updateCompare(); updateResumeButton()
+        }
         binding.antCaptureBButton.setOnClickListener { captureB = snapshot(); resetLive(); updateCompare() }
+        binding.antResumeButton.setOnClickListener {
+            swapPaused = false; resetLive(); updateResumeButton()
+        }
         updateTargetLabel()
         updateSourceLabel()
     }
@@ -219,10 +227,24 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun resetStats() {
         resetLive()
         captureA = null; captureB = null
+        swapPaused = false
         binding.antCompare.text = ""
+        updateResumeButton()
+    }
+
+    private fun updateResumeButton() {
+        binding.antResumeButton.visibility = if (swapPaused) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun refreshMeter() {
+        if (swapPaused) {
+            binding.antRssi.text = "⏸"
+            binding.antRssi.setTextColor(Color.parseColor("#F59E0B"))
+            binding.antBar.progress = 0
+            binding.antStats.text = "Paused - swap the antenna, then tap RESUME"
+            binding.antSources.text = ""
+            return
+        }
         val now = System.currentTimeMillis()
         perSource.filter { now - it.value.second > 45_000L }.keys.forEach { perSource.remove(it) }
         val best = selectedBest()
@@ -273,6 +295,7 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
 
     // ---- ScanService.SessionListener (only the samples + run state matter here) ----
     override fun onObservation(tagged: Observation) {
+        if (swapPaused) return // ignore readings while you're swapping antennas
         if (!tagged.mac.equals(targetMac, ignoreCase = true)) return
         perSource[tagged.source] = tagged.rssi to System.currentTimeMillis()
         // Peak/avg track the radio being measured, so a strong reading from a

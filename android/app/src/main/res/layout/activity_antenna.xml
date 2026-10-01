@@ -23,7 +23,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Pick a target and read its live signal. Peak holds the best. Capture A with one antenna, swap, capture B with the next, and it says which is stronger. Keep the phone and target still; change only the antenna between captures. (RSSI is only relative.)"
+            android:text="Pick a target and read its live signal. Peak holds the best. Capture A with one antenna; it pauses so you can swap antennas, then tap RESUME and Capture B with the next - and it says which is stronger. Keep the phone and target still; change only the antenna between captures. (RSSI is only relative.)"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:paddingBottom="12dp" />
@@ -148,5 +148,13 @@
                 android:layout_marginStart="4dp"
                 android:text="CAPTURE B" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/antResumeButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            android:text="▶ ANTENNA SWAPPED — RESUME" />
     </LinearLayout>
 </ScrollView>

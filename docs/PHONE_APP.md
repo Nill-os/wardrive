@@ -6,7 +6,7 @@ The rig works on its own, and **the phone is optional**. With the phone you get:
 - the phone's own WiFi, BLE and cell scanning, merged in with the rig's
 - **live tools** (WiFi/Bluetooth tabs) - Live WiFi, Live BLE, Pineapple, AirTag/Flipper/Flock/skimmer/drone/mesh/glasses/action-cam/police-cam detection. Opening a tool starts scanning for it right away (no run needed); the list pulls from **both the rig and the phone**, and works indoors with no GPS fix.
 - **fox-hunt**: long-press any device in a tool to track its live signal (hot/cold + rising beep) and home in on it
-- an **antenna checker** (Tools → Antenna check) that reads a chosen device's live signal with peak hold and A/B capture - pick **which radio** to measure (Rig WiFi, Rig BLE, Phone WiFi, Phone Bluetooth, or strongest) so you can test the rig's own antenna
+- an **antenna checker** (Tools → Antenna check) that reads a chosen device's live signal with peak hold and A/B capture (capturing A pauses the meter so you can swap antennas, then you tap RESUME and capture B, so the two readings never bleed together) - pick **which radio** to measure (Rig WiFi, Rig BLE, Phone WiFi, Phone Bluetooth, or strongest) so you can test the rig's own antenna
 - tracker and skimmer detection alerts
 - a **device watchlist** - search or filter (All/WiFi/BLE) the devices nearby or from your logs, tap one to watch it, and get a notification when it comes into range or leaves, with per-device enter/leave toggles
 - start/stop from the phone, the map and the car screen

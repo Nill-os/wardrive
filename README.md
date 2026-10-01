@@ -57,7 +57,7 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
   <img src="docs/screenshots/phone-bluetooth-tools.png" width="205" alt="Live BLE (rig + phone)">
   <img src="docs/screenshots/phone-settings.png" width="205" alt="Settings">
 </p>
-<p align="center"><em>The Nill OS - Wardriver phone app: live dashboard, and Live WiFi / Live BLE pulling from both the rig and the phone (each device tagged by source), long-press any of them to fox-hunt. (The account map is hidden here for privacy.)</em></p>
+<p align="center"><em>The Nill OS - Wardriver phone app: live dashboard, and Live WiFi / Live BLE pulling from both the rig and the phone (each device tagged by source), long-press any of them to fox-hunt. (The account map is hidden and nearby network names and MAC addresses are blacked out, for privacy.)</em></p>
 
 <p align="center">
   <img src="docs/screenshots/desktop-uploader.png" width="330" alt="Desktop tool - logs & report">

@@ -470,6 +470,7 @@ struct ApDedupEntry {
 	uint32_t lastLoggedMs;
 	double lat;
 	double lon;
+	bool named; // true once a row WITH an SSID has gone out for this BSSID
 };
 std::unordered_map<uint64_t, ApDedupEntry> apDedupState;
 uint32_t lastApPruneMs = 0;
@@ -491,7 +492,12 @@ static uint64_t macToKey(const uint8_t *mac) {
 // Only ever called from loop() (the main task) when dequeuing observations,
 // never from wifiSnifferCallback - keeps the ISR-ish WiFi driver callback
 // itself minimal, and avoids touching this map from two tasks at once.
-static bool shouldLogAp(const uint8_t *mac, double lat, double lon) {
+//
+// named = this sighting carries a non-empty SSID. A hidden (cloaked) network
+// beacons a blank SSID but reveals its name in probe responses, so an AP first
+// logged blank is let through exactly once more when its name turns up -
+// otherwise the movement dedup below keeps the blank row and the name is lost.
+static bool shouldLogAp(const uint8_t *mac, double lat, double lon, bool named) {
 	uint32_t now = millis();
 
 	if (now - lastApPruneMs > AP_DEDUP_PRUNE_SWEEP_MS) {
@@ -518,7 +524,13 @@ static bool shouldLogAp(const uint8_t *mac, double lat, double lon) {
 
 	uint64_t key = macToKey(mac);
 	auto it = apDedupState.find(key);
+	bool wasNamed = false;
 	if (it != apDedupState.end()) {
+		wasNamed = it->second.named;
+		if (named && !wasNamed) {
+			apDedupState[key] = {now, lat, lon, true}; // name just revealed - log it
+			return true;
+		}
 		if (lat == 0.0 && lon == 0.0) {
 			// No GPS fix: position never changes, so movement-based de-dup would
 			// suppress this BSSID forever after the first forward and the phone's
@@ -532,7 +544,7 @@ static bool shouldLogAp(const uint8_t *mac, double lat, double lon) {
 		}
 	}
 
-	apDedupState[key] = {now, lat, lon};
+	apDedupState[key] = {now, lat, lon, named || wasNamed};
 	return true;
 }
 
@@ -839,7 +851,7 @@ static void drainEspNow() {
 		} else { // ESPNOW_TYPE_WIFI
 			double lat, lon, alt, acc;
 			if (!getLoggablePosition(lat, lon, alt, acc)) { lat = lon = alt = acc = 0.0; } // forward location-less for live tools; cyd_node keeps 0,0 off the SD log
-			if (!shouldLogAp(s.mac, lat, lon)) continue;
+			if (!shouldLogAp(s.mac, lat, lon, s.name[0] != '\0')) continue;
 			String ssid(s.name);
 			ssid.replace(",", " ");
 			cydLinkSendf("W,%s,%s,%s,%s,%u,%d,%d,%.6f,%.6f,%.1f,%.1f",
@@ -1087,7 +1099,7 @@ void loop() {
 			// 0,0 rows out of the SD log/upload.
 			if (!getLoggablePosition(lat, lon, alt, acc)) { lat = lon = alt = acc = 0.0; }
 
-			if (!shouldLogAp(obs.bssid, lat, lon)) continue; // seen this BSSID recently nearby, skip the duplicate row
+			if (!shouldLogAp(obs.bssid, lat, lon, obs.ssid[0] != '\0')) continue; // seen this BSSID recently nearby, skip the duplicate row
 
 			String ssid(obs.ssid);
 			ssid.replace(",", " ");

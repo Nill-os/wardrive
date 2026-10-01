@@ -1834,6 +1834,7 @@ static const uint32_t CYD_AP_NOFIX_RELOG_MS = 5000; // no-GPS re-stream interval
 struct CydApDedupEntry {
 	uint32_t lastLoggedMs;
 	double lat, lon;
+	bool named; // a row WITH an SSID has already been logged (see cydShouldLogApByKey)
 };
 std::unordered_map<uint64_t, CydApDedupEntry> cydApDedupState;
 // Which location-less APs have already been counted this run. The no-fix path
@@ -1921,10 +1922,18 @@ static void cydPruneApDedup(double lat, double lon) {
 	if (WARDRIVE_DEBUG) Serial.printf("[dedup] pruned to %u entries, heap=%u\n", (unsigned)cydApDedupState.size(), (unsigned)ESP.getFreeHeap());
 }
 
-static bool cydShouldLogApByKey(uint64_t key, double lat, double lon) {
+// named = this sighting has a non-empty SSID: an AP first logged blank (a hidden
+// network's beacon) is let through once more when its name shows up in a probe response.
+static bool cydShouldLogApByKey(uint64_t key, double lat, double lon, bool named) {
 	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES) cydPruneApDedup(lat, lon);
 	auto it = cydApDedupState.find(key);
+	bool wasNamed = false;
 	if (it != cydApDedupState.end()) {
+		wasNamed = it->second.named;
+		if (named && !wasNamed) {
+			cydApDedupState[key] = {millis(), lat, lon, true};
+			return true;
+		}
 		if (lat == 0.0 && lon == 0.0) {
 			// No GPS fix: re-stream/count on a timer instead of by movement, so
 			// location-less sightings keep reaching the phone's live tools rather
@@ -1934,12 +1943,12 @@ static bool cydShouldLogApByKey(uint64_t key, double lat, double lon) {
 			return false;
 		}
 	}
-	cydApDedupState[key] = {millis(), lat, lon};
+	cydApDedupState[key] = {millis(), lat, lon, named || wasNamed};
 	return true;
 }
 
-static bool cydShouldLogAp(const uint8_t *mac, double lat, double lon) {
-	return cydShouldLogApByKey(cydMacToKey(mac), lat, lon);
+static bool cydShouldLogAp(const uint8_t *mac, double lat, double lon, bool named) {
+	return cydShouldLogApByKey(cydMacToKey(mac), lat, lon, named);
 }
 
 // (Re)arms this board's own WiFi sniffer. Needed on every start, not just at
@@ -2973,7 +2982,7 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		for (int i = 0; i < n; i++) {
 			uint64_t key = 0xFE0000000000ULL + (uint64_t)esp_random();
 			double lat = lastKnownLat + ((int)(esp_random() % 20000) - 10000) / 111320.0 * 0.2;
-			cydShouldLogApByKey(key, lat, lastKnownLon);
+			cydShouldLogApByKey(key, lat, lastKnownLon, true);
 		}
 		Serial.printf("[test] dedup entries=%u heap=%u\n", (unsigned)cydApDedupState.size(), (unsigned)ESP.getFreeHeap());
 	} else if (line.startsWith("test:bigfile ")) {
@@ -3190,7 +3199,7 @@ static void handleIncomingLine(const String &line) {
 		// own comment) - without this, an AP wifi_node just relayed and an
 		// AP this board's own sniffer separately caught would both write a
 		// row for the same real network.
-		if (!cydShouldLogApByKey(cydMacKeyFromString(bssid), lat, lon)) return;
+		if (!cydShouldLogApByKey(cydMacKeyFromString(bssid), lat, lon, ssid.length() > 0)) return;
 
 		// A location-less sighting (no GPS fix, forwarded at 0,0) still streams
 		// to the phone's live tools and shows on-screen, but is NOT written to
@@ -3808,7 +3817,7 @@ void loop() {
 			}
 			if (inExclusionZone(lastKnownLat, lastKnownLon)) continue; // home exclusion zone
 			if (isNoMapSsid(ssid)) continue; // _nomap opt-out
-			if (!cydShouldLogAp(obs.bssid, lastKnownLat, lastKnownLon)) {
+			if (!cydShouldLogAp(obs.bssid, lastKnownLat, lastKnownLon, ssid.length() > 0)) {
 				pushApSighting(bssid, ssid, authMode, obs.rssi, true); // already logged at this spot - just refresh its row
 				continue;
 			}

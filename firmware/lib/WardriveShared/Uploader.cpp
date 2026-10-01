@@ -318,6 +318,32 @@ uint16_t Uploader::pendingCount(const String &dirPath) {
 	return count;
 }
 
+// A small session file whose rows ALL lack a position (0,0) or a real clock
+// (a "1970-..." timestamp) is junk from a run that never had a GPS fix - wdgwars
+// counts every such row "no_gps". Only small files are scanned (this runs at boot).
+static const size_t JUNK_SCAN_MAX_BYTES = 64 * 1024;
+static bool sessionHasUsableRow(const String &path) {
+	File f = SD.open(path, FILE_READ);
+	if (!f) return true; // can't tell - keep it
+	f.readStringUntil('\n'); // WigleWifi-1.6 header
+	f.readStringUntil('\n'); // column names
+	bool usable = false;
+	while (f.available() && !usable) {
+		String line = f.readStringUntil('\n');
+		if (line.length() < 20) continue;
+		// MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,Lat,Lon,... (SSIDs are comma-sanitized)
+		int c[9], pos = -1, i = 0;
+		for (; i < 9; i++) { pos = line.indexOf(',', pos + 1); if (pos < 0) break; c[i] = pos; }
+		if (i < 9) continue;
+		String iso = line.substring(c[2] + 1, c[3]);
+		double lat = line.substring(c[6] + 1, c[7]).toDouble();
+		double lon = line.substring(c[7] + 1, c[8]).toDouble();
+		if ((lat != 0.0 || lon != 0.0) && !iso.startsWith("1970")) usable = true;
+	}
+	f.close();
+	return usable;
+}
+
 void Uploader::removeEmptySessions(const String &dirPath) {
 	// Names first, deletes after - never delete while iterating the folder.
 	std::vector<String> empty;
@@ -326,8 +352,12 @@ void Uploader::removeEmptySessions(const String &dirPath) {
 	File entry = dir.openNextFile();
 	while (entry) {
 		String name = String(entry.name());
-		if (name.endsWith(".csv") && entry.size() <= HEADER_ONLY_MAX_BYTES) empty.push_back(dirPath + "/" + name);
+		size_t size = entry.size();
 		entry.close();
+		if (name.endsWith(".csv")) {
+			String path = dirPath + "/" + name;
+			if (size <= HEADER_ONLY_MAX_BYTES || (size <= JUNK_SCAN_MAX_BYTES && !sessionHasUsableRow(path))) empty.push_back(path);
+		}
 		entry = dir.openNextFile();
 	}
 	dir.close();

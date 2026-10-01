@@ -106,6 +106,10 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 
 Every headline number (WIGLE / WDGW / BT) is **unique devices this run**, not CSV rows: an AP re-logged after you move 40 m is a new row but not a new device. The rig keeps a per-run Bloom filter for this (20 KB WiFi, 8 KB BLE, freed when the run stops; about 1% undercount at 8,000 devices, never an overcount). The phone counts the union of rig and phone MACs and exchanges counts with the rig (`app counts`, `rw=`/`rb=`), so the CYD, the app and the Organic Maps overlay show identical figures. The CYD shrinks a number to fit its box and abbreviates past 99,999 (`123K`, `1.2M`).
 
+## Hidden networks
+
+A hidden (cloaked) network beacons a blank SSID and only reveals its name in probe responses, so the AP de-dup (wifi_node and CYD) lets an AP that was first logged blank through exactly once more when a frame with its name arrives; otherwise the 40 m movement rule would keep the blank row and lose the name. Many networks stay blank for good: in a Comcast-heavy suburb about 60-70% of 2.4 GHz BSSIDs are hidden by design (WPA2-Enterprise hotspot and mesh-backhaul interfaces), not a parsing fault. At boot the CYD also deletes small session files whose rows all lack a position or a real clock (runs that never had a GPS fix).
+
 ## Known limitations
 
 - **The rig is 2.4 GHz only.** The ESP32-S3 can't receive 5 GHz (an ESP32-C5 could). The phone app scans the phone's own radio, which covers 2.4, 5 and 6 GHz, so with a phone connected the combined logs cover every band.

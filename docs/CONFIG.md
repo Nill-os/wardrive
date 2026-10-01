@@ -43,7 +43,7 @@ channel_hop_ms=150
 | `led_color_ap` / `led_color_ble` / `led_color_ok` / `led_color_fail` | no | Status-LED colors on all three boards, hex `RRGGBB`. AP seen (default purple), BLE seen (cyan), ok/start/stop (green), error (red). |
 | `channel_hop_ms` | no | How long each board dwells on a channel before hopping. Default 150 (just over one beacon interval). wifi_node hops 1/6/11; the CYD sweeps 1–11. |
 | `count_mode` | no | CYD headline counters: `0` = WiGLE (WiFi) / WDGW (WiFi+BLE) (default), `1` = raw found APs / BT / ALL. Also toggleable from the phone app's Settings. |
-| `service_password` | no | Password for [service mode](USING_THE_RIG.md#service-mode-download-logs)'s log web server. When set, the web page and downloads require it (HTTP basic auth, any username). Left blank, service mode is open to anyone on the same WiFi — see [SECURITY.md](../SECURITY.md). Recommended if you use service mode. |
+| `service_password` | no | Password for [service mode](USING_THE_RIG.md#service-mode-download-logs)'s log web server. The web page and downloads always require a password (HTTP basic auth, user `wardrive`). Leave this blank and the rig shows a fresh random 6-digit code on its screen and in the phone app each time service mode starts; set it for a fixed one. |
 | `alert_flock` / `alert_police` / `alert_skimmer` / `alert_flipper` / `alert_glasses` / `alert_actioncam` / `alert_pineapple` | no | Rig-side detection alerts: a red banner + LED flash on the CYD the first time each is seen in a run. `1`=on, `0`=off (default off). The phone app's DETECTION ALERTS toggles push these, so you normally set them there. |
 
 ## Changing these without the SD card

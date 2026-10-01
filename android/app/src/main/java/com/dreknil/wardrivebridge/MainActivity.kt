@@ -691,12 +691,13 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         binding.terminalLog.text = terminalLines.joinToString("\n")
         binding.terminalScroll.post { binding.terminalScroll.fullScroll(View.FOCUS_DOWN) }
 
-        // The rig announces its service-mode URL (log web server + OTA) as
-        // "WD:SERVICE on ip=<addr>" the moment it joins WiFi - pop the URL so
-        // it's one tap to know where to point a browser / OTA upload.
+        // The rig announces its service-mode URL (log web server) as
+        // "WD:SERVICE on ip=<addr> [pw=<code>]" the moment it joins WiFi - pop the
+        // URL (and the one-time password, if the rig generated one).
         if (line.contains("WD:SERVICE on ip=")) {
             val ip = line.substringAfter("ip=").trim().substringBefore(' ')
-            if (ip.isNotEmpty()) showServiceModeDialog(ip)
+            val pw = if (line.contains("pw=")) line.substringAfter("pw=").trim().substringBefore(' ') else ""
+            if (ip.isNotEmpty()) showServiceModeDialog(ip, pw)
         } else if (line.contains("WD:SERVICE off")) {
             serviceModeDialog?.dismiss(); serviceModeDialog = null
         } else if (line.contains("WD:SERVICE error=")) {
@@ -707,14 +708,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     private var serviceModeDialog: AlertDialog? = null
 
-    private fun showServiceModeDialog(ip: String) {
+    private fun showServiceModeDialog(ip: String, pw: String = "") {
         serviceModeDialog?.dismiss()
         serviceModeDialog = AlertDialog.Builder(this)
             .setTitle("Rig service mode")
             .setMessage(
                 "The rig is on WiFi at:\n\nhttp://$ip\n\n" +
-                    "Open that in a browser on the same network to download the session CSV logs. " +
-                    "For firmware updates, flash over the air to host \"nillos-wardriver\".\n\n" +
+                    "Open that in a browser on the same network to download the session CSV logs.\n\n" +
+                    (if (pw.isNotEmpty()) "Login: user \"wardrive\", password $pw\n\n" else "Login: user \"wardrive\" and your service_password.\n\n") +
                     "Tap the rig's screen, or Exit below, to return to normal scanning."
             )
             .setPositiveButton("Open in browser") { _, _ ->

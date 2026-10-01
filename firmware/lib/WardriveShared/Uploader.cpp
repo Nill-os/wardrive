@@ -4,6 +4,7 @@
 #include <SD.h>
 #include <Preferences.h>
 #include <vector>
+#include "RootCerts.h"
 #include <utility>
 
 static const char *PREFS_NS = "wardrive";
@@ -83,8 +84,10 @@ static const size_t HEADER_ONLY_MAX_BYTES = 260;
 // more than the read/build work ever did. Reusing the connection lets every
 // file after the first skip that handshake entirely as long as the server
 // keeps it alive.
+// caCert pins the server's root CA so the API key is only sent to the real host
+// (the TLS handshake fails otherwise). Ignored for a plain-http endpoint override.
 static bool postMultipartFile(HTTPClient &http, const String &url, const String &filePath,
-							  const std::vector<std::pair<String, String>> &headers) {
+							  const std::vector<std::pair<String, String>> &headers, const char *caCert) {
 	MultipartFileStream body;
 	if (!body.open(filePath, "file", BOUNDARY)) return false;
 
@@ -94,7 +97,8 @@ static bool postMultipartFile(HTTPClient &http, const String &url, const String 
 	// freezing the whole board's main loop indefinitely.
 	http.setConnectTimeout(8000);
 	http.setTimeout(10000);
-	http.begin(url);
+	if (url.startsWith("https://")) http.begin(url, caCert);
+	else http.begin(url);
 	http.addHeader("Content-Type", String("multipart/form-data; boundary=") + BOUNDARY);
 	for (auto &h : headers) http.addHeader(h.first, h.second);
 
@@ -196,14 +200,14 @@ bool Uploader::uploadToWdgwars(HTTPClient &http, const String &filePath) {
 	// and adjust here if the key isn't accepted.
 	std::vector<std::pair<String, String>> headers;
 	headers.push_back({"X-Api-Key", _cfg.wdgwarsApiKey});
-	return postMultipartFile(http, endpoint("https://wdgwars.pl/api/upload-csv"), filePath, headers);
+	return postMultipartFile(http, endpoint("https://wdgwars.pl/api/upload-csv"), filePath, headers, WDGWARS_ROOT_CA);
 }
 
 bool Uploader::uploadToWigle(HTTPClient &http, const String &filePath) {
 	if (_cfg.wigleApiToken.length() == 0) return true; // WiGLE upload optional
 	std::vector<std::pair<String, String>> headers;
 	headers.push_back({"Authorization", "Basic " + _cfg.wigleApiToken});
-	return postMultipartFile(http, endpoint("https://api.wigle.net/api/v2/file/upload"), filePath, headers);
+	return postMultipartFile(http, endpoint("https://api.wigle.net/api/v2/file/upload"), filePath, headers, WIGLE_ROOT_CA);
 }
 
 UploadResult Uploader::uploadPending(const String &dirPath, uint32_t nowEpoch, bool force,

@@ -2083,11 +2083,14 @@ static String serviceListHtml() {
 	return html;
 }
 
-// When a service password is set, every web request must pass HTTP basic auth
-// (any username, that password). Returns true if the request may proceed.
+// Every web request must pass HTTP basic auth (user "wardrive"). The password
+// is service_password if set, otherwise a random 6-digit code generated each
+// time service mode starts and shown on the rig and in the phone app, so the
+// log server is never open to everyone on the WiFi.
+static String serviceSessionPassword;
 static bool serviceAuthOk() {
-	if (config.servicePassword.length() == 0) return true; // open (LAN trust)
-	if (serviceServer.authenticate("wardrive", config.servicePassword.c_str())) return true;
+	if (serviceSessionPassword.length() == 0) return false;
+	if (serviceServer.authenticate("wardrive", serviceSessionPassword.c_str())) return true;
 	serviceServer.requestAuthentication();
 	return false;
 }
@@ -2117,6 +2120,7 @@ void stopServiceMode() {
 	WiFi.mode(WIFI_MODE_STA);
 	serviceModeActive = false;
 	CydBleLink::resumeServer(); // no-op if never suspended; safe to call repeatedly
+	serviceSessionPassword = "";
 	logEvent("service mode off", COLOR_TEXT_DIM);
 	phonePrintf("WD:SERVICE off");
 	if (WARDRIVE_DEBUG) Serial.println("[service] stopped");
@@ -2149,12 +2153,16 @@ void startServiceMode() {
 		return;
 	}
 	String ip = WiFi.localIP().toString();
-	// A configured service password gates the web server (see serviceAuthOk).
-	// Without it, service mode trusts everyone on the LAN.
+	// The log server is always password protected (see serviceAuthOk): use the
+	// configured service_password, else a fresh random code for this session.
 	if (config.servicePassword.length() > 0) {
-		logEvent("service: password protected", COLOR_TEXT_DIM);
+		serviceSessionPassword = config.servicePassword;
+		logEvent("service: user wardrive + service_password", COLOR_TEXT_DIM);
 	} else {
-		logEvent("service: OPEN (set service_password)", COLOR_ORANGE);
+		char code[8];
+		snprintf(code, sizeof(code), "%06u", (unsigned)(esp_random() % 1000000));
+		serviceSessionPassword = code;
+		logEvent(String("service: password ") + code, COLOR_ORANGE);
 	}
 	// Advertise nillos-wardriver.local so the log server is reachable by name,
 	// not just IP (the desktop tool defaults to this host).
@@ -2166,7 +2174,9 @@ void startServiceMode() {
 	serviceModeActive = true;
 	serviceModeStartedMs = millis();
 	logEvent("SERVICE MODE  http://" + ip, COLOR_CYAN);
-	phonePrintf("WD:SERVICE on ip=%s", ip.c_str());
+	// pw= is only sent for a generated code; it rides the encrypted, bonded BLE link.
+	if (config.servicePassword.length() > 0) phonePrintf("WD:SERVICE on ip=%s", ip.c_str());
+	else phonePrintf("WD:SERVICE on ip=%s pw=%s", ip.c_str(), serviceSessionPassword.c_str());
 	if (WARDRIVE_DEBUG) Serial.printf("[service] log server up at http://%s\n", ip.c_str());
 }
 

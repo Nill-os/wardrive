@@ -105,7 +105,7 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 ## Known limitations
 
 - **The rig is 2.4 GHz only.** The ESP32-S3 can't receive 5 GHz (an ESP32-C5 could). The phone app scans the phone's own radio, which covers 2.4, 5 and 6 GHz, so with a phone connected the combined logs cover every band.
-- **Uploads don't verify TLS certificates.** The firmware has no root CA bundle configured, so on an untrusted network (a public hotspot) a man-in-the-middle could read your upload keys. Upload over your own WiFi.
+- **Upload TLS is pinned to root CAs.** The firmware verifies WiGLE (ISRG Root X1) and wdgwars.pl (GTS Root R4 / GlobalSign Root CA) against the roots in `lib/WardriveShared/RootCerts.h`, so API keys are only sent to the real servers. If a host switches CA, uploads fail with a TLS error until the roots are updated; GlobalSign Root CA expires 2028-01-28.
 - **wdgwars upload format.** The request format (`X-Api-Key` header, `file` field) follows common convention and has worked in practice, but it hasn't been checked against wdgwars' logged-in API docs.
 - **WiGLE TLS memory.** WiGLE uploads used to fail with a TLS out-of-memory error while BLE was running. BLE is now suspended during uploads; watch the `[upload] free heap` line if it comes back.
 - **The SD card is the single point of failure.** If it fails or is missing, sightings are dropped rather than buffered. A card that fails mid-run is now detected within 30 s (red flash, SD:FAIL) rather than failing silently, but the rows during that window are still lost.

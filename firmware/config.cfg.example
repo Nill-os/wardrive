@@ -33,9 +33,9 @@ min_free_mb=1024
 channel_hop_ms=150
 # CYD headline counters: 0 = WIGLE (WiFi) / WDGW (WiFi+BLE), 1 = found APs / BT / ALL.
 count_mode=0
-# Password for service mode's log web server. Strongly recommended: when set,
-# the web page/downloads need this password. Left blank, service mode is open
-# to anyone on the same WiFi while it's running - only fine on a trusted network.
+# Password for service mode's log web server (user "wardrive"). The server is
+# always password protected: left blank, the rig makes up a fresh 6-digit code
+# each time service mode starts and shows it on the screen and in the phone app.
 service_password=
 # Detection alerts on the CYD (a red banner + LED flash the first time each is
 # seen in a run). 1 = on, 0 = off. The phone app's alert toggles push these,

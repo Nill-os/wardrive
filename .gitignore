@@ -1,0 +1,23 @@
+# Real config holds WiFi passwords and upload keys - only the .example is tracked
+config.cfg
+*.cfg.local
+.env
+*.jks
+*.keystore
+local.properties
+
+# Build output and local tooling
+.pio/
+.gradle/
+build/
+*.apk
+*.aab
+venv/
+__pycache__/
+.idea/
+.vscode/
+.DS_Store
+
+# Field data: logs can contain your home location
+*.wiglecsv
+screenshot*.png

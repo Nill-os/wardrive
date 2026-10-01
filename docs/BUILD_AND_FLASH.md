@@ -88,7 +88,7 @@ If `cydrx` or `wlrx` stays at 0, see [Troubleshooting](TROUBLESHOOTING.md#rigdow
 
 - **From SD card** - plug the card into the PC (auto-detected on Linux, macOS, Windows).
 - **From USB** - *without removing the card*: plug the CYD in over USB; it reads the logs straight off the card over the serial cable (`sd list` / `sd get`), no WiFi needed.
-- **From WiFi** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs), enter its address (`nillos-wardriver.local` or its IP) and, if set, its `service_password`, and it downloads the logs over WiFi.
+- **From WiFi** - *without removing the card*: put the rig in [service mode](USING_THE_RIG.md#service-mode-download-logs), enter its address (`nillos-wardriver.local` or its IP) and its password (your `service_password`, or the 6-digit code the rig shows), and it downloads the logs over WiFi.
 
 Either way it writes, under `~/Wardrive_Reports/report_<date>_<time>/`:
 

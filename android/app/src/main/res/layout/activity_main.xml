@@ -190,6 +190,7 @@
                                 android:textStyle="bold" />
 
                             <TextView
+                                android:id="@+id/wigleCountLabel"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="WIGLE"
@@ -220,6 +221,7 @@
                                 android:textStyle="bold" />
 
                             <TextView
+                                android:id="@+id/wdgwCountLabel"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="WDGW"
@@ -250,6 +252,7 @@
                                 android:textStyle="bold" />
 
                             <TextView
+                                android:id="@+id/btCountLabel"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="BT"

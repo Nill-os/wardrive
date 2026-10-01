@@ -1,4 +1,4 @@
-From 1bd3b0746a3b27904a1d1a6e3ef1f19ef92b7981 Mon Sep 17 00:00:00 2001
+From 7aa5c2a1d542652c8243909ce4d09a17fe58d6e9 Mon Sep 17 00:00:00 2001
 From: dreknil <>
 Date: Mon, 28 Sep 2026 21:40:21 -0700
 Subject: [PATCH] [android] Show Wardrive Bridge status on the map and in
@@ -28,8 +28,8 @@ Signed-off-by: dreknil <>
  .../car/screens/NavigationScreen.java         | 96 ++++++++++++++++++-
  android/libs/wardrive/build.gradle            | 15 +++
  .../wardrive/src/main/AndroidManifest.xml     | 11 +++
- .../wardrive/WardriveBridgeClient.kt          | 71 ++++++++++++++
- .../wardrive/WardriveStatusFormatter.kt       | 67 +++++++++++++
+ .../wardrive/WardriveBridgeClient.kt          | 75 +++++++++++++++
+ .../wardrive/WardriveStatusFormatter.kt       | 75 +++++++++++++++
  .../sdk/car/renderer/CarPresentation.java     | 28 ++++++
  .../sdk/car/renderer/Renderer.java            | 12 +++
  .../sdk/car/renderer/RendererImpl.java        |  6 ++
@@ -38,7 +38,7 @@ Signed-off-by: dreknil <>
  .../main/res/drawable/bg_wardrive_status.xml  |  6 ++
  .../car/src/main/res/layout/car_layout.xml    | 18 ++++
  android/settings.gradle                       |  1 +
- 19 files changed, 477 insertions(+), 2 deletions(-)
+ 19 files changed, 489 insertions(+), 2 deletions(-)
  create mode 100644 android/app/src/main/res/drawable/bg_wardrive_status.xml
  create mode 100644 android/libs/wardrive/build.gradle
  create mode 100644 android/libs/wardrive/src/main/AndroidManifest.xml
@@ -507,10 +507,10 @@ index 0000000000..d3267d9f94
 +</manifest>
 diff --git a/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt
 new file mode 100644
-index 0000000000..f3fdb72f2b
+index 0000000000..c117520ba4
 --- /dev/null
 +++ b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveBridgeClient.kt
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,75 @@
 +package app.organicmaps.wardrive
 +
 +import android.content.Context
@@ -543,6 +543,8 @@ index 0000000000..f3fdb72f2b
 +        val cydTransport: String,
 +        val rig: RigState,
 +        val excluded: Int,
++        /** false = WIGLE / WDGW / BT, true = found view: APS / BT / ALL (one setting in Wardrive Bridge). */
++        val foundMode: Boolean = false,
 +    )
 +
 +    /** Live status, or null when Wardrive Bridge isn't installed, isn't running, or refused. */
@@ -566,6 +568,8 @@ index 0000000000..f3fdb72f2b
 +                cydTransport = c.getString(c.getColumnIndexOrThrow("cyd_transport")) ?: "",
 +                rig = RigState.entries.getOrElse(int("rig_state")) { RigState.DISCONNECTED },
 +                excluded = int("excluded"),
++                // Older Wardrive Bridge builds have no count_mode column - treat as the default view.
++                foundMode = c.getColumnIndex("count_mode").let { it >= 0 && c.getInt(it) == 1 },
 +            )
 +        }
 +    }
@@ -584,10 +588,10 @@ index 0000000000..f3fdb72f2b
 +}
 diff --git a/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt
 new file mode 100644
-index 0000000000..fa84c111c2
+index 0000000000..e513e418c6
 --- /dev/null
 +++ b/android/libs/wardrive/src/main/java/app/organicmaps/wardrive/WardriveStatusFormatter.kt
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,75 @@
 +package app.organicmaps.wardrive
 +
 +import android.text.SpannableStringBuilder
@@ -630,11 +634,19 @@ index 0000000000..fa84c111c2
 +        if (status.running && !status.paused) COLOR_CYD_GREEN else COLOR_CYD_RED,
 +    )
 +    builder.append("  ·  ")
-+    appendColored("WIGLE ${status.wigle}", COLOR_CYD_CYAN)
-+    builder.append("  ·  ")
-+    appendColored("WDGW ${status.wdgw}", COLOR_CYD_PURPLE)
-+    builder.append("  ·  ")
-+    appendColored("BT ${status.bt}", COLOR_CYD_GREEN)
++    if (status.foundMode) { // APS / BT / ALL, same order and colors as the CYD's found-device view
++        appendColored("APS ${status.wigle}", COLOR_CYD_CYAN)
++        builder.append("  ·  ")
++        appendColored("BT ${status.bt}", COLOR_CYD_GREEN)
++        builder.append("  ·  ")
++        appendColored("ALL ${status.wdgw}", COLOR_CYD_PURPLE)
++    } else {
++        appendColored("WIGLE ${status.wigle}", COLOR_CYD_CYAN)
++        builder.append("  ·  ")
++        appendColored("WDGW ${status.wdgw}", COLOR_CYD_PURPLE)
++        builder.append("  ·  ")
++        appendColored("BT ${status.bt}", COLOR_CYD_GREEN)
++    }
 +    builder.append("  ·  ")
 +    appendColored(
 +        if (status.cydConnected) "CYD ${status.cydTransport.ifBlank { "✓" }}" else "CYD ✗",

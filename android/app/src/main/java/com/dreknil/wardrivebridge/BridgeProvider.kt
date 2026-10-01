@@ -62,7 +62,7 @@ class BridgeProvider : ContentProvider() {
 
     /** Main thread only - ScanService's state is only ever touched there. */
     private fun snapshot(): Array<Any> {
-        val s = ScanService.instance ?: return arrayOf(0, 0, 0, 0, 0, 0, 0, "", 0, 0)
+        val s = ScanService.instance ?: return arrayOf(0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0)
         val wifi = s.wifiCountThisRun // same shared counts as the dashboard and the rig screen
         val ble = s.bleCountThisRun
         return arrayOf(
@@ -76,6 +76,7 @@ class BridgeProvider : ContentProvider() {
             s.rigLink.connectionType ?: "",
             s.meshLinkState.ordinal,
             s.excludedCount,
+            if (AppSettings(s).rigCountFoundMode) 1 else 0, // count_mode: 0 = WIGLE/WDGW/BT, 1 = APS/BT/ALL
         )
     }
 
@@ -123,7 +124,7 @@ class BridgeProvider : ContentProvider() {
     companion object {
         val COLUMNS = arrayOf(
             "service_up", "running", "paused", "wigle", "wdgw", "bt",
-            "cyd_connected", "cyd_transport", "rig_state", "excluded",
+            "cyd_connected", "cyd_transport", "rig_state", "excluded", "count_mode",
         )
 
         // Organic Maps debug build - package name -> SHA-256 of its signing certificate.

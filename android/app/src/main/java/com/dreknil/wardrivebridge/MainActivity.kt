@@ -1259,6 +1259,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         val groups = service?.groups
         if (groups == null) {
+            val foundMode = appSettings.rigCountFoundMode
+            binding.wigleCountLabel.text = if (foundMode) "APS" else "WIGLE"
+            binding.wdgwCountLabel.text = if (foundMode) "BT" else "WDGW"
+            binding.btCountLabel.text = if (foundMode) "ALL" else "BT"
             binding.wigleCountBig.text = "0"
             binding.wdgwCountBig.text = "0"
             binding.btCountBig.text = "0"
@@ -1282,9 +1286,18 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             // drawTabMain() for the original design this mirrors.
             val wifiShown = service.wifiCountThisRun
             val bleShown = service.bleCountThisRun
-            binding.wigleCountBig.text = "$wifiShown"
-            binding.wdgwCountBig.text = "${wifiShown + bleShown}"
-            binding.btCountBig.text = "$bleShown"
+            // One setting (Settings -> counters) switches the dashboard, the CYD screen and
+            // the map overlay together: WIGLE / WDGW / BT, or the found-device view
+            // APS / BT / ALL in the same order the CYD draws it.
+            if (appSettings.rigCountFoundMode) {
+                binding.wigleCountLabel.text = "APS"; binding.wigleCountBig.text = "$wifiShown"
+                binding.wdgwCountLabel.text = "BT"; binding.wdgwCountBig.text = "$bleShown"
+                binding.btCountLabel.text = "ALL"; binding.btCountBig.text = "${wifiShown + bleShown}"
+            } else {
+                binding.wigleCountLabel.text = "WIGLE"; binding.wigleCountBig.text = "$wifiShown"
+                binding.wdgwCountLabel.text = "WDGW"; binding.wdgwCountBig.text = "${wifiShown + bleShown}"
+                binding.btCountLabel.text = "BT"; binding.btCountBig.text = "$bleShown"
+            }
             binding.cellCountBig.text = "$cell"
             val health = service.rigHealth?.takeIf { service.rigConnected && System.currentTimeMillis() - it.atMs < 10_000 }
             // The rig's own totals (its ESP32 and CYD scanners combined - the same numbers as the
@@ -1392,11 +1405,19 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             colorOf(if (running && !paused) R.color.green_ok else R.color.red_error),
         )
         builder.append("  ·  ")
-        appendColored("WIGLE $wigle", colorOf(R.color.cyan_500))
-        builder.append("  ·  ")
-        appendColored("WDGW $wdgw", colorOf(R.color.purple_500))
-        builder.append("  ·  ")
-        appendColored("BT $bt", colorOf(R.color.green_ok))
+        if (appSettings.rigCountFoundMode) { // same order/colors as the CYD's found-device view
+            appendColored("APS $wigle", colorOf(R.color.cyan_500))
+            builder.append("  ·  ")
+            appendColored("BT $bt", colorOf(R.color.green_ok))
+            builder.append("  ·  ")
+            appendColored("ALL $wdgw", colorOf(R.color.purple_500))
+        } else {
+            appendColored("WIGLE $wigle", colorOf(R.color.cyan_500))
+            builder.append("  ·  ")
+            appendColored("WDGW $wdgw", colorOf(R.color.purple_500))
+            builder.append("  ·  ")
+            appendColored("BT $bt", colorOf(R.color.green_ok))
+        }
         builder.append("  ·  ")
         appendColored(
             if (rigConnected) "CYD ${service?.rigLink?.connectionType ?: "✓"}" else "CYD ✗",

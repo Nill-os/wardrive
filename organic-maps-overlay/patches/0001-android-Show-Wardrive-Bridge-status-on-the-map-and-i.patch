@@ -1,4 +1,4 @@
-From 7aa5c2a1d542652c8243909ce4d09a17fe58d6e9 Mon Sep 17 00:00:00 2001
+From d3dbdc09548eaab94795df81ced04dcff9c08e11 Mon Sep 17 00:00:00 2001
 From: dreknil <>
 Date: Mon, 28 Sep 2026 21:40:21 -0700
 Subject: [PATCH] [android] Show Wardrive Bridge status on the map and in
@@ -37,8 +37,9 @@ Signed-off-by: dreknil <>
  .../sdk/car/renderer/SurfaceRenderer.java     |  7 ++
  .../main/res/drawable/bg_wardrive_status.xml  |  6 ++
  .../car/src/main/res/layout/car_layout.xml    | 18 ++++
+ .../main/java/app/organicmaps/sdk/Map.java    |  6 +-
  android/settings.gradle                       |  1 +
- 19 files changed, 489 insertions(+), 2 deletions(-)
+ 20 files changed, 491 insertions(+), 6 deletions(-)
  create mode 100644 android/app/src/main/res/drawable/bg_wardrive_status.xml
  create mode 100644 android/libs/wardrive/build.gradle
  create mode 100644 android/libs/wardrive/src/main/AndroidManifest.xml
@@ -870,6 +871,27 @@ index 95d6f77b15..8dc57736ad 100644
    </FrameLayout>
  
  </FrameLayout>
+diff --git a/android/sdk/src/main/java/app/organicmaps/sdk/Map.java b/android/sdk/src/main/java/app/organicmaps/sdk/Map.java
+index 9076ae6469..317648507a 100644
+--- a/android/sdk/src/main/java/app/organicmaps/sdk/Map.java
++++ b/android/sdk/src/main/java/app/organicmaps/sdk/Map.java
+@@ -328,14 +328,12 @@ public final class Map
+     updateBottomWidgetsOffset(context, mBottomWidgetOffsetX, mBottomWidgetOffsetY);
+     if (mDisplayType == DisplayType.Device)
+     {
+-      nativeSetupWidget(WIDGET_SCALE_FPS_LABEL, Utils.dimen(context, R.dimen.margin_base),
+-                        Utils.dimen(context, R.dimen.margin_base) * 2, ANCHOR_LEFT_TOP);
++      // The "V: Scale / FPS" debug label (WIDGET_SCALE_FPS_LABEL) is deliberately not set up: it cluttered the
++      // top of the map next to the Wardrive status line.
+       updateCompassOffset(context, mCurrentCompassOffsetX, mCurrentCompassOffsetY, false);
+     }
+     else
+     {
+-      nativeSetupWidget(WIDGET_SCALE_FPS_LABEL, (float) mWidth / 2 + Utils.dimen(context, R.dimen.margin_base) * 2,
+-                        Utils.dimen(context, R.dimen.margin_base), ANCHOR_LEFT_TOP);
+       updateCompassOffset(context, mWidth, mCurrentCompassOffsetY, true);
+     }
+   }
 diff --git a/android/settings.gradle b/android/settings.gradle
 index 974662a7a5..4e1f4209f5 100644
 --- a/android/settings.gradle

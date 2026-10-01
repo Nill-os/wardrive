@@ -888,9 +888,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         dialog.onSample(obs) // seed it with the reading that triggered the long-press
     }
 
+    private data class KnownDev(val display: String, val key: String, val label: String, val isWifi: Boolean)
+
     // Known devices currently/recently heard (rig + phone, deduped by MAC,
-    // strongest first) - the choices in the Watchlist "add" dropdown.
-    private fun knownDevices(): List<Triple<String, String, String>> {
+    // strongest first) - the pool the Watchlist "add" list searches/filters.
+    private fun knownDevices(): List<KnownDev> {
         val s = scanService ?: return emptyList()
         val best = LinkedHashMap<String, Observation>()
         for (map in s.groups.values) for ((mac, obs) in map) {
@@ -899,65 +901,69 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }
         return best.values.sortedByDescending { it.rssi }.map { obs ->
             val label = obs.label.ifBlank { "(hidden)" }
-            Triple("$label  ·  ${obs.mac}  ·  ${obs.rssi} dBm", obs.mac, label) // (dropdown text, key=MAC, display label)
+            val isWifi = obs.source == Source.RIG_WIFI || obs.source == Source.PHONE_WIFI
+            KnownDev("$label  ·  ${obs.mac}  ·  ${obs.rssi} dBm", obs.mac, label, isWifi)
         }
     }
 
-    // The Watchlist tool: pick devices from a dropdown of what's nearby, each
-    // with its own "In"/"Out" notification toggles. ScanService reads the list
-    // live, so changes apply on the next sighting without restarting a run.
+    // The Watchlist tool: search/filter the nearby devices, tap + to watch one,
+    // each with its own "In"/"Out" notification toggles. ScanService reads the
+    // list live, so changes apply on the next sighting without restarting a run.
     private fun showWatchlistDialog() {
         val s = AppSettings(this)
         val entries = s.watchEntries().toMutableList()
+        val all = knownDevices()
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         val secondary = ContextCompat.getColor(this, R.color.text_secondary)
+        val primary = ContextCompat.getColor(this, R.color.text_primary)
 
         val root = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(16), dp(8), dp(16), 0)
         }
         root.addView(android.widget.TextView(this).apply {
-            text = "Pick a nearby device to watch, then toggle In (comes into range) / Out (leaves). Needs scanning (a run or an open live tool) to see devices and to notify."
+            text = "Watch specific devices and get notified when they enter / leave range. Needs scanning (a run or an open live tool) to see devices and to notify."
             setTextColor(secondary); textSize = 12f
         })
 
-        val known = knownDevices()
-        val spinner = android.widget.Spinner(this)
-        spinner.adapter = android.widget.ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item,
-            if (known.isEmpty()) listOf("(no devices seen yet - start scanning)") else known.map { it.first },
-        )
-        val addBtn = android.widget.Button(this).apply { text = "ADD" }
+        // --- search + type filter ---
+        val search = EditText(this).apply { hint = "Search nearby by name or MAC"; inputType = android.text.InputType.TYPE_CLASS_TEXT }
+        val typeFilter = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("All", "WiFi", "BLE"))
+        }
         root.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, dp(8))
-            addView(spinner, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(addBtn)
+            setPadding(0, dp(8), 0, dp(4))
+            addView(search, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(typeFilter)
         })
 
-        val listContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
-        root.addView(listContainer)
+        val availHeader = android.widget.TextView(this).apply { text = "NEARBY"; setTextColor(secondary); textSize = 11f; setPadding(0, dp(8), 0, dp(2)) }
+        root.addView(availHeader)
+        val availContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        root.addView(availContainer)
 
-        fun rebuild() {
-            listContainer.removeAllViews()
+        root.addView(android.widget.TextView(this).apply { text = "WATCHING"; setTextColor(secondary); textSize = 11f; setPadding(0, dp(12), 0, dp(2)) })
+        val watchContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        root.addView(watchContainer)
+
+        fun rebuildAll() {
+            // Watched entries, each with its own toggles + remove.
+            watchContainer.removeAllViews()
             if (entries.isEmpty()) {
-                listContainer.addView(android.widget.TextView(this).apply {
-                    text = "No devices watched yet."; setTextColor(secondary); setPadding(0, dp(8), 0, 0)
+                watchContainer.addView(android.widget.TextView(this).apply {
+                    text = "No devices watched yet - tap + on one above."; setTextColor(secondary); setPadding(0, dp(4), 0, 0)
                 })
-                return
-            }
-            for (i in entries.indices) {
+            } else for (i in entries.indices) {
                 val e = entries[i]
                 val row = android.widget.LinearLayout(this).apply {
                     orientation = android.widget.LinearLayout.HORIZONTAL
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(0, dp(4), 0, dp(4))
                 }
-                row.addView(android.widget.TextView(this).apply {
-                    text = e.label; maxLines = 2
-                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
-                }, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(android.widget.TextView(this).apply { text = e.label; maxLines = 2; setTextColor(primary) },
+                    android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 row.addView(android.widget.CheckBox(this).apply {
                     text = "In"; isChecked = e.enter
                     setOnCheckedChangeListener { _, c -> entries[i] = entries[i].copy(enter = c) }
@@ -967,23 +973,55 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                     setOnCheckedChangeListener { _, c -> entries[i] = entries[i].copy(leave = c) }
                 })
                 row.addView(android.widget.Button(this).apply {
-                    text = "✕" // ✕
-                    setOnClickListener { entries.removeAt(i); rebuild() }
+                    text = "✕"
+                    setOnClickListener { entries.removeAt(i); rebuildAll() }
                 })
-                listContainer.addView(row)
+                watchContainer.addView(row)
+            }
+
+            // Nearby pool, filtered by search text + type, excluding already-watched.
+            availContainer.removeAllViews()
+            val q = search.text.toString().trim()
+            val type = typeFilter.selectedItemPosition // 0 all, 1 wifi, 2 ble
+            val matches = all.filter { kd ->
+                entries.none { it.key.equals(kd.key, ignoreCase = true) } &&
+                    (type == 0 || (type == 1) == kd.isWifi) &&
+                    (q.isEmpty() || kd.display.contains(q, ignoreCase = true))
+            }.take(50)
+            if (matches.isEmpty()) {
+                availContainer.addView(android.widget.TextView(this).apply {
+                    text = if (all.isEmpty()) "No devices seen yet - start scanning." else "No matches."
+                    setTextColor(secondary); setPadding(0, dp(4), 0, 0)
+                })
+            } else for (kd in matches) {
+                val row = android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(2), 0, dp(2))
+                }
+                row.addView(android.widget.TextView(this).apply { text = kd.display; textSize = 13f; maxLines = 1; setTextColor(primary) },
+                    android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(android.widget.Button(this).apply {
+                    text = "+"
+                    setOnClickListener {
+                        entries.add(AppSettings.WatchEntry(kd.key, kd.label, enter = true, leave = true))
+                        rebuildAll()
+                    }
+                })
+                availContainer.addView(row)
             }
         }
 
-        addBtn.setOnClickListener {
-            val pos = spinner.selectedItemPosition
-            if (known.isEmpty() || pos !in known.indices) return@setOnClickListener
-            val (_, key, label) = known[pos]
-            if (entries.none { it.key.equals(key, ignoreCase = true) }) {
-                entries.add(AppSettings.WatchEntry(key, label, enter = true, leave = true))
-                rebuild()
-            }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(sx: android.text.Editable?) = rebuildAll()
+            override fun beforeTextChanged(c: CharSequence?, a: Int, b: Int, cc: Int) {}
+            override fun onTextChanged(c: CharSequence?, a: Int, b: Int, cc: Int) {}
+        })
+        typeFilter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) = rebuildAll()
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
         }
-        rebuild()
+        rebuildAll()
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Watchlist")

@@ -43,10 +43,11 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 | Live latency | rig sightings reach the phone in **a few hundred ms** |
 | De-duplication | WiFi re-logged after moving **40 m**; location-less sightings re-stream every 5 s to the phone's live tools |
 | Storage | **~100 bytes per device row** - a 32 GB card holds tens of millions of sightings (years of driving); auto-trims the oldest uploaded files once free space drops below ~1 GB |
-| Power | **~1.5 A at 5 V** for the whole three-board rig |
+| Power | **~1.5 A at 5 V** (~7.5 W) for the whole three-board rig |
+| Battery life | a **10,000 mAh** USB power bank runs the rig for roughly **4-4.5 hours** (~6,500 mAh usable at 5 V after boost-conversion losses ÷ 1.5 A) |
 | Idle auto-stop | **30 minutes** parked, to protect the car battery |
 
-*(Capture rate and speed figures are rough real-world estimates; the fixed specs above are the actual firmware settings.)*
+*(Capture rate, speed and battery-life figures are rough real-world estimates; the fixed specs above are the actual firmware settings.)*
 
 ## Screenshots
 

@@ -888,10 +888,12 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         dialog.onSample(obs) // seed it with the reading that triggered the long-press
     }
 
-    private data class KnownDev(val display: String, val key: String, val label: String, val isWifi: Boolean)
+    private data class KnownDev(val display: String, val key: String, val label: String, val isWifi: Boolean, val nearby: Boolean)
 
-    // Known devices currently/recently heard (rig + phone, deduped by MAC,
-    // strongest first) - the pool the Watchlist "add" list searches/filters.
+    // Devices currently/recently heard (rig + phone, deduped by MAC, strongest
+    // first) - the live part of the Watchlist picker. The picker also appends
+    // devices from the log history (knownDevicesForWatch) so you can watch one
+    // that isn't in range right now.
     private fun knownDevices(): List<KnownDev> {
         val s = scanService ?: return emptyList()
         val best = LinkedHashMap<String, Observation>()
@@ -902,7 +904,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         return best.values.sortedByDescending { it.rssi }.map { obs ->
             val label = obs.label.ifBlank { "(hidden)" }
             val isWifi = obs.source == Source.RIG_WIFI || obs.source == Source.PHONE_WIFI
-            KnownDev("$label  ·  ${obs.mac}  ·  ${obs.rssi} dBm", obs.mac, label, isWifi)
+            KnownDev("$label  ·  ${obs.mac}  ·  ${obs.rssi} dBm", obs.mac, label, isWifi, nearby = true)
         }
     }
 
@@ -912,7 +914,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun showWatchlistDialog() {
         val s = AppSettings(this)
         val entries = s.watchEntries().toMutableList()
-        val all = knownDevices()
+        // Live devices first; the log-history ones get appended below.
+        val all = knownDevices().toMutableList()
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         val secondary = ContextCompat.getColor(this, R.color.text_secondary)
@@ -923,30 +926,31 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             setPadding(dp(16), dp(8), dp(16), 0)
         }
         root.addView(android.widget.TextView(this).apply {
-            text = "Watch specific devices and get notified when they enter / leave range. Needs scanning (a run or an open live tool) to see devices and to notify."
+            text = "Watch specific devices and get notified when they enter / leave range. The list shows what's nearby now plus devices from your logs, so you can watch one even when it isn't in range. Scanning (a run or an open live tool) must be on for the notification to fire."
             setTextColor(secondary); textSize = 12f
         })
 
+        // Watched devices on top, then the searchable/filterable pool to add from.
+        root.addView(android.widget.TextView(this).apply { text = "WATCHING"; setTextColor(secondary); textSize = 11f; setPadding(0, dp(8), 0, dp(2)) })
+        val watchContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        root.addView(watchContainer)
+
         // --- search + type filter ---
-        val search = EditText(this).apply { hint = "Search nearby by name or MAC"; inputType = android.text.InputType.TYPE_CLASS_TEXT }
+        val search = EditText(this).apply { hint = "Search by name or MAC"; inputType = android.text.InputType.TYPE_CLASS_TEXT }
         val typeFilter = android.widget.Spinner(this).apply {
             adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("All", "WiFi", "BLE"))
         }
         root.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, dp(4))
+            setPadding(0, dp(12), 0, dp(4))
             addView(search, android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(typeFilter)
         })
 
-        val availHeader = android.widget.TextView(this).apply { text = "NEARBY"; setTextColor(secondary); textSize = 11f; setPadding(0, dp(8), 0, dp(2)) }
+        val availHeader = android.widget.TextView(this).apply { text = "DEVICES"; setTextColor(secondary); textSize = 11f; setPadding(0, dp(4), 0, dp(2)) }
         root.addView(availHeader)
         val availContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
         root.addView(availContainer)
-
-        root.addView(android.widget.TextView(this).apply { text = "WATCHING"; setTextColor(secondary); textSize = 11f; setPadding(0, dp(12), 0, dp(2)) })
-        val watchContainer = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
-        root.addView(watchContainer)
 
         fun rebuildAll() {
             // Watched entries, each with its own toggles + remove.
@@ -990,7 +994,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             }.take(50)
             if (matches.isEmpty()) {
                 availContainer.addView(android.widget.TextView(this).apply {
-                    text = if (all.isEmpty()) "No devices seen yet - start scanning." else "No matches."
+                    text = if (all.isEmpty()) "No devices yet - start scanning or log a run." else "No matches."
                     setTextColor(secondary); setPadding(0, dp(4), 0, 0)
                 })
             } else for (kd in matches) {
@@ -1022,6 +1026,23 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
         }
         rebuildAll()
+
+        // Append devices from the log history (off the main thread) so you can
+        // watch one that isn't in range now. Live rows win, so skip any MAC
+        // already present from the live scan.
+        Thread {
+            val known = dao.knownDevicesForWatch()
+            runOnUiThread {
+                val have = all.mapTo(HashSet()) { it.key.lowercase() }
+                for (row in known) {
+                    if (!have.add(row.mac.lowercase())) continue
+                    val label = row.label.ifBlank { "(hidden)" }
+                    val isWifi = row.type == "WIFI"
+                    all.add(KnownDev("$label  ·  ${row.mac}  ·  seen before", row.mac, label, isWifi, nearby = false))
+                }
+                rebuildAll()
+            }
+        }.start()
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Watchlist")

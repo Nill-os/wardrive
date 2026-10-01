@@ -64,6 +64,14 @@ data class TerritoryCell(
     val centerLon: Double,
 )
 
+/** One unique device ever logged (mac/label/type), for the Watchlist
+ * picker - see WardriveDao.knownDevicesForWatch(). */
+data class WatchDeviceRow(
+    val mac: String,
+    val label: String,
+    val type: String,
+)
+
 /** A device seen again on a genuinely different run - see
  * WardriveDao.regulars(). */
 data class RegularDevice(

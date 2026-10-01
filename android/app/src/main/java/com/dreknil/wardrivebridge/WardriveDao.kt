@@ -289,4 +289,10 @@ interface WardriveDao {
 
     @Query("SELECT type AS label, COUNT(DISTINCT mac) AS count FROM observations GROUP BY type ORDER BY count DESC")
     fun countsByType(): List<LabelCount>
+
+    // One row per unique device ever logged (most recent sighting wins),
+    // for the Watchlist picker - lets you watch a device even when it isn't
+    // currently in range. Ordered newest-first; the picker filters/caps it.
+    @Query("SELECT mac, label, type FROM observations WHERE id IN (SELECT MAX(id) FROM observations GROUP BY mac) ORDER BY id DESC")
+    fun knownDevicesForWatch(): List<WatchDeviceRow>
 }

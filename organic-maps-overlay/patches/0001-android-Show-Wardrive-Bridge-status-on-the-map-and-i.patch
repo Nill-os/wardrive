@@ -1,13 +1,13 @@
-From f4cb4d00b5f0526a3948297aeacd26d4cc7d4ba4 Mon Sep 17 00:00:00 2001
+From 1bd3b0746a3b27904a1d1a6e3ef1f19ef92b7981 Mon Sep 17 00:00:00 2001
 From: dreknil <>
 Date: Mon, 28 Sep 2026 21:40:21 -0700
-Subject: [PATCH] [android] Show Nill OS Wardriver status on the map and in
+Subject: [PATCH] [android] Show Wardrive Bridge status on the map and in
  Android Auto
 
 Adds a status line (run state, WIGLE/WDGW/BT counts, CYD and rig
 links) over the phone map and the Android Auto map, plus a start/stop
 button in the car's navigation action strip. All data comes from the
-standalone Nill OS Wardriver app through its content provider; this app
+standalone Wardrive Bridge app through its content provider; this app
 does no scanning and never talks to the rig itself.
 
 Also drops the debug-only "Simulate Route" action from the car action
@@ -22,7 +22,7 @@ Signed-off-by: dreknil <>
  android/app/build.gradle                      |  1 +
  .../java/app/organicmaps/MwmActivity.java     | 57 +++++++++++
  .../main/res/drawable/bg_wardrive_status.xml  | 10 ++
- .../app/src/main/res/layout/activity_map.xml  | 19 ++++
+ .../app/src/main/res/layout/activity_map.xml  | 24 +++++
  android/libs/car/build.gradle                 |  1 +
  .../organicmaps/car/CarAppSessionBase.java    | 42 ++++++++
  .../car/screens/NavigationScreen.java         | 96 ++++++++++++++++++-
@@ -38,7 +38,7 @@ Signed-off-by: dreknil <>
  .../main/res/drawable/bg_wardrive_status.xml  |  6 ++
  .../car/src/main/res/layout/car_layout.xml    | 18 ++++
  android/settings.gradle                       |  1 +
- 19 files changed, 472 insertions(+), 2 deletions(-)
+ 19 files changed, 477 insertions(+), 2 deletions(-)
  create mode 100644 android/app/src/main/res/drawable/bg_wardrive_status.xml
  create mode 100644 android/libs/wardrive/build.gradle
  create mode 100644 android/libs/wardrive/src/main/AndroidManifest.xml
@@ -90,7 +90,7 @@ index 41c70edea0..238e6304fe 100644
    private TextView mPointChooserTitle;
    private TextView mPointChooserHint;
  
-+  // Live status line from the standalone Nill OS Wardriver app, which owns the rig and all scanning -
++  // Live status line from the standalone Wardrive Bridge app, which owns the rig and all scanning -
 +  // this app only displays it. Polled while the map is on screen (onStart()/onStop()); the read is
 +  // cross-app IPC, so it runs on a background thread.
 +  private TextView mWardriveStatusView;
@@ -188,19 +188,24 @@ index 0000000000..00575d40db
 +  </item>
 +</ripple>
 diff --git a/android/app/src/main/res/layout/activity_map.xml b/android/app/src/main/res/layout/activity_map.xml
-index e1c10b81f5..586db6cb2c 100644
+index e1c10b81f5..cf1652390c 100644
 --- a/android/app/src/main/res/layout/activity_map.xml
 +++ b/android/app/src/main/res/layout/activity_map.xml
-@@ -36,6 +36,25 @@
+@@ -36,6 +36,30 @@
        android:visibility="gone"
        tools:visibility="visible" />
  
 +    <TextView
 +      android:id="@+id/wardrive_status_view"
-+      android:layout_width="wrap_content"
++      android:layout_width="match_parent"
 +      android:layout_height="wrap_content"
 +      android:layout_alignParentTop="true"
-+      android:layout_centerHorizontal="true"
++      android:layout_marginStart="64dp"
++      android:layout_marginEnd="12dp"
++      android:autoSizeTextType="uniform"
++      android:autoSizeMinTextSize="9sp"
++      android:autoSizeMaxTextSize="13sp"
++      android:maxLines="1"
 +      android:background="@drawable/bg_wardrive_status"
 +      android:clickable="true"
 +      android:focusable="true"
@@ -257,7 +262,7 @@ index 5e0caf4f96..4f4b5fa383 100644
    @NonNull
    protected CarSensorsManager mSensorsManager;
  
-+  // Live status line from the standalone Nill OS Wardriver app (which owns the rig and all scanning),
++  // Live status line from the standalone Wardrive Bridge app (which owns the rig and all scanning),
 +  // drawn onto the car map while this app's Screen is showing. The read is cross-app IPC, so it
 +  // runs on a background thread.
 +  private static final long WARDRIVE_POLL_INTERVAL_MS = 2000L;
@@ -345,9 +350,9 @@ index 416f918412..b7b23c3f82 100644
    // Used only in debug builds to simulate route following
    private boolean mRouteSimulationEnabled = false;
  
-+  // The record button drives the standalone Nill OS Wardriver app, which owns the rig and all
++  // The record button drives the standalone Wardrive Bridge app, which owns the rig and all
 +  // scanning. Its state is polled while this Screen is started; reads and start/stop calls are
-+  // cross-app IPC, so they run on a background thread. null = Nill OS Wardriver isn't running.
++  // cross-app IPC, so they run on a background thread. null = Wardrive Bridge isn't running.
 +  private static final long WARDRIVE_POLL_INTERVAL_MS = 2000L;
 +  @Nullable
 +  private volatile WardriveBridgeClient.Status mWardriveStatus;
@@ -443,7 +448,7 @@ index 416f918412..b7b23c3f82 100644
 +    return actionBuilder.build();
 +  }
 +
-+  /** Background-safe: reads Nill OS Wardriver's state and redraws the strip if the button changed. */
++  /** Background-safe: reads Wardrive Bridge's state and redraws the strip if the button changed. */
 +  private void refreshWardriveStatus()
 +  {
 +    final Context context = getCarContext().getApplicationContext();
@@ -492,7 +497,7 @@ index 0000000000..d3267d9f94
 +<?xml version="1.0" encoding="utf-8"?>
 +<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 +
-+  <!-- Android 11+ package visibility: needed to reach the Nill OS Wardriver app's status provider
++  <!-- Android 11+ package visibility: needed to reach the Wardrive Bridge app's status provider
 +       and to launch it. -->
 +  <queries>
 +    <package android:name="com.dreknil.wardrivebridge" />
@@ -513,7 +518,7 @@ index 0000000000..f3fdb72f2b
 +import android.net.Uri
 +
 +/**
-+ * Organic Maps' whole wardrive integration is a display of the standalone Nill OS Wardriver app:
++ * Organic Maps' whole wardrive integration is a display of the standalone Wardrive Bridge app:
 + * that app owns the rig connection, scanning, logging and settings, and this just reads its live
 + * status (for the map overlay and the Android Auto badge) and asks it to start/stop a run (the
 + * car's record button). Nothing here scans or talks to the rig, so the two apps can't compete.
@@ -540,7 +545,7 @@ index 0000000000..f3fdb72f2b
 +        val excluded: Int,
 +    )
 +
-+    /** Live status, or null when Nill OS Wardriver isn't installed, isn't running, or refused. */
++    /** Live status, or null when Wardrive Bridge isn't installed, isn't running, or refused. */
 +    fun status(context: Context): Status? {
 +        val cursor = try {
 +            context.contentResolver.query(STATUS_URI, null, null, null, null)
@@ -565,7 +570,7 @@ index 0000000000..f3fdb72f2b
 +        }
 +    }
 +
-+    /** Starts (true) or stops (false) a run in Nill OS Wardriver. Returns false if it couldn't. */
++    /** Starts (true) or stops (false) a run in Wardrive Bridge. Returns false if it couldn't. */
 +    fun setRunning(context: Context, run: Boolean): Boolean = try {
 +        context.contentResolver.call(BRIDGE_URI, if (run) "start" else "stop", null, null)
 +            ?.getBoolean("ok") == true
@@ -573,7 +578,7 @@ index 0000000000..f3fdb72f2b
 +        false
 +    }
 +
-+    /** Intent that opens Nill OS Wardriver, or null if it isn't installed. */
++    /** Intent that opens Wardrive Bridge, or null if it isn't installed. */
 +    fun launchIntent(context: Context): Intent? =
 +        context.packageManager.getLaunchIntentForPackage(BRIDGE_PACKAGE)
 +}
@@ -598,10 +603,10 @@ index 0000000000..fa84c111c2
 +
 +/**
 + * Builds the "OFF · WIGLE n · WDGW n · BT n · CYD BLE · Rig ✓" line shown on the main map overlay
-+ * and the Android Auto corner badge, from Nill OS Wardriver's live status. Always shown, including
++ * and the Android Auto corner badge, from Wardrive Bridge's live status. Always shown, including
 + * while stopped, so a glance answers "is everything linked and running". CYD is the phone's link
 + * to the CYD board (BLE, or USB as the fallback); Rig is the CYD's wired link to the other boards.
-+ * [status] null means Nill OS Wardriver isn't running (or isn't installed).
++ * [status] null means Wardrive Bridge isn't running (or isn't installed).
 + */
 +fun formatStatusLine(status: WardriveBridgeClient.Status?): CharSequence {
 +    val builder = SpannableStringBuilder()
@@ -612,7 +617,7 @@ index 0000000000..fa84c111c2
 +    }
 +
 +    if (status == null) {
-+        appendColored("Nill OS Wardriver not running", COLOR_DIM)
++        appendColored("Wardrive Bridge not running", COLOR_DIM)
 +        return builder
 +    }
 +

@@ -126,6 +126,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         /** Self-telemetry from newer firmware (null on older builds): free RAM (KB),
          *  free SD space (MB, -1 if unknown), and whether the wifi_node link is up. */
         val freeHeapKB: Int? = null, val sdFreeMB: Int? = null, val wifiNodeUp: Boolean? = null,
+        /** Whether the rig is mid-run (the status line's scan=); null on older firmware. */
+        val scanning: Boolean? = null,
     )
     var rigHealth: RigHealth? = null; private set
     var runStartMs = 0L; private set
@@ -295,9 +297,26 @@ class ScanService : Service(), RigLinkManager.Listener {
         return true
     }
 
-    /** Distinct WiFi / BLE devices logged this run - for the notification, widget and speech. */
-    val wifiCountThisRun: Int get() = loggedWifiMacsThisRun.size
-    val bleCountThisRun: Int get() = loggedBleMacsThisRun.size
+    /**
+     * THE run counts - unique WiFi / BLE devices this run - shared by every surface
+     * (dashboard, Organic Maps overlay, widget, tile, notification, speech) and sent
+     * to the rig so its screen shows the same numbers. Each is the larger of the
+     * phone's union of rig + phone devices and the rig's own unique count (the rig
+     * can hold devices a dropped link never relayed). The rig applies the same max()
+     * to the number we send it, so all three always agree.
+     */
+    val wifiCountThisRun: Int
+        get() = maxOf((groups.getValue(Source.RIG_WIFI).keys + groups.getValue(Source.PHONE_WIFI).keys).size, rigReportedCount { it.rigWifi })
+    val bleCountThisRun: Int
+        get() = maxOf((groups.getValue(Source.RIG_BLE).keys + groups.getValue(Source.PHONE_BLE).keys).size, rigReportedCount { it.rigBle })
+
+    /** The rig's own count, only while it's mid-run and its report is fresh (else a
+     *  finished run's last number would leak into the next one). */
+    private fun rigReportedCount(pick: (RigHealth) -> Int?): Int {
+        val h = rigHealth ?: return 0
+        if (h.scanning == false || System.currentTimeMillis() - h.atMs > 15_000) return 0
+        return pick(h) ?: 0
+    }
 
     /** True when there's a position fresh enough to log with (phone's own fix). */
     fun hasFix(): Boolean = ::locationTracker.isInitialized && locationTracker.hasFix()
@@ -908,8 +927,12 @@ class ScanService : Service(), RigLinkManager.Listener {
             if (gps != null) {
                 val health = RigHealth(gps == 1, field("sats") ?: -1, field("sd") == 1, field("pend") ?: 0, System.currentTimeMillis(),
                     field("rw"), field("rb"),
-                    field("heap"), field("sdfree"), field("wnode")?.let { it == 1 })
-                mainHandler.post { rigHealth = health }
+                    field("heap"), field("sdfree"), field("wnode")?.let { it == 1 }, field("scan")?.let { it == 1 })
+                mainHandler.post {
+                    rigHealth = health
+                    // Give the rig screen the same numbers every other surface shows.
+                    if (running && rigConnected) rigLink.sendRaw("app counts $wifiCountThisRun $bleCountThisRun")
+                }
             }
         }
     }

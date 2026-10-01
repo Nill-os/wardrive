@@ -1272,21 +1272,19 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             val phoneWifi = groups.getValue(Source.PHONE_WIFI).size
             val phoneBle = groups.getValue(Source.PHONE_BLE).size
             val cell = groups.getValue(Source.PHONE_CELL).size
-            // Union of MACs, not a raw sum - the rig and the phone each run
-            // their own radio, so the same real AP/BLE device can land in
-            // both maps (confirmed for real: the same BSSID logged twice,
-            // ~65m and 7s apart, once from each radio on one actual drive).
-            // Summing sizes would double-count every device both radios
-            // caught, which is exactly the number you'd stare at all drive.
-            val uniqueWifi = groups.getValue(Source.RIG_WIFI).keys + groups.getValue(Source.PHONE_WIFI).keys
-            val uniqueBle = groups.getValue(Source.RIG_BLE).keys + groups.getValue(Source.PHONE_BLE).keys
+            // The headline numbers come from ScanService.wifiCountThisRun /
+            // bleCountThisRun: a union of MACs (never a raw sum - the rig and the
+            // phone can both catch the same AP), shared with the maps overlay and
+            // pushed to the rig so the CYD shows the same figures.
             // Same WIGLE/WDGW split as the rig's own CYD dashboard: WIGLE is
             // WiFi-only (matching the WigleWifi CSV format), WDGW is the
             // "everything" gateway feed (WiFi+BLE combined) - see cyd_node's
             // drawTabMain() for the original design this mirrors.
-            binding.wigleCountBig.text = "${uniqueWifi.size}"
-            binding.wdgwCountBig.text = "${uniqueWifi.size + uniqueBle.size}"
-            binding.btCountBig.text = "${uniqueBle.size}"
+            val wifiShown = service.wifiCountThisRun
+            val bleShown = service.bleCountThisRun
+            binding.wigleCountBig.text = "$wifiShown"
+            binding.wdgwCountBig.text = "${wifiShown + bleShown}"
+            binding.btCountBig.text = "$bleShown"
             binding.cellCountBig.text = "$cell"
             val health = service.rigHealth?.takeIf { service.rigConnected && System.currentTimeMillis() - it.atMs < 10_000 }
             // The rig's own totals (its ESP32 and CYD scanners combined - the same numbers as the
@@ -1316,7 +1314,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                     if (health.gpsFix && health.sdOk && !nodeDown) R.color.cyan_500 else R.color.red_error))
             }
 
-            val shown = uniqueWifi.size + uniqueBle.size + cell
+            val shown = wifiShown + bleShown + cell
             val excluded = service.excludedCount
             val newFinds = service.newThisRun
             val newSuffix = if (newFinds > 0) "  ·  NEW $newFinds" else ""
@@ -1326,7 +1324,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 "TOTAL: $shown$newSuffix"
             }
 
-            updateMapStatusOverlay(service, uniqueWifi.size, uniqueWifi.size + uniqueBle.size, uniqueBle.size)
+            updateMapStatusOverlay(service, wifiShown, wifiShown + bleShown, bleShown)
         }
 
         // Live speed/heading/distance - the same totalDistanceMeters Session

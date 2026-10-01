@@ -133,6 +133,10 @@ uint64_t sdUsedBytesCached = 0, sdTotalBytesCached = 0; // refreshed by checkSto
 
 uint32_t wifiCountThisRun = 0;
 uint32_t bleCountThisRun = 0;
+// The phone app's own unique counts for this run ("app counts <wifi> <ble>",
+// sent every ~2 s while it is linked). The screen shows max(own, phone's) and
+// the phone shows max(its union, our rw/rb), so both always read the same.
+uint32_t appCountWifi = 0, appCountBle = 0;
 
 // Mirrored from wifi_node's periodic broadcasts - this board has no GPS or
 // WiFi-sniffing radio of its own, so its view of "what time is it" and "are
@@ -937,8 +941,10 @@ static void drawTabMain(bool redrawAll) {
 	// real per-destination split to report. WIGLE tracks WiFi APs only,
 	// matching the WigleWifi CSV format that's actually WiFi-specific; WDGW
 	// (the "everything" gamified gateway) tracks the full WiFi+BLE take.
-	uint32_t wigleCount = wifiCountThisRun;
-	uint32_t wdgwCount = wifiCountThisRun + bleCountThisRun;
+	const uint32_t shownWifi = max(wifiCountThisRun, appCountWifi);
+	const uint32_t shownBle = max(bleCountThisRun, appCountBle);
+	uint32_t wigleCount = shownWifi;
+	uint32_t wdgwCount = shownWifi + shownBle;
 
 	if (redrawAll) {
 		tft.drawRoundRect(boxX, boxY, boxW, boxH, 6, COLOR_TEXT_DIM);
@@ -946,7 +952,7 @@ static void drawTabMain(bool redrawAll) {
 			tft.drawFastVLine(boxX + colW * i, boxY + 6, boxH - 12, COLOR_TEXT_DIM);
 		}
 	}
-	if (redrawAll || wigleCount != lastWigleCount || wdgwCount != lastWdgwCount || bleCountThisRun != lastBleCount) {
+	if (redrawAll || wigleCount != lastWigleCount || wdgwCount != lastWdgwCount || shownBle != lastBleCount) {
 		struct StatCol {
 			uint32_t value;
 			const char *label;
@@ -955,13 +961,13 @@ static void drawTabMain(bool redrawAll) {
 		StatCol cols[3];
 		if (config.countMode == 1) {
 			// Raw "found" counts instead of the WiGLE/WDGW upload framing.
-			cols[0] = {wifiCountThisRun, "APS", COLOR_CYAN};
-			cols[1] = {bleCountThisRun, "BT", COLOR_GREEN};
-			cols[2] = {wifiCountThisRun + bleCountThisRun, "ALL", COLOR_PURPLE};
+			cols[0] = {shownWifi, "APS", COLOR_CYAN};
+			cols[1] = {shownBle, "BT", COLOR_GREEN};
+			cols[2] = {shownWifi + shownBle, "ALL", COLOR_PURPLE};
 		} else {
 			cols[0] = {wigleCount, "WIGLE", COLOR_CYAN};
 			cols[1] = {wdgwCount, "WDGW", COLOR_PURPLE};
-			cols[2] = {bleCountThisRun, "BT", COLOR_GREEN};
+			cols[2] = {shownBle, "BT", COLOR_GREEN};
 		}
 		tft.setTextDatum(MC_DATUM);
 		for (uint8_t i = 0; i < 3; i++) {
@@ -992,7 +998,7 @@ static void drawTabMain(bool redrawAll) {
 	lastScanningActive2 = scanningActive;
 	lastWigleCount = wigleCount;
 	lastWdgwCount = wdgwCount;
-	lastBleCount = bleCountThisRun;
+	lastBleCount = shownBle;
 	lastSdOk2 = sdOk;
 	lastConfigOk2 = configOk;
 	lastLinkState2 = linkState;
@@ -1957,6 +1963,8 @@ uint32_t lastSdFlushMs = 0;
 static bool startScanning() {
 	wifiCountThisRun = 0;
 	bleCountThisRun = 0;
+	appCountWifi = 0;
+	appCountBle = 0;
 	cydUniqueWifi.begin(20 * 1024);
 	cydUniqueBle.begin(8 * 1024);
 	bool wifiFileOk = wigleWifi.begin(sessionDir(), "wifi");
@@ -2741,6 +2749,18 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		relayListPending();
 	} else if (line.startsWith("rig send ")) {
 		relayStartSend(line.substring(9));
+	} else if (line.startsWith("app counts ")) {
+		// "app counts <wifi> <ble>" - the phone's unique counts for the run it is
+		// running with us; only meaningful mid-run (a stale number must never
+		// leak into the next run - startScanning() zeroes these).
+		if (scanningActive) {
+			String rest = line.substring(11); int sp = rest.indexOf(' ');
+			if (sp > 0) {
+				uint32_t w = (uint32_t)rest.substring(0, sp).toInt(), b = (uint32_t)rest.substring(sp + 1).toInt();
+				if (w > appCountWifi) appCountWifi = w; // monotone within a run
+				if (b > appCountBle) appCountBle = b;
+			}
+		}
 	} else if (line.startsWith("cfg ")) {
 		// "cfg <key> <value>" from the phone - apply live and save to config.cfg.
 		String rest = line.substring(4); int sp = rest.indexOf(' ');
@@ -3600,9 +3620,10 @@ void loop() {
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
-		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu heap=%lu wlrx=%lu sniff=%lu qdrop=%lu dedup=%u phone=%s\n",
+		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu shown=%lu/%lu heap=%lu wlrx=%lu sniff=%lu qdrop=%lu dedup=%u phone=%s\n",
 					  (unsigned long)(millis() / 1000), scanningActive, sdOk,
 					  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun,
+					  (unsigned long)max(wifiCountThisRun, appCountWifi), (unsigned long)max(bleCountThisRun, appCountBle),
 					  (unsigned long)ESP.getFreeHeap(), (unsigned long)wifiLinkRxBytes,
 					  (unsigned long)cydFramesSniffed, (unsigned long)cydSniffDropped, (unsigned)cydApDedupState.size(), phoneLinkLabel() + 6);
 	}

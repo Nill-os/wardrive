@@ -63,15 +63,15 @@ class BridgeProvider : ContentProvider() {
     /** Main thread only - ScanService's state is only ever touched there. */
     private fun snapshot(): Array<Any> {
         val s = ScanService.instance ?: return arrayOf(0, 0, 0, 0, 0, 0, 0, "", 0, 0)
-        val wifi = s.groups.getValue(Source.RIG_WIFI).keys + s.groups.getValue(Source.PHONE_WIFI).keys
-        val ble = s.groups.getValue(Source.RIG_BLE).keys + s.groups.getValue(Source.PHONE_BLE).keys
+        val wifi = s.wifiCountThisRun // same shared counts as the dashboard and the rig screen
+        val ble = s.bleCountThisRun
         return arrayOf(
             1,
             if (s.running) 1 else 0,
             if (s.paused) 1 else 0,
-            wifi.size, // WIGLE
-            wifi.size + ble.size, // WDGW
-            ble.size, // BT
+            wifi, // WIGLE
+            wifi + ble, // WDGW
+            ble, // BT
             if (s.rigConnected) 1 else 0,
             s.rigLink.connectionType ?: "",
             s.meshLinkState.ordinal,

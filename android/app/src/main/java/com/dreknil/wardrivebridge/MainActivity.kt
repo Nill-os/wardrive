@@ -2041,7 +2041,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
                 runOnUiThread {
                     val parts = mutableListOf<String>()
-                    if (result.wdgwarsAttempted) parts.add("wdgwars: ${if (result.wdgwarsOk) "ok" else result.wdgwarsMessage}")
+                    if (result.wdgwarsAttempted) parts.add("wdgwars: ${if (result.wdgwarsOk) "ok" + (uploadManager.summarizeWdgwars(result.wdgwarsMessage)?.let { " ($it)" } ?: "") else result.wdgwarsMessage}")
                     if (result.wigleAttempted) parts.add("WiGLE: ${if (result.wigleOk) "ok" else result.wigleMessage}")
                     Toast.makeText(this, parts.joinToString("  ·  "), Toast.LENGTH_LONG).show()
                     if (result.wdgwarsOk || result.wigleOk) {

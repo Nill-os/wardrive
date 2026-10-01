@@ -73,6 +73,16 @@ class UploadManager(private val appContext: Context) {
         return out.toByteArray()
     }
 
+    /** One-line summary of wdgwars.pl's upload answer (imported / captured / ...), or null if it isn't JSON we recognise. */
+    fun summarizeWdgwars(message: String): String? {
+        val keys = listOf("imported" to "new", "captured" to "captured", "updated" to "updated", "duplicates" to "dup",
+            "no_gps" to "no GPS", "bad_rows" to "bad rows", "cooldown" to "cooldown")
+        val parts = keys.mapNotNull { (k, label) ->
+            Regex("\"$k\"\\s*:\\s*(\\d+)").find(message)?.groupValues?.get(1)?.let { "$it $label" }
+        }
+        return if (parts.isEmpty()) null else parts.joinToString(", ")
+    }
+
     // 200/201/202/409 all count as success, matching the rig's own
     // convention (409 = wdgwars.pl's server-side dedup, not a real failure).
     private fun isSuccessCode(code: Int): Boolean = code == 200 || code == 201 || code == 202 || code == 409
@@ -91,9 +101,10 @@ class UploadManager(private val appContext: Context) {
             c.outputStream.use { it.write(body) }
 
             val code = c.responseCode
-            val ok = isSuccessCode(code)
-            val stream = if (ok) c.inputStream else c.errorStream
-            val respText = stream?.bufferedReader()?.use { it.readText() }?.take(300) ?: ""
+            val stream = if (isSuccessCode(code)) c.inputStream else c.errorStream
+            val respText = stream?.bufferedReader()?.use { it.readText() }?.take(600) ?: ""
+            // A 200 whose body says {"ok":false} / {"success":false} is a rejected upload.
+            val ok = isSuccessCode(code) && !Regex("\"(ok|success)\"\\s*:\\s*false").containsMatchIn(respText)
             ok to "HTTP $code${if (respText.isNotBlank()) ": $respText" else ""}"
         } catch (e: java.io.FileNotFoundException) {
             // Android's OkHttp-backed HttpURLConnection throws FileNotFoundException straight out

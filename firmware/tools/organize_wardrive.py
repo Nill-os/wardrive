@@ -154,13 +154,16 @@ def _probe_is_cyd(serial, port):
     except Exception:
         return False
     try:
-        s.reset_input_buffer()
-        s.write(b"sd list\n"); s.flush()
-        end = time.time() + 3
-        while time.time() < end:
-            line = s.readline().decode("utf-8", "replace")
-            if line.startswith("SDLIST") or line.strip() == "SDLISTEND":
-                return True
+        # The rig can take several seconds to answer (it is busy scanning /
+        # streaming heartbeats), so give it two tries of 6 s each.
+        for _ in range(2):
+            s.reset_input_buffer()
+            s.write(b"sd list\n"); s.flush()
+            end = time.time() + 6
+            while time.time() < end:
+                line = s.readline().decode("utf-8", "replace")
+                if line.startswith("SDLIST") or line.strip() == "SDLISTEND":
+                    return True
         return False
     except Exception:
         return False
@@ -276,19 +279,35 @@ def read_from_cyd_serial(port, dest, progress=lambda s: None):
             progress(f"Reading {nm} ({i}/{len(names)})...")
             s.reset_input_buffer()
             s.write(("sd get " + nm + "\n").encode()); s.flush()
-            rows, started, end = [], False, time.time() + 45
-            while time.time() < end:
-                line = s.readline().decode("utf-8", "replace").rstrip("\r\n")
-                if not line:
+            # The rig streams one SDROW per line at 115200 baud (~10 KB/s), so a
+            # big log takes minutes: wait on *idle* time (no byte for 15 s), not a
+            # fixed deadline, and check the rig's own row count at the end so a
+            # short transfer is an error instead of a quietly truncated file.
+            rows, started, want_rows, last = [], False, None, time.time()
+            done = False
+            while time.time() - last < 15:
+                raw = s.readline()
+                if not raw:
                     continue
+                last = time.time()
+                line = raw.decode("utf-8", "replace").rstrip("\r\n")
                 if line.startswith("SDBEGIN "):
                     started = True
                 elif line.startswith("SDEND"):
+                    if "rows=" in line:
+                        want_rows = int(line.split("rows=", 1)[1].split()[0])
+                    done = True
                     break
                 elif line.startswith("SDERR"):
                     raise ValueError("Rig error reading " + nm + ": " + line)
                 elif started and line.startswith("SDROW "):
                     rows.append(line[6:])
+                    if len(rows) % 2000 == 0:
+                        progress(f"Reading {nm} ({i}/{len(names)}) - {len(rows):,} rows...")
+            if not done or (want_rows is not None and want_rows != len(rows)):
+                raise ValueError(f"{nm}: transfer incomplete ({len(rows):,} of "
+                                 f"{want_rows if want_rows is not None else '?'} rows). "
+                                 "Nothing was saved for it - try again, or use the SD card.")
             with open(os.path.join(dest, os.path.basename(nm)), "w", encoding="utf-8", newline="\n") as f:
                 f.write("\n".join(rows) + ("\n" if rows else ""))
         return len(names)

@@ -113,14 +113,15 @@ static bool postMultipartFile(HTTPClient &http, const String &url, const String 
 
 	// wdgwars.pl treats 409 (server-side dedup) as success too.
 	bool ok = code == 200 || code == 201 || code == 202 || code == 409;
-	if (!ok) {
-		// The response body usually says exactly what the server didn't
-		// like (bad field name, auth, format) - print it so a failure like
-		// this is diagnosable from the serial log instead of just a bare
-		// status code.
-		String resp = http.getString();
-		Serial.printf("[upload]   response: %s\n", resp.substring(0, 300).c_str());
-	}
+	// The body says what the server actually did with the file (wdgwars:
+	// imported / captured / updated / duplicates / no_gps / bad_rows / cooldown;
+	// WiGLE: success + a transaction id), so print it - a 200 that imported
+	// nothing is otherwise invisible - and don't count an explicit
+	// {"ok":false} / {"success":false} as delivered.
+	String resp = http.getString();
+	if (ok && (resp.indexOf("\"ok\":false") >= 0 || resp.indexOf("\"ok\": false") >= 0 ||
+			   resp.indexOf("\"success\":false") >= 0 || resp.indexOf("\"success\": false") >= 0)) ok = false;
+	Serial.printf("[upload]   %s response: %s\n", ok ? "ok" : "FAILED", resp.substring(0, 400).c_str());
 	http.end();
 	return ok;
 }

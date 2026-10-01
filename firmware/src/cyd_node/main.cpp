@@ -967,9 +967,21 @@ static void drawTabMain(bool redrawAll) {
 		for (uint8_t i = 0; i < 3; i++) {
 			int16_t cx = boxX + colW * i + colW / 2;
 			tft.fillRect(boxX + colW * i + 2, boxY + 2, colW - 4, boxH - 4, COLOR_BG);
-			tft.setTextSize(3);
+			// Scale the number to its column: size 3 (18 px/digit) while it
+			// fits, then 2, then 1; past 99,999 abbreviate (123K, 1.2M) so a
+			// long run never spills into the neighbouring box.
+			String num;
+			if (cols[i].value >= 1000000) num = String(cols[i].value / 1000000.0f, 1) + "M";
+			else if (cols[i].value >= 100000) num = String(cols[i].value / 1000) + "K";
+			else num = String(cols[i].value);
+			uint8_t numSize = 3;
+			for (; numSize > 1; numSize--) {
+				tft.setTextSize(numSize);
+				if (tft.textWidth(num) <= colW - 10) break;
+			}
+			tft.setTextSize(numSize);
 			tft.setTextColor(cols[i].color, COLOR_BG);
-			tft.drawString(String(cols[i].value), cx, boxY + boxH / 2 - 8);
+			tft.drawString(num, cx, boxY + boxH / 2 - (numSize == 3 ? 8 : numSize == 2 ? 5 : 2));
 			tft.setTextSize(1);
 			tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
 			tft.drawString(cols[i].label, cx, boxY + boxH - 10);

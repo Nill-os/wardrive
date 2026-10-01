@@ -51,6 +51,10 @@ void WigleWriter::writeRow(const String &mac, const String &ssid, const String &
 							const String &firstSeenIso, const String &channel, const String &freq,
 							int rssi, double lat, double lon, double altM, double accM, const String &type) {
 	if (!_file) return;
+	// A row with no position (0,0) or no real clock (epoch-0 timestamp, "1970-...")
+	// is useless to WiGLE/wdgwars - wdgwars counts it as "no_gps" - so never
+	// write one, whichever caller it came from.
+	if ((lat == 0.0 && lon == 0.0) || firstSeenIso.length() < 4 || firstSeenIso.startsWith("1970")) return;
 	String safeSsid = sanitizeField(ssid);
 	_file.printf("%s,%s,%s,%s,%s,%s,%d,%.6f,%.6f,%.1f,%.1f,%s\n",
 				 mac.c_str(), safeSsid.c_str(), authMode.c_str(), firstSeenIso.c_str(),

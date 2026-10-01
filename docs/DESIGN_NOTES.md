@@ -102,11 +102,15 @@ cyd_node accepts developer commands over **USB serial only** (115200 baud; they'
 
 `scan start`, `scan stop` and the `wdstream` commands work over USB too.
 
+## Counts
+
+Every headline number (WIGLE / WDGW / BT) is **unique devices this run**, not CSV rows: an AP re-logged after you move 40 m is a new row but not a new device. The rig keeps a per-run Bloom filter for this (20 KB WiFi, 8 KB BLE, freed when the run stops; about 1% undercount at 8,000 devices, never an overcount). The phone counts the union of rig and phone MACs and exchanges counts with the rig (`app counts`, `rw=`/`rb=`), so the CYD, the app and the Organic Maps overlay show identical figures. The CYD shrinks a number to fit its box and abbreviates past 99,999 (`123K`, `1.2M`).
+
 ## Known limitations
 
 - **The rig is 2.4 GHz only.** The ESP32-S3 can't receive 5 GHz (an ESP32-C5 could). The phone app scans the phone's own radio, which covers 2.4, 5 and 6 GHz, so with a phone connected the combined logs cover every band.
 - **Upload TLS is pinned to root CAs.** The firmware verifies WiGLE (ISRG Root X1) and wdgwars.pl (GTS Root R4 / GlobalSign Root CA) against the roots in `lib/WardriveShared/RootCerts.h`, so API keys are only sent to the real servers. If a host switches CA, uploads fail with a TLS error until the roots are updated; GlobalSign Root CA expires 2028-01-28.
-- **wdgwars upload format.** The request format (`X-Api-Key` header, `file` field) follows common convention and has worked in practice, but it hasn't been checked against wdgwars' logged-in API docs.
+- **wdgwars upload format** matches wdgwars.pl's documented CSV API (`POST /api/upload-csv`, `X-API-Key` header, multipart `file`, WigleWifi-1.6). Their example header also lists empty `RCOIs` and `MfgrId` columns, which this firmware doesn't write. The server's answer (`imported` / `duplicates` / `no_gps` / `bad_rows` / `cooldown`) is logged on the serial console after each upload, and `{"ok":false}` counts as a failed upload.
 - **WiGLE TLS memory.** WiGLE uploads used to fail with a TLS out-of-memory error while BLE was running. BLE is now suspended during uploads; watch the `[upload] free heap` line if it comes back.
 - **The SD card is the single point of failure.** If it fails or is missing, sightings are dropped rather than buffered. A card that fails mid-run is now detected within 30 s (red flash, SD:FAIL) rather than failing silently, but the rows during that window are still lost.
 - **Security type is parsed from the RSN information element** (AKM suites), so WPA2, WPA3-SAE, WPA3-Enterprise, OWE and WPA2/WPA3 transitional are each identified in the CSV. Only the phone's live `wdstream` mirror collapses WPA3 to `WPA2`, for GhostESP compatibility; the logged data keeps the real type.

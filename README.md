@@ -36,7 +36,7 @@ A standalone car wardriving rig built from three cheap ESP32 boards. It logs 2.4
 | WiFi channel dwell | 150 ms default (configurable); one node sweeps 2.4 GHz ch 1/6/11 every **~0.45 s** |
 | Multi-node scaling | more sniffer nodes split the channels and hop in parallel: **5 nodes cover all 13 channels** at a single node's revisit rate, **13 nodes camp one channel each** (nothing missed); up to 20 nodes. BLE nodes add ~N× reporting capacity. See [Scaling](docs/SCALING.md#scaling-statistics) |
 | Speed range | catches an AP within **~12 m of travel at 100 km/h** (60 mph) on its channel - works from walking pace to highway |
-| Capture rate | **tens of thousands of unique devices per hour** in a built-up area (varies with density and speed) |
+| Capture rate | **10,000+ unique devices per hour** in a built-up area (measured: ~5,800 unique APs plus ~1,200 BLE devices in a 26-minute suburban drive; varies with density and speed) |
 | BLE | continuous active scan; de-duplicated per run |
 | GPS | **1 fix/second** (u-blox NEO-6M, 9600 baud) |
 | Inter-board link | **460800 baud** wired UART; phone link is Bluetooth LE (or USB) |

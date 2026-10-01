@@ -182,6 +182,26 @@ uint32_t Uploader::lastUploadEpoch() {
 	return v;
 }
 
+uint32_t Uploader::reconcileLastUpload(const String &dirPath) {
+	uint32_t newest = 0;
+	File dir = SD.open(dirPath);
+	if (!dir) return 0;
+	File entry = dir.openNextFile();
+	while (entry) {
+		String name = String(entry.name());
+		if (name.endsWith(".uploaded")) {
+			String v = entry.readStringUntil('\n');
+			uint32_t t = (uint32_t)v.toInt();
+			if (t > 1600000000UL && t > newest) newest = t; // ignore 0 / junk
+		}
+		entry.close();
+		entry = dir.openNextFile();
+	}
+	dir.close();
+	if (newest != 0 && newest > lastUploadEpoch()) setLastUploadEpoch(newest);
+	return newest;
+}
+
 void Uploader::setLastUploadEpoch(uint32_t epoch) {
 	Preferences p;
 	p.begin(PREFS_NS, false);

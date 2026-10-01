@@ -108,7 +108,7 @@ Every headline number (WIGLE / WDGW / BT) is **unique devices this run**, not CS
 
 ## Clock and "last upload"
 
-The CYD has no RTC: its wall clock is the last GPS time wifi_node relayed (`EPOCH:`), advanced with `millis()` between updates so it doesn't freeze when the fix is lost. An upload also records a boot-relative timer, so the "OK 3m ago" on the main screen is right even when the upload ran before any GPS time arrived (the persisted epoch can't be written without a clock). The screen shows the fresher of the two ages.
+The CYD has no RTC. Its clock is, in order of preference: the phone's wall clock (`app time <epoch>`, sent every status tick while linked) and GPS time relayed by wifi_node (`EPOCH:`), advanced with `millis()` between updates. wifi_node sends GPS time only while the GPS has a **live fix** (`EPOCH:0` otherwise): a module with no fix still reports a date and time that TinyGPS calls valid but that can be days off (seen: 9 days ahead), which once made "last upload" read 9 days. The persisted last-upload time is also rebuilt at boot and after each upload from the newest `<file>.uploaded` marker, and each upload stamps a boot-relative timer, so the main-screen "OK 2h ago" is right even if an upload ran with no clock. The phone's clock also lets the rig run its dock auto-upload (which needs a clock) without a GPS fix. The serial heartbeat prints `clk=`, `lastok=`, `now=` and the screen's upload line for debugging.
 
 ## Hidden networks
 

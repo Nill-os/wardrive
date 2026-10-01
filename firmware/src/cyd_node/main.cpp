@@ -147,10 +147,17 @@ uint32_t appCountWifi = 0, appCountBle = 0;
 volatile uint32_t lastLocalScanSetMs = 0;
 volatile uint32_t lastKnownEpoch = 0;
 volatile uint32_t epochSyncMs = 0; // millis() when lastKnownEpoch was last refreshed
+// The phone's wall clock ("app time <epoch>", sent every status tick while linked): the
+// fallback clock when there is no GPS time - parked in a garage, or just rebooted.
+volatile uint32_t appEpoch = 0;
+volatile uint32_t appEpochSyncMs = 0;
 // lastKnownEpoch only changes when wifi_node relays a GPS time, so after the fix is lost
 // (parked in a garage) it freezes. This keeps it ticking so "uploaded 3 min ago" stays true.
+// The phone's clock wins when linked; GPS time (live fix only) is the fallback.
 static uint32_t nowEpochEstimate() {
-	return lastKnownEpoch == 0 ? 0 : lastKnownEpoch + (millis() - epochSyncMs) / 1000;
+	if (appEpoch != 0) return appEpoch + (millis() - appEpochSyncMs) / 1000; // the phone's clock is always right
+	if (lastKnownEpoch != 0) return lastKnownEpoch + (millis() - epochSyncMs) / 1000;
+	return 0;
 }
 bool gpsFixKnown = false;
 
@@ -2078,6 +2085,7 @@ static UploadResult doUpload(bool force) {
 	if (result == UploadResult::Ok) { lastUploadProblem = ""; lastUploadOkMs = millis(); }
 	else if (result == UploadResult::WifiFailed) lastUploadProblem = "WiFi failed";
 	else if (result == UploadResult::UploadFailed) lastUploadProblem = "server failed";
+	uploader->reconcileLastUpload(sessionDir());
 	lastUploadOkEpoch = uploader->lastUploadEpoch();
 	pendingUploadFiles = uploader->pendingCount(sessionDir());
 	logEvent(String("upload: ") + uploadResultStr(result),
@@ -2773,6 +2781,9 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		relayListPending();
 	} else if (line.startsWith("rig send ")) {
 		relayStartSend(line.substring(9));
+	} else if (line.startsWith("app time ")) {
+		uint32_t t = (uint32_t)line.substring(9).toInt();
+		if (t > 1600000000UL) { appEpoch = t; appEpochSyncMs = millis(); } // sanity: after 2020
 	} else if (line.startsWith("app counts ")) {
 		// "app counts <wifi> <ble>" - the phone's unique counts for the run it is
 		// running with us; only meaningful mid-run (a stale number must never
@@ -3151,8 +3162,11 @@ static void handleIncomingLine(const String &line) {
 		return;
 	}
 	if (line.startsWith("EPOCH:")) {
-		lastKnownEpoch = (uint32_t)line.substring(6).toInt();
-		epochSyncMs = millis();
+		uint32_t e = (uint32_t)line.substring(6).toInt();
+		if (e != 0) { // 0 = wifi_node has no live GPS fix, so no trustworthy time - keep the last good one ticking
+			lastKnownEpoch = e;
+			epochSyncMs = millis();
+		}
 		return;
 	}
 	if (line.startsWith("GPSPOS:")) {
@@ -3626,6 +3640,10 @@ void loop() {
 		logEvent(!sdOk ? "SD card missing" : configOk ? "SD ok, config loaded" : "SD ok, no config.cfg", sdOk && configOk ? COLOR_GREEN : COLOR_RED);
 		if (configOk) applyBrightness();
 		if (sdOk && uploader) uploader->removeEmptySessions(SESSION_DIR); // nothing's open yet this early
+		if (sdOk && uploader) {
+			uint32_t newest = uploader->reconcileLastUpload(SESSION_DIR);
+			if (WARDRIVE_DEBUG) Serial.printf("[boot] newest upload marker on the card: %lu\n", (unsigned long)newest);
+		}
 		if (uploader) lastUploadOkEpoch = uploader->lastUploadEpoch();
 		checkStorage();
 		if (resumeScanningIntent) {
@@ -3645,10 +3663,11 @@ void loop() {
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {
 		lastHeartbeatMs = millis();
-		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu shown=%lu/%lu heap=%lu wlrx=%lu sniff=%lu qdrop=%lu dedup=%u phone=%s\n",
+		Serial.printf("[heartbeat] up=%lus scanning=%d sdOk=%d wifi=%lu ble=%lu shown=%lu/%lu clk=%s lastok=%lu now=%lu upload=[%s] heap=%lu wlrx=%lu sniff=%lu qdrop=%lu dedup=%u phone=%s\n",
 					  (unsigned long)(millis() / 1000), scanningActive, sdOk,
 					  (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun,
 					  (unsigned long)max(wifiCountThisRun, appCountWifi), (unsigned long)max(bleCountThisRun, appCountBle),
+					  appEpoch ? "app" : lastKnownEpoch ? "gps" : "none", (unsigned long)lastUploadOkEpoch, (unsigned long)nowEpochEstimate(), lastUploadStatusText.c_str(),
 					  (unsigned long)ESP.getFreeHeap(), (unsigned long)wifiLinkRxBytes,
 					  (unsigned long)cydFramesSniffed, (unsigned long)cydSniffDropped, (unsigned)cydApDedupState.size(), phoneLinkLabel() + 6);
 	}

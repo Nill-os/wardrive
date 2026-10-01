@@ -56,6 +56,11 @@ public:
 	// Unix time of the last upload that sent at least one file (0 = never,
 	// or never with a GPS clock).
 	uint32_t lastUploadEpoch();
+	// Every uploaded file leaves "<file>.uploaded" holding the time it was sent. Raises the
+	// stored last-upload time to the newest of those, so an upload that never reached the
+	// stored copy (no clock at that moment, a phone ack) still shows its real age. Returns
+	// the newest marker time found (0 = none had a time).
+	uint32_t reconcileLastUpload(const String &dirPath);
 	// Record an upload time from outside the uploader - used when the phone app
 	// uploads a session on the rig's behalf, so the "last upload" age still
 	// resets. Takes the phone's wall-clock epoch (seconds).

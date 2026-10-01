@@ -930,6 +930,9 @@ class ScanService : Service(), RigLinkManager.Listener {
                     field("heap"), field("sdfree"), field("wnode")?.let { it == 1 }, field("scan")?.let { it == 1 })
                 mainHandler.post {
                     rigHealth = health
+                    // The phone's clock, so the rig can timestamp uploads and run dock auto-upload
+                    // even with no GPS time (garage, just rebooted).
+                    if (rigConnected) rigLink.sendRaw("app time ${System.currentTimeMillis() / 1000}")
                     // Give the rig screen the same numbers every other surface shows.
                     if (running && rigConnected) rigLink.sendRaw("app counts $wifiCountThisRun $bleCountThisRun")
                 }

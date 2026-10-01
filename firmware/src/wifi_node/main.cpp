@@ -982,7 +982,10 @@ void loop() {
 		// cyd_node has no GPS of its own - these keep its upload
 		// rate-limiter/cleanup (EPOCH) and dock-mode home geofence
 		// (GPSPOS) working without needing its own fix.
-		cydLinkSendf("EPOCH:%lu", (unsigned long)gpsEpoch(gps));
+		// Only with a live fix: a GPS module with no fix still reports a date and time that
+		// TinyGPS calls "valid" but that can be days off (seen: 9 days ahead), which made the
+		// CYD's "last upload" age nonsense. 0 = "no trustworthy time right now".
+		cydLinkSendf("EPOCH:%lu", (unsigned long)(gpsLive() ? gpsEpoch(gps) : 0));
 		sendGpsPos();
 		// Satellite count - cyd_node has no GPS of its own to derive this
 		// from either, and it's a genuinely useful "collect everything

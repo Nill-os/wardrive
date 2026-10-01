@@ -104,6 +104,7 @@ The CYD speaks a line-based text protocol over BLE, and over USB serial at 11520
 - **Commands** are newline-terminated:
   - `wdstream start`, `wdstream stop` and `wdstream status`.
   - `scan start` and `scan stop` behave like tapping START/STOP.
+  - `app time <epoch>` is the phone's wall clock in seconds, sent every status tick while linked; the rig uses it for upload timestamps and dock auto-upload when it has no live GPS time.
   - `app counts <wifi> <ble>` is sent by the Nill OS - Wardriver app every ~2 s mid-run: its unique-device counts. The rig shows the larger of its own count and this one, and the app shows the larger of its own and the rig's `rw=`/`rb=` (from `WD:STATUS`), so the CYD, the app and the Organic Maps overlay always read the same.
 - **Output:** lines prefixed with `WD:`, namely `WD:BEGIN`, `WD:AP,…`, `WD:BLE,…`, `WD:STATUS,…`, `WD:SCANSTATE:<0|1>` and `WD:MESHLINK:…` (rig link state). Ignore any other line; it's debug output.
 - **Keep-alive over USB:** send `wdstream status` every 5 s. Over BLE, the connection itself counts as presence.

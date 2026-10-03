@@ -77,7 +77,11 @@ While scanning is stopped, the CYD checks every 60 s whether it should upload:
 - **With a home geofence** (`home_lat`, `home_lon`, `home_radius_m`): it uploads once each time you arrive home. If WiFi isn't reachable yet, it retries every 60 s until the upload succeeds or you leave.
 - **Without a geofence**: it tries to upload at most once every `min_upload_interval_sec`.
 
-The CYD has no GPS of its own. It uses the position relayed by wifi_node, so dock mode needs RIG:UP and a GPS fix.
+The CYD has no GPS of its own. It uses the position relayed by wifi_node, so dock mode needs RIG:UP and a GPS fix. A parked rig often loses its fix, so the last known position is trusted for 20 minutes after the fix drops. Dock mode only runs while scanning is **stopped**.
+
+## If the CYD reboots
+
+Every boot appends a line to `/bootlog.txt` on the SD card: why it restarted (`power-on`, `PANIC/abort`, `BROWNOUT`, a watchdog) and, for a crash, what it was doing (uptime, free heap, dedup entries). Read it with the USB command `boot log`. A reboot while scanning resumes the scan by itself, which is why session files restart a few seconds after boot.
 
 ## What gets logged
 

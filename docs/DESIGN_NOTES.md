@@ -167,3 +167,8 @@ The same transport caveat as the WiFi nodes applies: today each `ble_node`
 reaches `wifi_node` over its own wired UART, so several BLE boards means more
 UARTs into the aggregator or a move to ESP-NOW. The `ble_node` firmware also
 runs on a Seeed XIAO ESP32-C3/S3 (see [Build and flash](BUILD_AND_FLASH.md#building-variations)), which makes small add-on BLE receivers cheap.
+
+
+## CYD memory budget
+
+The CYD has ~85 KB free heap idle and ~50-65 KB once scanning starts (sniffer, SD buffers, BLE stack, and the unique-device Bloom filters: 12 KB WiFi + 4 KB BLE). Each de-dup entry costs ~72 bytes (measured), so the AP de-dup map is capped at 300 entries and also pruned whenever free heap drops under 28 KB (`CYD_MIN_FREE_HEAP`); `cydMemoryGuard()` clears the other per-device sets under the same floor. The earlier cap of 600 (~43 KB) ran the heap dry on dense streets: `malloc` failed, `abort()` rebooted the board every 1-2 minutes, and each reboot resumed the scan. Reproduce or regression-test with `test:fakegps`, `scan start`, then `test:dedupfill 50` repeatedly: heap should stay above ~30 KB. Reboot reasons are logged to `/bootlog.txt` (`boot log` over USB).

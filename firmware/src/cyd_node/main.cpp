@@ -68,6 +68,31 @@
 static const char *STATE_PREFS_NS = "wdstate";
 static const char *STATE_PREFS_KEY = "scanning";
 Preferences statePrefs;
+
+// ---- Reboot diagnostics ----
+// RTC_NOINIT memory survives a software reset (abort, panic, watchdog) but not a power cut, so
+// loop() refreshes this snapshot every 2 s and the next boot reports what the board was doing when
+// it died, plus WHY it restarted (esp_reset_reason).  Appended to /bootlog.txt on the SD card;
+// read it with the USB command "boot log".  Added after a real drive showed ~30 unexplained
+// reboots and nothing on the card to say why.
+RTC_NOINIT_ATTR static uint32_t rtcDiagMagic;
+RTC_NOINIT_ATTR static uint32_t rtcDiagUptimeS, rtcDiagFreeHeap, rtcDiagMinHeap, rtcDiagDedup, rtcDiagScanning;
+static const uint32_t RTC_DIAG_MAGIC = 0xC0DE5EED;
+static char bootDiagLine[160] = "";   // built in setup(), written to the SD card once it is mounted
+static const char *resetReasonName(esp_reset_reason_t r) {
+	switch (r) {
+		case ESP_RST_POWERON: return "power-on";
+		case ESP_RST_SW: return "software-reset";
+		case ESP_RST_PANIC: return "PANIC/abort";
+		case ESP_RST_INT_WDT: return "INT-WATCHDOG";
+		case ESP_RST_TASK_WDT: return "TASK-WATCHDOG";
+		case ESP_RST_WDT: return "WATCHDOG";
+		case ESP_RST_BROWNOUT: return "BROWNOUT (power)";
+		case ESP_RST_DEEPSLEEP: return "deep-sleep";
+		case ESP_RST_EXT: return "external-reset";
+		default: return "other";
+	}
+}
 bool resumeScanningIntent = false;
 
 static constexpr bool WARDRIVE_DEBUG = true;
@@ -160,6 +185,7 @@ static uint32_t nowEpochEstimate() {
 	return 0;
 }
 bool gpsFixKnown = false;
+uint32_t lastGpsFixMs = 0; // millis() of the last GPSPOS that carried a fix
 
 // Whether the phone is actively talking to this board over USB (see the
 // wdstream section further down for how this gets set/cleared) - declared
@@ -1541,7 +1567,11 @@ static void checkStorage() {
 // gating) if the geofence isn't configured.
 static bool nearHome() {
 	if (config.homeRadiusM <= 0.0) return true;
-	if (!gpsFixKnown) return false;
+	// Parked at home the GPS usually has no sky view and drops its fix within seconds - but the last
+	// position (where you stopped) is still where you are.  Trust it for NEAR_HOME_STALE_MS, so dock
+	// mode still uploads; without this a garage or a roof-less parking spot blocked every upload.
+	static const uint32_t NEAR_HOME_STALE_MS = 20UL * 60UL * 1000UL;
+	if (!gpsFixKnown && (lastGpsFixMs == 0 || millis() - lastGpsFixMs > NEAR_HOME_STALE_MS)) return false;
 
 	// TinyGPSPlus::distanceBetween is a static helper with no GPS-instance
 	// dependency, safe to call without a TinyGPSPlus object of our own -
@@ -1870,9 +1900,9 @@ std::unordered_set<uint64_t> cydBleNoFixCounted;
 // "Unique devices this run" for the on-screen WIGLE/WDGW/BT counts. The dedup
 // map above forgets devices (it prunes at 600 entries and re-logs an AP every
 // 40 m), and a std::set of every MAC would cost ~40 bytes each - far too much
-// of the ~84 KB free heap - so each run keeps a Bloom filter instead: 20 KB for
-// WiFi, 8 KB for BLE, ~1% error at 8,000 devices (a rare undercount, never an
-// overcount). Allocated at run start, freed at run stop so uploads get the heap.
+// of the ~84 KB free heap - so each run keeps a Bloom filter instead: 12 KB for
+// WiFi (~1% error at 8,000 devices), 4 KB for BLE (~1% at 2,500) - a rare undercount, never an
+// overcount.  (It was 20 + 8 KB; that left too little heap for a dense street - see the dedup note.) Allocated at run start, freed at run stop so uploads get the heap.
 struct CydUniqueFilter {
 	uint8_t *bits = nullptr;
 	uint32_t nbits = 0;
@@ -1926,12 +1956,16 @@ static double cydApproxDistanceM(double lat1, double lon1, double lat2, double l
 	return sqrt(dLat * dLat + dLon * dLon);
 }
 
-// Each entry costs ~50 bytes of a heap that's only ~95KB free while scanning
-// (and uploads need ~40KB of it for TLS), so this can't grow for a whole
-// drive - a city run sees thousands of APs. Past the cap, forget everything
-// logged far from here (a duplicate is only possible within 40m of the old
-// spot anyway), and as a last resort forget everything.
-static const size_t CYD_AP_DEDUP_MAX_ENTRIES = 600;
+// Each entry costs ~72 bytes (measured on the bench: 114 -> 467 entries took the free heap
+// from 37 KB to 12 KB), and scanning starts with only ~50-65 KB free (uploads need ~40 KB of it
+// for TLS), so this can't grow for a whole drive - a city run sees thousands of APs.  Past the
+// cap, forget everything logged far from here (a duplicate is only possible within 40m of the old
+// spot anyway), and as a last resort forget everything.  The cap was 600, which is ~43 KB: on a
+// dense street the heap ran out, malloc failed, abort() rebooted the board every minute or two
+// (seen on a real drive, reproduced with test:dedupfill).  Free heap is checked too, so a cap
+// that is right today can't become wrong when another feature takes more memory.
+static const size_t CYD_AP_DEDUP_MAX_ENTRIES = 300;
+static const uint32_t CYD_MIN_FREE_HEAP = 28000;
 static const double CYD_AP_DEDUP_EVICT_BEYOND_M = 500.0;
 
 static void cydPruneApDedup(double lat, double lon) {
@@ -1939,14 +1973,15 @@ static void cydPruneApDedup(double lat, double lon) {
 		if (cydApproxDistanceM(lat, lon, it->second.lat, it->second.lon) > CYD_AP_DEDUP_EVICT_BEYOND_M) it = cydApDedupState.erase(it);
 		else ++it;
 	}
-	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES * 3 / 4) cydApDedupState.clear();
+	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES * 3 / 4 || ESP.getFreeHeap() < CYD_MIN_FREE_HEAP) cydApDedupState.clear();
 	if (WARDRIVE_DEBUG) Serial.printf("[dedup] pruned to %u entries, heap=%u\n", (unsigned)cydApDedupState.size(), (unsigned)ESP.getFreeHeap());
 }
 
 // named = this sighting has a non-empty SSID: an AP first logged blank (a hidden
 // network's beacon) is let through once more when its name shows up in a probe response.
 static bool cydShouldLogApByKey(uint64_t key, double lat, double lon, bool named) {
-	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES) cydPruneApDedup(lat, lon);
+	if (cydApDedupState.size() >= CYD_AP_DEDUP_MAX_ENTRIES ||
+		((cydApDedupState.size() & 15) == 0 && ESP.getFreeHeap() < CYD_MIN_FREE_HEAP)) cydPruneApDedup(lat, lon);
 	auto it = cydApDedupState.find(key);
 	bool wasNamed = false;
 	if (it != cydApDedupState.end()) {
@@ -1972,6 +2007,18 @@ static bool cydShouldLogAp(const uint8_t *mac, double lat, double lon, bool name
 	return cydShouldLogApByKey(cydMacToKey(mac), lat, lon, named);
 }
 
+// Backstop for every other per-device container (the no-fix "already counted" sets, the detection
+// alert set): if free heap is low, drop them all rather than let the next allocation fail.  The
+// worst case is a device being counted or alerted a second time - never a reboot.
+static void cydMemoryGuard() {
+	if (ESP.getFreeHeap() >= CYD_MIN_FREE_HEAP) return;
+	cydWifiNoFixCounted.clear();
+	cydBleNoFixCounted.clear();
+	alertedDevices.clear();
+	cydApDedupState.clear();
+	logEvent("low memory - trimmed caches", COLOR_ORANGE);
+}
+
 // (Re)arms this board's own WiFi sniffer. Needed on every start, not just at
 // boot: an upload leaves the radio switched off (Uploader::disconnectWifi()),
 // and promiscuous mode silently does nothing on a radio that isn't running.
@@ -1995,8 +2042,8 @@ static bool startScanning() {
 	bleCountThisRun = 0;
 	appCountWifi = 0;
 	appCountBle = 0;
-	cydUniqueWifi.begin(20 * 1024);
-	cydUniqueBle.begin(8 * 1024);
+	cydUniqueWifi.begin(12 * 1024);
+	cydUniqueBle.begin(4 * 1024);
 	bool wifiFileOk = wigleWifi.begin(sessionDir(), "wifi");
 	bool bleFileOk = wigleBle.begin(sessionDir(), "ble");
 	cydApDedupState.clear();
@@ -2817,6 +2864,14 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		startServiceMode();
 	} else if (line == "rig service off") {
 		stopServiceMode();
+	} else if (fromUsb && line == "boot log") {
+		// USB-only: the reset reason + last-known memory state of every boot (see "Reboot diagnostics").
+		File bl = SD.open("/bootlog.txt", FILE_READ);
+		if (bl) {
+			while (bl.available()) { String l = bl.readStringUntil('\n'); l.replace("\r", ""); Serial.print("BOOTLOG "); Serial.println(l); }
+			bl.close();
+		}
+		Serial.println("BOOTLOGEND");
 	} else if (fromUsb && line == "sd list") {
 		// USB-only: list every session CSV on the card (name + size), so the
 		// desktop tool can pull logs over the serial cable without WiFi or
@@ -3181,6 +3236,7 @@ static void handleIncomingLine(const String &line) {
 		if (gpsFixKnown) {
 			lastKnownLat = rest.substring(c1 + 1, c2).toDouble();
 			lastKnownLon = rest.substring(c2 + 1).toDouble();
+			lastGpsFixMs = millis();
 		}
 		return;
 	}
@@ -3441,6 +3497,17 @@ void setup() {
 	Serial.setTxBufferSize(2048); // debug/USB-phone prints queue instead of blocking the loop
 	Serial.begin(115200);
 
+	{
+		esp_reset_reason_t why = esp_reset_reason();
+		bool prevValid = rtcDiagMagic == RTC_DIAG_MAGIC && why != ESP_RST_POWERON;
+		snprintf(bootDiagLine, sizeof(bootDiagLine), "reset=%s prev-run: up=%us freeHeap=%u minHeap=%u dedup=%u scanning=%u",
+				 resetReasonName(why), prevValid ? (unsigned)rtcDiagUptimeS : 0, prevValid ? (unsigned)rtcDiagFreeHeap : 0,
+				 prevValid ? (unsigned)rtcDiagMinHeap : 0, prevValid ? (unsigned)rtcDiagDedup : 0, prevValid ? (unsigned)rtcDiagScanning : 0);
+		rtcDiagMagic = RTC_DIAG_MAGIC;
+		rtcDiagUptimeS = rtcDiagFreeHeap = rtcDiagMinHeap = rtcDiagDedup = rtcDiagScanning = 0;
+		Serial.printf("[boot] %s\n", bootDiagLine);
+	}
+
 	ledcSetup(LEDC_CH_R, 5000, 8);
 	ledcSetup(LEDC_CH_G, 5000, 8);
 	ledcSetup(LEDC_CH_B, 5000, 8);
@@ -3645,6 +3712,14 @@ void loop() {
 			if (WARDRIVE_DEBUG) Serial.printf("[boot] newest upload marker on the card: %lu\n", (unsigned long)newest);
 		}
 		if (uploader) lastUploadOkEpoch = uploader->lastUploadEpoch();
+		if (sdOk && bootDiagLine[0]) {
+			File bl = SD.open("/bootlog.txt", FILE_APPEND);
+			if (bl) {
+				if (bl.size() > 24000) { bl.close(); SD.remove("/bootlog.txt"); bl = SD.open("/bootlog.txt", FILE_WRITE); }
+				if (bl) { bl.println(bootDiagLine); bl.close(); }
+			}
+			bootDiagLine[0] = '\0';
+		}
 		checkStorage();
 		if (resumeScanningIntent) {
 			// Just sets the flag - the scanningActive != wasScanning edge
@@ -3875,6 +3950,26 @@ void loop() {
 							  ssid.length() == 0 ? 1U : 0U);
 				wdstreamApCount++;
 			}
+		}
+	}
+
+	if (scanningActive) {
+		static uint32_t lastMemGuardMs = 0;
+		if (millis() - lastMemGuardMs > 1000) {
+			lastMemGuardMs = millis();
+			cydMemoryGuard();
+		}
+	}
+	// What the next boot reports about this run (survives a crash / abort / watchdog reset).
+	{
+		static uint32_t lastDiagMs = 0;
+		if (millis() - lastDiagMs > 2000) {
+			lastDiagMs = millis();
+			rtcDiagUptimeS = millis() / 1000;
+			rtcDiagFreeHeap = ESP.getFreeHeap();
+			rtcDiagMinHeap = ESP.getMinFreeHeap();
+			rtcDiagDedup = (uint32_t)cydApDedupState.size();
+			rtcDiagScanning = scanningActive ? 1 : 0;
 		}
 	}
 

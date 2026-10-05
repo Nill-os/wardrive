@@ -20,6 +20,7 @@ public:
 	void flush();
 	void close();
 	const String &currentFilePath() const { return _path; }
+	uint32_t rowsWritten() const { return _rowsWritten; }
 
 private:
 	File _file;

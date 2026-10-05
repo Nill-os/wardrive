@@ -158,6 +158,13 @@ uint64_t sdUsedBytesCached = 0, sdTotalBytesCached = 0; // refreshed by checkSto
 
 uint32_t wifiCountThisRun = 0;
 uint32_t bleCountThisRun = 0;
+// Link diagnostics for a run, written to /diag.txt once a minute while scanning (USB "diag log").
+// Added after three drives logged no BLE at all with nothing on screen to say so: these show
+// whether wifi_node's "B," lines reached this board, whether they carried a position, and
+// whether rows reached the SD log.
+uint32_t diagWifiLines = 0, diagBleLines = 0, diagBleLinesFix = 0;
+uint32_t lastBleLineMs = 0, lastDiagMs = 0, lastBleSilentWarnMs = 0;
+static const uint32_t BLE_SILENT_WARN_MS = 120000; // scanning this long with no BLE line = warn
 // The phone app's own unique counts for this run ("app counts <wifi> <ble>",
 // sent every ~2 s while it is linked). The screen shows max(own, phone's) and
 // the phone shows max(its union, our rw/rb), so both always read the same.
@@ -2040,6 +2047,8 @@ uint32_t lastSdFlushMs = 0;
 static bool startScanning() {
 	wifiCountThisRun = 0;
 	bleCountThisRun = 0;
+	diagWifiLines = diagBleLines = diagBleLinesFix = 0;
+	lastBleLineMs = lastDiagMs = millis(); // 2-minute grace before "BT node silent"
 	appCountWifi = 0;
 	appCountBle = 0;
 	cydUniqueWifi.begin(12 * 1024);
@@ -2872,6 +2881,14 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			bl.close();
 		}
 		Serial.println("BOOTLOGEND");
+	} else if (fromUsb && line == "diag log") {
+		// USB-only: the per-minute link diagnostics (see diagBleLines).
+		File df = SD.open("/diag.txt", FILE_READ);
+		if (df) {
+			while (df.available()) { String l = df.readStringUntil('\n'); l.replace("\r", ""); Serial.print("DIAG "); Serial.println(l); }
+			df.close();
+		}
+		Serial.println("DIAGEND");
 	} else if (fromUsb && line == "sd list") {
 		// USB-only: list every session CSV on the card (name + size), so the
 		// desktop tool can pull logs over the serial cable without WiFi or
@@ -3248,6 +3265,7 @@ static void handleIncomingLine(const String &line) {
 	if (!scanningActive) return; // discard capture data outside a session, same as before
 
 	if (line.startsWith("W,")) {
+		diagWifiLines++;
 		String rest = line.substring(2);
 		// bssid,ssid,authMode,isoTimestamp,channel,freqMHz,rssi,lat,lon,alt,acc
 		// - 11 fields, every one guaranteed comma-free at the source (ssid is
@@ -3341,6 +3359,9 @@ static void handleIncomingLine(const String &line) {
 		int c8 = rest.indexOf(',', c7 + 1);
 		double acc = c8 < 0 ? rest.substring(c7 + 1).toDouble() : rest.substring(c7 + 1, c8).toDouble();
 		String mfgHex = c8 < 0 ? "" : rest.substring(c8 + 1); // trailing field - only present now that wifi_node forwards ble_node's raw manufacturer data (see its handleBleLinkLine())
+		diagBleLines++; // counted before the home-zone check: proves the line arrived at all
+		lastBleLineMs = millis();
+		if (!(lat == 0.0 && lon == 0.0)) diagBleLinesFix++;
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone
 		// Location-less BLE (no fix, 0,0) still streams to the phone's live tools
 		// but isn't written to the SD log/upload, and is counted once per run
@@ -3734,6 +3755,26 @@ void loop() {
 			if (WARDRIVE_DEBUG) Serial.println("[boot] resuming scan from before power loss");
 			logEvent("resuming scan after power loss", COLOR_TEXT_DIM);
 		}
+	}
+
+	if (scanningActive && millis() - lastDiagMs >= 60000) {
+		lastDiagMs = millis();
+		char d[200];
+		snprintf(d, sizeof(d), "t=%lu up=%lus fix=%d wlines=%lu blines=%lu blinesFix=%lu wifiRows=%lu bleRows=%lu wifiUniq=%lu bleUniq=%lu heap=%lu",
+				 (unsigned long)nowEpochEstimate(), (unsigned long)(millis() / 1000), gpsFixKnown ? 1 : 0,
+				 (unsigned long)diagWifiLines, (unsigned long)diagBleLines, (unsigned long)diagBleLinesFix,
+				 (unsigned long)wigleWifi.rowsWritten(), (unsigned long)wigleBle.rowsWritten(),
+				 (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun, (unsigned long)ESP.getFreeHeap());
+		if (WARDRIVE_DEBUG) Serial.printf("[diag] %s\n", d);
+		if (sdOk) {
+			File df = SD.open("/diag.txt", FILE_APPEND);
+			if (df && df.size() > 48000) { df.close(); SD.remove("/diag.txt"); df = SD.open("/diag.txt", FILE_WRITE); }
+			if (df) { df.println(d); df.close(); }
+		}
+	}
+	if (scanningActive && millis() - lastBleLineMs > BLE_SILENT_WARN_MS && millis() - lastBleSilentWarnMs > 60000) {
+		lastBleSilentWarnMs = millis();
+		logEvent("BT node silent 2+ min - check its power/cable", COLOR_RED);
 	}
 
 	if (WARDRIVE_DEBUG && millis() - lastHeartbeatMs > HEARTBEAT_MS) {

@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.Build
+import android.os.PowerManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -177,6 +178,11 @@ class ScanService : Service(), RigLinkManager.Listener {
     }
 
     var running = false; private set
+    private var runWakeLock: PowerManager.WakeLock? = null
+
+    private fun releaseRunWakeLock() {
+        try { if (runWakeLock?.isHeld == true) runWakeLock?.release() } catch (_: Exception) {}
+    }
     // True while a run is active but scanning is temporarily suspended -
     // distinct from `running`, which stays true the whole time (pausing
     // doesn't end or finalize the run the way stopRun() does). Only
@@ -452,6 +458,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     }
 
     override fun onDestroy() {
+        releaseRunWakeLock()
         instance = null
         mainHandler.removeCallbacks(relayTicker)
         mainHandler.removeCallbacks(watchSweep)
@@ -498,6 +505,15 @@ class ScanService : Service(), RigLinkManager.Listener {
             logRunEvent("couldn't start in the background ($reason) - asking to tap in")
             showJoinPrompt()
             return
+        }
+        // Keep the CPU (not the screen) awake for the run: the foreground service keeps the app
+        // alive, but with the screen off the phone still sleeps between events, stalling the
+        // timed work (WiFi cache reads, cell scans, radio refreshes). Released in stopRun().
+        try {
+            runWakeLock = runWakeLock ?: (getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NillOS:wardrive-run").apply { setReferenceCounted(false) }
+            runWakeLock?.acquire(RUN_WAKELOCK_MAX_MS)
+        } catch (_: Exception) {
         }
         (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager).cancel(JOIN_NOTIF_ID)
         logRunEvent("run started ($reason)")
@@ -583,6 +599,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (notifyRig) rigLink.sendScanStop()
 
         if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
+        releaseRunWakeLock()
         listener?.onRunStateChanged(false)
         updateExternalUi(force = true)
         spoken.onRunStopped(wifiCountThisRun, bleCountThisRun)
@@ -1113,6 +1130,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         const val ACTION_START = "com.dreknil.wardrivebridge.START_RUN"
         const val ACTION_STOP = "com.dreknil.wardrivebridge.STOP_RUN"
         private const val EXTERNAL_UI_INTERVAL_MS = 5_000L
+        // Safety cap so a run that's never stopped can't hold the CPU awake forever; the idle
+        // auto-stop normally ends a parked run long before this.
+        private const val RUN_WAKELOCK_MAX_MS = 12 * 3600_000L
 
         fun start(context: Context) {
             context.startService(Intent(context, ScanService::class.java))

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -137,7 +138,10 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        scanner.startScan(null, settings, callback)
+        // One empty (match-everything) filter instead of none: Android 8.1+ pauses *unfiltered*
+        // BLE scans while the screen is off, which silently stopped phone BLE logging with the
+        // phone locked or in a pocket. A filtered scan keeps running in the background.
+        scanner.startScan(listOf(ScanFilter.Builder().build()), settings, callback)
         scanning = true
     }
 

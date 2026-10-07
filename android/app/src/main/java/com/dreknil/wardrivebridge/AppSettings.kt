@@ -80,6 +80,20 @@ class AppSettings(context: Context) {
         get() = prefs.getString("paired_rig_address", "") ?: ""
         set(value) = prefs.edit().putString("paired_rig_address", value).apply()
 
+    /** Read the user's own Meshtastic radio during runs (MeshtasticRadioLink) and upload its
+     *  LoRa mesh nodes to WDGWars. The Meshtastic app can't be connected to the radio meanwhile. */
+    var meshCollect: Boolean
+        get() = prefs.getBoolean("mesh_collect", false)
+        set(value) = prefs.edit().putBoolean("mesh_collect", value).apply()
+
+    /** Bluetooth address and name of that radio (picked from the phone's paired devices). */
+    var meshRadioAddress: String
+        get() = prefs.getString("mesh_radio_address", "") ?: ""
+        set(value) = prefs.edit().putString("mesh_radio_address", value).apply()
+    var meshRadioName: String
+        get() = prefs.getString("mesh_radio_name", "") ?: ""
+        set(value) = prefs.edit().putString("mesh_radio_name", value).apply()
+
     /** Minutes between spoken run updates while driving; 0 = off. */
     var spokenUpdateMinutes: Int
         get() = prefs.getInt("spoken_update_minutes", 0)

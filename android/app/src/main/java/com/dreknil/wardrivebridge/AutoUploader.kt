@@ -21,13 +21,25 @@ object AutoUploader {
         Thread {
             val dao = AppDatabase.get(app).dao()
             // stopRun() deletes a run that never logged anything, on its own executor - skip those.
-            if (dao.observationsForRun(runId).isEmpty()) return@Thread
+            val observations = dao.observationCount(runId)
+            if (observations == 0 && dao.meshNodeCount(runId) == 0) return@Thread
+            if (observations == 0) { // mesh nodes only - nothing for the CSV
+                val mesh = MeshUploader.uploadRun(app, runId, settings.wdgwarsKey)
+                if (mesh.attempted && mesh.ok) dao.markUploaded(runId, System.currentTimeMillis())
+                if (mesh.attempted) Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(app, if (mesh.ok) "Run uploaded automatically (${mesh.message})" else "Auto-upload failed - retry from Logs (${mesh.message})", Toast.LENGTH_LONG).show()
+                }
+                return@Thread
+            }
             val file = CsvExporter.materialize(app, dao, runId) ?: return@Thread
             UploadManager(app).upload(file, settings.wigleToken, settings.wdgwarsKey) { result ->
-                val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk)
+                val mesh = MeshUploader.uploadRun(app, runId, settings.wdgwarsKey) // mesh nodes: WDGWars JSON upload
+                val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
+                    (!mesh.attempted || mesh.ok)
                 if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(app, if (allOk) "Run uploaded automatically" else "Auto-upload failed - retry from Logs", Toast.LENGTH_LONG).show()
+                    val meshNote = if (mesh.attempted) " (${mesh.message})" else ""
+                    Toast.makeText(app, if (allOk) "Run uploaded automatically$meshNote" else "Auto-upload failed - retry from Logs$meshNote", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()

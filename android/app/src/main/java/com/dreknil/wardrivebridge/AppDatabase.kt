@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [RunEntity::class, ObservationEntity::class, GnssSatelliteEntity::class],
-    version = 4,
+    entities = [RunEntity::class, ObservationEntity::class, GnssSatelliteEntity::class, MeshNodeEntity::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -66,10 +66,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Adds mesh_nodes: the Meshtastic LoRa nodes the user's own radio reported during a run
+        // (2026-10-07, see MeshNodeEntity). A new table only - existing runs are untouched.
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS mesh_nodes (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, runId INTEGER NOT NULL, nodeNum INTEGER NOT NULL, " +
+                        "nodeId TEXT NOT NULL, longName TEXT NOT NULL, shortName TEXT NOT NULL, hwModel INTEGER NOT NULL, " +
+                        "lat REAL NOT NULL, lon REAL NOT NULL, altitudeM INTEGER NOT NULL, positionTime INTEGER NOT NULL, " +
+                        "lastHeard INTEGER NOT NULL, snr REAL NOT NULL, hopsAway INTEGER NOT NULL, viaMqtt INTEGER NOT NULL, " +
+                        "heardLat REAL NOT NULL, heardLon REAL NOT NULL, heardAtMs INTEGER NOT NULL, updatedAtMs INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_mesh_nodes_runId_nodeNum ON mesh_nodes(runId, nodeNum)")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "wardrive.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { instance = it }
             }
     }

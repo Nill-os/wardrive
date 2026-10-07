@@ -93,6 +93,59 @@ class ScanService : Service(), RigLinkManager.Listener {
     private val dbExecutor = Executors.newSingleThreadExecutor()
     private var currentRunId: Long? = null
 
+    // ---- Meshtastic nodes from the user's own LoRa radio (see MeshtasticRadioLink) ----
+    private lateinit var meshLink: MeshtasticRadioLink
+    private val meshNodesThisRun = HashMap<Long, MeshNodeEntity>()
+    var meshNodeCountThisRun = 0; private set
+    private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
+        override fun onMeshConnected() { logRunEvent("mesh radio connected") }
+        override fun onMeshDisconnected() { logRunEvent("mesh radio disconnected") }
+        override fun onMeshLog(msg: String) { listener?.onRigLogLine(msg) }
+        override fun onMeshMessage(msg: MeshProto.Message) {
+            if (paused) return
+            val runId = currentRunId ?: return
+            when (msg) {
+                is MeshProto.Message.NodeInfo -> mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
+                is MeshProto.Message.Heard -> if (msg.from != 0L && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
+                    MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr), heardNow = true)
+                else -> {}
+            }
+        }
+    }
+
+    /** Folds a radio report into this run's row for that node: keeps whatever is already known
+     *  (name, position) when the new report lacks it, and stamps where this phone was when the
+     *  node was heard live. */
+    private fun mergeMeshNode(runId: Long, num: Long, n: MeshProto.Node, heardNow: Boolean) {
+        val prev = meshNodesThisRun[num]
+        val here = if (heardNow) locationTracker.lastLocation?.takeIf { locationTracker.hasFix() } else null
+        val pos = n.position
+        val merged = MeshNodeEntity(
+            id = prev?.id ?: 0,
+            runId = runId,
+            nodeNum = num,
+            nodeId = n.user?.id?.takeIf { it.length >= 8 } ?: prev?.nodeId ?: n.nodeId,
+            longName = n.user?.longName?.ifBlank { null } ?: prev?.longName ?: "",
+            shortName = n.user?.shortName?.ifBlank { null } ?: prev?.shortName ?: "",
+            hwModel = n.user?.hwModel ?: prev?.hwModel ?: 0,
+            lat = pos?.lat ?: prev?.lat ?: 0.0,
+            lon = pos?.lon ?: prev?.lon ?: 0.0,
+            altitudeM = pos?.altitudeM ?: prev?.altitudeM ?: 0,
+            positionTime = pos?.time ?: prev?.positionTime ?: 0,
+            lastHeard = if (heardNow) System.currentTimeMillis() / 1000 else maxOf(n.lastHeard, prev?.lastHeard ?: 0),
+            snr = if (n.snr != 0f) n.snr else prev?.snr ?: 0f,
+            hopsAway = if (n.hopsAway >= 0) n.hopsAway else prev?.hopsAway ?: -1,
+            viaMqtt = if (heardNow) false else n.viaMqtt,
+            heardLat = here?.latitude ?: prev?.heardLat ?: 0.0,
+            heardLon = here?.longitude ?: prev?.heardLon ?: 0.0,
+            heardAtMs = if (here != null) System.currentTimeMillis() else prev?.heardAtMs ?: 0,
+            updatedAtMs = System.currentTimeMillis(),
+        )
+        if (prev == null) meshNodeCountThisRun++
+        meshNodesThisRun[num] = merged
+        dbExecutor.execute { dao.upsertMeshNode(merged) }
+    }
+
     var running = false; private set
     // True while a run is active but scanning is temporarily suspended -
     // distinct from `running`, which stays true the whole time (pausing
@@ -197,6 +250,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         appSettings = AppSettings(this)
         dao = AppDatabase.get(this).dao()
         rigLink = RigLinkManager(applicationContext, this)
+        meshLink = MeshtasticRadioLink(applicationContext, meshCallbacks)
         uploadRelay = RigUploadRelay(
             applicationContext, appSettings,
             send = { line -> rigLink.sendRaw(line) },
@@ -371,6 +425,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         spoken.shutdown()
         stopRun(notifyRig = false, reason = "app closed")
         rigLink.stop()
+        meshLink.stop()
         super.onDestroy()
     }
 
@@ -446,6 +501,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (hasLocationPermission()) wifiScanner.start()
         if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
         if (hasCellPermission()) cellScanner.start()
+        meshNodesThisRun.clear()
+        meshNodeCountThisRun = 0
+        if (appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission()) meshLink.start(appSettings.meshRadioAddress)
         if (notifyRig) rigLink.sendScanStart()
 
         startForeground(NOTIF_ID, buildNotification())
@@ -463,6 +521,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         wifiScanner.stop()
         bleScanner.stop()
         cellScanner.stop()
+        meshLink.stop() // frees the radio for the Meshtastic app again
+        if (meshNodeCountThisRun > 0) logRunEvent("mesh: $meshNodeCountThisRun nodes this run")
         // A run that starts and stops without ever logging anything (a quick
         // rig reconnect glitch, idle auto-stop right after a false start)
         // shouldn't leave a permanent empty entry behind - same reasoning
@@ -471,7 +531,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         currentRunId = null
         if (finishedRunId != null) {
             dbExecutor.execute {
-                if (dao.observationsForRun(finishedRunId).isEmpty()) dao.deleteRunWithObservations(finishedRunId)
+                if (dao.observationsForRun(finishedRunId).isEmpty() && dao.meshNodeCount(finishedRunId) == 0) dao.deleteRunWithObservations(finishedRunId)
             }
         }
         if (notifyRig) rigLink.sendScanStop()

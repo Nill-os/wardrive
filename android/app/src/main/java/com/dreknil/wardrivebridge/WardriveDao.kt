@@ -66,6 +66,7 @@ interface WardriveDao {
     @Transaction
     fun deleteRunWithObservations(runId: Long) {
         deleteObservationsForRun(runId)
+        deleteMeshNodesForRun(runId)
         deleteRunRow(runId)
     }
 
@@ -77,7 +78,7 @@ interface WardriveDao {
 
     @Transaction
     fun deleteRunsOlderThan(cutoffMs: Long) {
-        for (id in runIdsOlderThan(cutoffMs)) deleteObservationsForRun(id)
+        for (id in runIdsOlderThan(cutoffMs)) { deleteObservationsForRun(id); deleteMeshNodesForRun(id) }
         deleteRunRowsOlderThan(cutoffMs)
     }
 
@@ -295,4 +296,20 @@ interface WardriveDao {
     // currently in range. Ordered newest-first; the picker filters/caps it.
     @Query("SELECT mac, label, type FROM observations WHERE id IN (SELECT MAX(id) FROM observations GROUP BY mac) ORDER BY id DESC")
     fun knownDevicesForWatch(): List<WatchDeviceRow>
+
+    // ---- Meshtastic nodes (MeshtasticRadioLink / MeshUploader) ----
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    fun upsertMeshNode(node: MeshNodeEntity)
+
+    @Query("SELECT * FROM mesh_nodes WHERE runId = :runId")
+    fun meshNodesForRun(runId: Long): List<MeshNodeEntity>
+
+    @Query("SELECT COUNT(*) FROM observations WHERE runId = :runId")
+    fun observationCount(runId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM mesh_nodes WHERE runId = :runId")
+    fun meshNodeCount(runId: Long): Int
+
+    @Query("DELETE FROM mesh_nodes WHERE runId = :runId")
+    fun deleteMeshNodesForRun(runId: Long)
 }

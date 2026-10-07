@@ -2046,6 +2046,12 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         Toast.makeText(this, "Uploading…", Toast.LENGTH_SHORT).show()
         Thread {
+            if (dao.observationCount(runId) == 0 && dao.meshNodeCount(runId) > 0) { // mesh nodes only - nothing for the CSV
+                val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
+                if (mesh.attempted && mesh.ok) dao.markUploaded(runId, System.currentTimeMillis())
+                runOnUiThread { Toast.makeText(this, if (mesh.attempted) mesh.message else "mesh: ${mesh.message}", Toast.LENGTH_LONG).show() }
+                return@Thread
+            }
             val file = CsvExporter.materialize(this, dao, runId)
             if (file == null) {
                 runOnUiThread { Toast.makeText(this, "No CSV to upload yet", Toast.LENGTH_SHORT).show() }
@@ -2057,10 +2063,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 // used OR, so with both a WiGLE token and a wdgwars key set, one
                 // target succeeding marked the whole run SENT even if the other
                 // failed, hiding the button with no way to retry the failed one.
-                val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk)
+                // Mesh nodes ride in WDGWars' JSON upload, not the CSV (see MeshUploader).
+                val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
+                val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
+                    (!mesh.attempted || mesh.ok)
                 if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
                 runOnUiThread {
                     val parts = mutableListOf<String>()
+                    if (mesh.attempted) parts.add(if (mesh.ok) mesh.message else "mesh: ${mesh.message}")
                     if (result.wdgwarsAttempted) parts.add("wdgwars: ${if (result.wdgwarsOk) "ok" + (uploadManager.summarizeWdgwars(result.wdgwarsMessage)?.let { " ($it)" } ?: "") else result.wdgwarsMessage}")
                     if (result.wigleAttempted) parts.add("WiGLE: ${if (result.wigleOk) "ok" else result.wigleMessage}")
                     Toast.makeText(this, parts.joinToString("  ·  "), Toast.LENGTH_LONG).show()

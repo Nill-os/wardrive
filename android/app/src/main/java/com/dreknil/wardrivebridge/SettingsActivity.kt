@@ -46,6 +46,9 @@ class SettingsActivity : AppCompatActivity() {
         binding.alertPineappleCheck.isChecked = settings.alertPineapple
         binding.autoUploadCheck.isChecked = settings.autoUploadOnWifi
         binding.tripModeCheck.isChecked = settings.tripMode
+        binding.meshCollectCheck.isChecked = settings.meshCollect
+        showMeshRadio()
+        binding.meshRadioButton.setOnClickListener { chooseMeshRadio() }
 
         // Keys are masked so they aren't readable over your shoulder; this reveals them briefly.
         binding.showKeysButton.setOnClickListener {
@@ -288,6 +291,11 @@ class SettingsActivity : AppCompatActivity() {
         pushRigVisualSettings()
         pushRigNetworkSettings()
         settings.tripMode = binding.tripModeCheck.isChecked
+        settings.meshCollect = binding.meshCollectCheck.isChecked
+        if (settings.meshCollect && settings.meshRadioAddress.isEmpty()) {
+            Toast.makeText(this, "Saved - choose your Meshtastic radio too, or no mesh nodes will be collected", Toast.LENGTH_LONG).show()
+            return
+        }
         val wantsSpeech = settings.spokenUpdateMinutes > 0 || settings.spokenTrackerAlerts
         val hasTtsEngine = packageManager.queryIntentServices(
             android.content.Intent(android.speech.tts.TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0,
@@ -299,5 +307,45 @@ class SettingsActivity : AppCompatActivity() {
         }
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
         finish()
+    }
+
+    private fun showMeshRadio() {
+        binding.meshRadioText.text = if (settings.meshRadioAddress.isEmpty()) "Radio: none chosen"
+        else "Radio: ${settings.meshRadioName.ifBlank { "unnamed" }} (${settings.meshRadioAddress})"
+    }
+
+    /** Picks the Meshtastic radio from the phone's paired Bluetooth devices, Meshtastic-looking names first. */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun chooseMeshRadio() {
+        if (android.os.Build.VERSION.SDK_INT >= 31 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 0)
+            Toast.makeText(this, "Allow Bluetooth access, then tap again", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
+        val bonded = try { adapter?.bondedDevices?.toList().orEmpty() } catch (_: SecurityException) { emptyList() }
+        if (bonded.isEmpty()) {
+            Toast.makeText(this, "No paired devices - pair the radio in Android's Bluetooth settings (or the Meshtastic app) first", Toast.LENGTH_LONG).show()
+            return
+        }
+        fun looksMesh(n: String) = n.contains("meshtastic", true) || Regex("_[0-9a-fA-F]{4}$").containsMatchIn(n)
+        val devices = bonded.sortedWith(compareBy({ !looksMesh(it.name ?: "") }, { it.name ?: "" }))
+        val labels = devices.map { "${it.name ?: "unnamed"}\n${it.address}" }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Choose your Meshtastic radio")
+            .setItems(labels) { _, i ->
+                settings.meshRadioAddress = devices[i].address
+                settings.meshRadioName = devices[i].name ?: ""
+                showMeshRadio()
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                settings.meshRadioAddress = ""
+                settings.meshRadioName = ""
+                showMeshRadio()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 }

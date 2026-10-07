@@ -208,6 +208,12 @@ class ScanService : Service(), RigLinkManager.Listener {
             lastFixForDistance?.let { prev -> if (running) totalDistanceMeters += prev.distanceTo(loc) }
             lastFixForDistance = loc
             listener?.onLocationChanged(loc)
+            // The rig falls back to this position when its own GPS has no fix (see the CYD's
+            // phonePosition()); it ignores anything over 50 m accuracy or older than 5 s.
+            if (loc.hasAccuracy() && loc.accuracy <= 50f) mainHandler.post {
+                if (rigConnected) rigLink.sendRaw(String.format(Locale.US, "app pos %.6f %.6f %.1f %.1f",
+                    loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else 0.0, loc.accuracy.toDouble()))
+            }
         }
         // Persisted for the Field Report's "GNSS Satellites" section (app-only,
         // never uploaded - see GnssSatelliteEntity's own comment). GnssStatus

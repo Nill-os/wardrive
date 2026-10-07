@@ -191,6 +191,25 @@ static uint32_t nowEpochEstimate() {
 	if (lastKnownEpoch != 0) return lastKnownEpoch + (millis() - epochSyncMs) / 1000;
 	return 0;
 }
+
+// The phone's own GPS fix ("app pos <lat> <lon> <alt> <acc>", sent about once a second while
+// linked) - the fallback POSITION when wifi_node's GPS has no fix: rows that arrive (or that this
+// board sniffs) without a position are tagged with it instead of being dropped, as long as it is
+// fresh and reasonably accurate.  Timestamped with nowEpochEstimate() (the phone's clock).
+double phoneLat = 0.0, phoneLon = 0.0, phoneAlt = 0.0, phoneAcc = 0.0;
+uint32_t phonePosMs = 0;
+uint32_t diagPhonePosRows = 0; // rows positioned by the phone this run (diag log)
+static const uint32_t PHONE_POS_MAX_AGE_MS = 5000;
+static const double PHONE_POS_MAX_ACC_M = 50.0;
+static bool phonePosition(double &lat, double &lon, double &alt, double &acc) {
+	if (phonePosMs == 0 || millis() - phonePosMs > PHONE_POS_MAX_AGE_MS) return false;
+	if (phoneAcc > PHONE_POS_MAX_ACC_M || nowEpochEstimate() < 1600000000UL) return false;
+	lat = phoneLat; lon = phoneLon; alt = phoneAlt; acc = phoneAcc;
+	return true;
+}
+// BLE devices tagged with the phone's position are logged once per run (with no rig fix,
+// ble_node re-sends every device every few seconds for the live tools).
+std::unordered_set<uint64_t> cydBlePhoneLogged;
 bool gpsFixKnown = false;
 uint32_t lastGpsFixMs = 0; // millis() of the last GPSPOS that carried a fix
 
@@ -542,6 +561,7 @@ void onRebootHandler();
 void onClearTargetsHandler();
 void onPauseLogHandler();
 static void handleWdstreamCommand(String line, bool fromUsb = false); // used by onReconnectHandler(), defined in the wdstream section further down
+static void handleIncomingLine(const String &line); // wifi_node's link lines; "test:inject" also feeds it
 void onFlushSdHandler();
 
 // ---- TARGETS tab: bounded ring buffer of recently-seen APs ----
@@ -2047,7 +2067,8 @@ uint32_t lastSdFlushMs = 0;
 static bool startScanning() {
 	wifiCountThisRun = 0;
 	bleCountThisRun = 0;
-	diagWifiLines = diagBleLines = diagBleLinesFix = 0;
+	diagWifiLines = diagBleLines = diagBleLinesFix = diagPhonePosRows = 0;
+	cydBlePhoneLogged.clear();
 	lastBleLineMs = lastDiagMs = millis(); // 2-minute grace before "BT node silent"
 	appCountWifi = 0;
 	appCountBle = 0;
@@ -2840,6 +2861,19 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 	} else if (line.startsWith("app time ")) {
 		uint32_t t = (uint32_t)line.substring(9).toInt();
 		if (t > 1600000000UL) { appEpoch = t; appEpochSyncMs = millis(); } // sanity: after 2020
+	} else if (line.startsWith("app pos ")) {
+		// "app pos <lat> <lon> <alt> <acc>" - the phone's GPS fix (see phonePosition()).
+		double v[4] = {0, 0, 0, 0};
+		String rest = line.substring(8);
+		for (int k = 0; k < 4; k++) {
+			rest.trim();
+			int sp = rest.indexOf(' ');
+			v[k] = (sp < 0 ? rest : rest.substring(0, sp)).toDouble();
+			rest = sp < 0 ? "" : rest.substring(sp + 1);
+		}
+		if (v[0] >= -90 && v[0] <= 90 && v[1] >= -180 && v[1] <= 180 && !(v[0] == 0.0 && v[1] == 0.0) && v[3] > 0) {
+			phoneLat = v[0]; phoneLon = v[1]; phoneAlt = v[2]; phoneAcc = v[3]; phonePosMs = millis();
+		}
 	} else if (line.startsWith("app counts ")) {
 		// "app counts <wifi> <ble>" - the phone's unique counts for the run it is
 		// running with us; only meaningful mid-run (a stale number must never
@@ -2943,6 +2977,11 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 		// physically touching the screen.
 		onDoubleClickHandler();
 		if (WARDRIVE_DEBUG) Serial.println("[test] upload button simulated");
+	} else if (line.startsWith("test:inject ")) {
+		// "test:inject <W,... or B,... line>" - feed a line as if wifi_node sent it. Test folder
+		// only (test:fakegps ...), so a made-up sighting can never reach a real session/upload.
+		if (!testFakeGps) Serial.println("[test] turn on test:fakegps first");
+		else { handleIncomingLine(line.substring(12)); Serial.println("[test] injected"); }
 	} else if (line == "test:link") {
 		onReconnectHandler();
 		if (WARDRIVE_DEBUG) Serial.println("[test] link button simulated");
@@ -3001,7 +3040,7 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			Serial.printf("[test] touch %d,%d (kb=%d net=%d buf='%s')\n", tx, ty, kbActive, netCfgActive, kbBuffer.c_str());
 		}
 	} else if (line.startsWith("test:fakegps ")) {
-		// "test:fakegps <lat> <lon>" / "test:fakegps off" - a pretend fix so
+		// "test:fakegps <lat> <lon>" / "nofix" / "off" - a pretend fix so
 		// logging, de-dup and uploads can be tested indoors. Only switchable
 		// while stopped, so a run never mixes real and test folders.
 		String arg = line.substring(13);
@@ -3012,6 +3051,13 @@ static void handleWdstreamCommand(String line, bool fromUsb) {
 			testFakeGps = false;
 			gpsFixKnown = false;
 			Serial.println("[test] fake GPS off");
+		} else if (arg == "nofix") {
+			// Test folder, but NO rig fix (wifi_node's position is ignored while testing) - for
+			// exercising the phone-position fallback ("app pos") without touching real sessions.
+			lastKnownLat = lastKnownLon = 0.0;
+			testFakeGps = true;
+			gpsFixKnown = false;
+			Serial.printf("[test] no rig fix - logging to %s\n", TEST_SESSION_DIR);
 		} else {
 			int sp = arg.indexOf(' ');
 			lastKnownLat = arg.substring(0, sp).toDouble();
@@ -3295,6 +3341,11 @@ static void handleIncomingLine(const String &line) {
 		double lon = rest.substring(c8 + 1, c9).toDouble();
 		double alt = rest.substring(c9 + 1, c10).toDouble();
 		double acc = rest.substring(c10 + 1).toDouble();
+		bool viaPhone = false;
+		if (lat == 0.0 && lon == 0.0 && phonePosition(lat, lon, alt, acc)) { // no rig fix: the phone's
+			iso = cydIsoTimestampFromEpoch(nowEpochEstimate());                   // position and clock
+			viaPhone = true;
+		}
 
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone - never logged, uploaded or mirrored
 		if (isNoMapSsid(ssid)) return; // _nomap opt-out
@@ -3315,6 +3366,7 @@ static void handleIncomingLine(const String &line) {
 		if (cydUniqueWifi.firstSeen(cydMacKeyFromString(bssid))) wifiCountThisRun++;
 		if (hasFix) {
 			wigleWifi.logWifi(bssid, ssid, authMode, iso, channel, freqMHz, rssi, lat, lon, alt, acc);
+			if (viaPhone) diagPhonePosRows++;
 			isNew = true;
 		} else {
 			isNew = cydWifiNoFixCounted.insert(cydMacKeyFromString(bssid)).second; // location-less: re-streamed for live RSSI, alert/log once
@@ -3362,6 +3414,11 @@ static void handleIncomingLine(const String &line) {
 		diagBleLines++; // counted before the home-zone check: proves the line arrived at all
 		lastBleLineMs = millis();
 		if (!(lat == 0.0 && lon == 0.0)) diagBleLinesFix++;
+		bool viaPhone = false;
+		if (lat == 0.0 && lon == 0.0 && phonePosition(lat, lon, alt, acc)) {
+			iso = cydIsoTimestampFromEpoch(nowEpochEstimate());
+			viaPhone = true;
+		}
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone
 		// Location-less BLE (no fix, 0,0) still streams to the phone's live tools
 		// but isn't written to the SD log/upload, and is counted once per run
@@ -3369,8 +3426,12 @@ static void handleIncomingLine(const String &line) {
 		bool bleHasFix = !(lat == 0.0 && lon == 0.0);
 		bool bleIsNew;
 		if (cydUniqueBle.firstSeen(cydMacKeyFromString(mac))) bleCountThisRun++; // unique devices this run
-		if (bleHasFix) {
+		if (bleHasFix && viaPhone && !cydBlePhoneLogged.insert(cydMacKeyFromString(mac)).second) {
+			bleIsNew = false; // already logged this run with the phone's position
+		} else if (bleHasFix) {
+			if (cydBlePhoneLogged.size() > 4000) cydBlePhoneLogged.clear(); // bound the heap
 			wigleBle.logBle(mac, name, iso, rssi, lat, lon, alt, acc);
+			if (viaPhone) diagPhonePosRows++;
 			bleIsNew = true;
 		} else {
 			bleIsNew = cydBleNoFixCounted.insert(cydMacKeyFromString(mac)).second;
@@ -3760,8 +3821,10 @@ void loop() {
 	if (scanningActive && millis() - lastDiagMs >= 60000) {
 		lastDiagMs = millis();
 		char d[200];
-		snprintf(d, sizeof(d), "t=%lu up=%lus fix=%d wlines=%lu blines=%lu blinesFix=%lu wifiRows=%lu bleRows=%lu wifiUniq=%lu bleUniq=%lu heap=%lu",
+		double tl, tn, ta, tc;
+		snprintf(d, sizeof(d), "t=%lu up=%lus fix=%d phone=%d phoneRows=%lu wlines=%lu blines=%lu blinesFix=%lu wifiRows=%lu bleRows=%lu wifiUniq=%lu bleUniq=%lu heap=%lu",
 				 (unsigned long)nowEpochEstimate(), (unsigned long)(millis() / 1000), gpsFixKnown ? 1 : 0,
+				 phonePosition(tl, tn, ta, tc) ? 1 : 0, (unsigned long)diagPhonePosRows,
 				 (unsigned long)diagWifiLines, (unsigned long)diagBleLines, (unsigned long)diagBleLinesFix,
 				 (unsigned long)wigleWifi.rowsWritten(), (unsigned long)wigleBle.rowsWritten(),
 				 (unsigned long)wifiCountThisRun, (unsigned long)bleCountThisRun, (unsigned long)ESP.getFreeHeap());
@@ -3959,23 +4022,32 @@ void loop() {
 			String bssid = cydMacToString(obs.bssid);
 			String authMode = cydAuthModeStr(obs.authMode, obs.pmfCapable, obs.pmfRequired);
 
+			double pLat = lastKnownLat, pLon = lastKnownLon, pAlt = 0.0, pAcc = 30.0;
+			uint32_t pEpoch = lastKnownEpoch;
+			bool viaPhone = false;
 			if (!gpsFixKnown) {
-				// No usable position (see file header on staleness), so no CSV
-				// row - but still show it on TARGETS, so the tab proves the
-				// sniffer works even indoors.
-				pushApSighting(bssid, ssid, authMode, obs.rssi, false);
-				continue;
+				if (phonePosition(pLat, pLon, pAlt, pAcc)) { // no rig fix: the phone's position and clock
+					pEpoch = nowEpochEstimate();
+					viaPhone = true;
+				} else {
+					// No usable position (see file header on staleness), so no CSV
+					// row - but still show it on TARGETS, so the tab proves the
+					// sniffer works even indoors.
+					pushApSighting(bssid, ssid, authMode, obs.rssi, false);
+					continue;
+				}
 			}
-			if (inExclusionZone(lastKnownLat, lastKnownLon)) continue; // home exclusion zone
+			if (inExclusionZone(pLat, pLon)) continue; // home exclusion zone
 			if (isNoMapSsid(ssid)) continue; // _nomap opt-out
-			if (!cydShouldLogAp(obs.bssid, lastKnownLat, lastKnownLon, ssid.length() > 0)) {
+			if (!cydShouldLogAp(obs.bssid, pLat, pLon, ssid.length() > 0)) {
 				pushApSighting(bssid, ssid, authMode, obs.rssi, true); // already logged at this spot - just refresh its row
 				continue;
 			}
 
-			String iso = cydIsoTimestampFromEpoch(lastKnownEpoch);
+			String iso = cydIsoTimestampFromEpoch(pEpoch);
 			wigleWifi.logWifi(bssid, ssid, authMode, iso, obs.channel, cydChannelToFreqMHz(obs.channel),
-							  obs.rssi, lastKnownLat, lastKnownLon, 0.0, 30.0);
+							  obs.rssi, pLat, pLon, pAlt, pAcc);
+			if (viaPhone) diagPhonePosRows++;
 			if (cydUniqueWifi.firstSeen(cydMacToKey(obs.bssid))) wifiCountThisRun++; // unique devices this run
 			pushApSighting(bssid, ssid, authMode, obs.rssi, true);
 			checkApAlert(bssid, ssid);

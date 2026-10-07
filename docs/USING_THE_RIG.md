@@ -9,6 +9,8 @@
 5. When you get home, tap **STOP**. If a home geofence is set, the rig uploads by itself (dock mode). You can also tap **UPLOAD** at any time.
 
 > **No GPS fix means nothing is logged.** Indoors, the counts stay at 0 even while scanning. That's by design: a sighting with no location is useless to WiGLE.
+>
+> **The phone's GPS fills in.** While the phone app is connected, it sends its own position (when it's within 50 m accuracy) about once a second. If the rig's GPS has no fix, the rig logs with the phone's position and clock instead (only if that position is under 5 s old). The rig's own fix always wins when it has one. With the phone's position, each WiFi network is logged once per 40 m of movement and each BLE device once per run.
 
 ## The screen
 

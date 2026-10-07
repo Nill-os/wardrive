@@ -311,6 +311,9 @@ interface WardriveDao {
     @Query("SELECT COUNT(*) FROM observations WHERE runId = :runId")
     fun observationCount(runId: Long): Int
 
+    @Query("DELETE FROM mesh_nodes WHERE nodeNum = :nodeNum")
+    fun deleteMeshNodeEverywhere(nodeNum: Long)
+
     @Query("SELECT COUNT(*) FROM mesh_nodes WHERE runId = :runId")
     fun meshNodeCount(runId: Long): Int
 

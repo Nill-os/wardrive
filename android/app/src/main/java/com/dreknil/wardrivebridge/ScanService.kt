@@ -105,7 +105,10 @@ class ScanService : Service(), RigLinkManager.Listener {
         override fun onMeshDisconnected() { logRunEvent("mesh radio disconnected") }
         override fun onMeshLog(msg: String) { listener?.onRigLogLine(msg) }
         override fun onMeshMessage(msg: MeshProto.Message) {
-            if (msg is MeshProto.Message.MyInfo) { meshMyNodeNum = msg.nodeNum; meshSyncNodes = 0; return }
+            if (msg is MeshProto.Message.MyInfo) {
+                if (msg.nodeNum != meshMyNodeNum) { val own = msg.nodeNum; dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) } }
+                meshMyNodeNum = msg.nodeNum; meshSyncNodes = 0; return
+            }
             if (msg is MeshProto.Message.NodeInfo) meshSyncNodes++
             if (msg is MeshProto.Message.ConfigComplete) {
                 listener?.onRigLogLine("[mesh] node list read: radio knows $meshSyncNodes nodes, $meshNodeCountThisRun heard over the air this run")
@@ -131,6 +134,11 @@ class ScanService : Service(), RigLinkManager.Listener {
     /** Folds a radio report into this run's row for that node: keeps whatever is already known
      *  (name, position) when the new report lacks it, and stamps where this phone was when the
      *  node was heard live. */
+    private fun ownMeshNodeNum(address: String): Long? {
+        val hex = address.replace(":", "")
+        return if (hex.length == 12) hex.takeLast(8).toLongOrNull(16) else null
+    }
+
     private fun mergeMeshNode(runId: Long, num: Long, n: MeshProto.Node, heardNow: Boolean, direct: Boolean = false) {
         val prev = meshNodesThisRun[num]
         // Where the phone was only stands in for the node's position when the node was heard
@@ -520,7 +528,17 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (hasCellPermission()) cellScanner.start()
         meshNodesThisRun.clear()
         meshNodeCountThisRun = 0
-        if (appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission()) meshLink.start(appSettings.meshRadioAddress)
+        if (appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission()) {
+            // The radio's own node number is the low 4 bytes of its Bluetooth address (how
+            // Meshtastic derives it); the nodes-only read doesn't always send my_info, so this is
+            // what keeps the user's own radio - and its position, i.e. where they are - out of
+            // the finds. Also clears any rows an earlier build saved for it.
+            ownMeshNodeNum(appSettings.meshRadioAddress)?.let { own ->
+                meshMyNodeNum = own
+                dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) }
+            }
+            meshLink.start(appSettings.meshRadioAddress)
+        }
         if (notifyRig) rigLink.sendScanStart()
 
         startForeground(NOTIF_ID, buildNotification())

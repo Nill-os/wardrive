@@ -1240,6 +1240,13 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         val scanning = service?.running == true
         binding.telemetryScanStatus.text = "STATUS: " + if (scanning) "SCANNING" else "STOPPED"
+        // Re-sync the button with the service on every refresh: a run joined from the rig while
+        // the app was restarting could leave it reading START mid-run, and the button acts on the
+        // service's real state - so tapping "START" then stopped the run.
+        if (service != null) {
+            val label = if (scanning) "> STOP" else "> START"
+            if (binding.startStopButton.text != label) binding.startStopButton.text = label
+        }
         binding.telemetryScanStatus.setTextColor(ContextCompat.getColor(this, if (scanning) R.color.cyan_500 else R.color.text_secondary))
 
         val now = System.currentTimeMillis()

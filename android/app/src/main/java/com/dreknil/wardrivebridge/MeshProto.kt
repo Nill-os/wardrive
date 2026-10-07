@@ -86,6 +86,17 @@ object MeshProto {
         "HELTEC_MESH_TOWER_V2", 140 to "MESHNOLOGY_W10"
     )
 
+    /** The want_config_id of a ToRadio message, or -1 if it isn't one. */
+    fun readWantConfig(toRadio: ByteArray): Long = try {
+        val r = Reader(toRadio)
+        var nonce = -1L
+        while (r.hasMore()) {
+            val (f, w) = r.tag()
+            if (f == 3 && w == 0) nonce = r.varint() else r.skip(w)
+        }
+        nonce
+    } catch (_: Exception) { -1L }
+
     fun wantConfig(nonce: Int): ByteArray = byteArrayOf(0x18) + varint(nonce.toLong() and 0xffffffffL) // field 3, varint
 
     fun parseFromRadio(b: ByteArray): Message {
@@ -239,20 +250,23 @@ object MeshProto {
             return v
         }
         fun bytes(): ByteArray {
-            val n = varint().toInt()
+            val n = varint()
             if (n < 0 || pos + n > b.size) throw IllegalArgumentException("truncated bytes")
-            return b.copyOfRange(pos, pos + n).also { pos += n }
+            return b.copyOfRange(pos, pos + n.toInt()).also { pos += n.toInt() }
         }
         fun string(): String = String(bytes(), Charsets.UTF_8)
+        // Lengths come from other people's radios: a negative or oversized one must throw, not
+        // move pos backwards (which would loop forever on the main thread).
         fun skip(wire: Int) {
-            when (wire) {
-                0 -> varint()
-                1 -> pos += 8
-                2 -> { val n = varint().toInt(); pos += n }
-                5 -> pos += 4
+            val n: Long = when (wire) {
+                0 -> { varint(); return }
+                1 -> 8
+                2 -> varint()
+                5 -> 4
                 else -> throw IllegalArgumentException("unsupported wire type $wire")
             }
-            if (pos > b.size) throw IllegalArgumentException("truncated field")
+            if (n < 0 || pos + n > b.size) throw IllegalArgumentException("truncated field")
+            pos += n.toInt()
         }
     }
 }

@@ -309,6 +309,21 @@
             android:textColor="@color/text_primary"
             android:text="Collect Meshtastic nodes during runs" />
 
+        <CheckBox
+            android:id="@+id/meshBridgeCheck"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:text="Keep using the Meshtastic app during runs (bridge)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="With the bridge on, the Meshtastic app reaches the radio through this app while a run is going: in the Meshtastic app, open Connections → Network, add 127.0.0.1 manually and connect to it (this also frees the radio's Bluetooth). After the run, switch the Meshtastic app back to the radio over Bluetooth. Any app on this phone could reach the bridge while it's open, so leave it off if you don't need it."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:paddingBottom="6dp" />
+
         <TextView
             android:id="@+id/meshRadioText"
             android:layout_width="match_parent"

@@ -1299,15 +1299,15 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             val mesh = service.meshNodeCountThisRun
             // One setting (Settings -> counters) switches the dashboard, the CYD screen and
             // the map overlay together: WIGLE / BT / ... / WDGW, or the found-device view
-            // APS / BT / ... / ALL. The everything-count sits at the far right: WDGW is what goes
-            // to WDGWars and is sure to count (WiFi + BLE + mesh), ALL is every column added up.
+            // APS / BT / ... / ALL. The everything-count sits at the far right: WDGW is WiFi + BLE,
+            // the same figure the rig's CYD shows; ALL is every column added up.
             binding.btCountLabel.text = "BT"; binding.btCountBig.text = "$bleShown"
             if (appSettings.rigCountFoundMode) {
                 binding.wigleCountLabel.text = "APS"; binding.wigleCountBig.text = "$wifiShown"
                 binding.wdgwCountLabel.text = "ALL"; binding.wdgwCountBig.text = "${wifiShown + bleShown + cell + mesh}"
             } else {
                 binding.wigleCountLabel.text = "WIGLE"; binding.wigleCountBig.text = "$wifiShown"
-                binding.wdgwCountLabel.text = "WDGW"; binding.wdgwCountBig.text = "${wifiShown + bleShown + mesh}"
+                binding.wdgwCountLabel.text = "WDGW"; binding.wdgwCountBig.text = "${wifiShown + bleShown}"
             }
             binding.cellCountBig.text = "$cell"
             binding.meshCountBig.text = "$mesh"
@@ -1349,7 +1349,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 "TOTAL: $shown$newSuffix"
             }
 
-            updateMapStatusOverlay(service, wifiShown, wifiShown + bleShown + mesh, bleShown, mesh,
+            updateMapStatusOverlay(service, wifiShown, wifiShown + bleShown, bleShown, mesh,
                 all = wifiShown + bleShown + cell + mesh)
         }
 
@@ -2088,7 +2088,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         Thread {
             if (dao.observationCount(runId) == 0 && dao.meshNodeCount(runId) > 0) { // mesh nodes only - nothing for the CSV
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
-                if (mesh.attempted && mesh.ok) dao.markUploaded(runId, System.currentTimeMillis())
+                if ((mesh.attempted && mesh.ok) || mesh.nothingToSend) dao.markUploaded(runId, System.currentTimeMillis())
                 runOnUiThread { Toast.makeText(this, if (mesh.attempted) mesh.message else "mesh: ${mesh.message}", Toast.LENGTH_LONG).show() }
                 return@Thread
             }

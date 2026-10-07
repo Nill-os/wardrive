@@ -25,7 +25,7 @@ object AutoUploader {
             if (observations == 0 && dao.meshNodeCount(runId) == 0) return@Thread
             if (observations == 0) { // mesh nodes only - nothing for the CSV
                 val mesh = MeshUploader.uploadRun(app, runId, settings.wdgwarsKey)
-                if (mesh.attempted && mesh.ok) dao.markUploaded(runId, System.currentTimeMillis())
+                if ((mesh.attempted && mesh.ok) || mesh.nothingToSend) dao.markUploaded(runId, System.currentTimeMillis())
                 if (mesh.attempted) Handler(Looper.getMainLooper()).post {
                     Toast.makeText(app, if (mesh.ok) "Run uploaded automatically (${mesh.message})" else "Auto-upload failed - retry from Logs (${mesh.message})", Toast.LENGTH_LONG).show()
                 }

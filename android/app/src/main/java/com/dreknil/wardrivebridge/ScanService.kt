@@ -95,6 +95,7 @@ class ScanService : Service(), RigLinkManager.Listener {
 
     // ---- Meshtastic nodes from the user's own LoRa radio (see MeshtasticRadioLink) ----
     private lateinit var meshLink: MeshtasticRadioLink
+    private lateinit var meshBridge: MeshBridgeServer // lets the Meshtastic app share the radio during runs
     private val meshNodesThisRun = HashMap<Long, MeshNodeEntity>()
     var meshNodeCountThisRun = 0; private set
     private var meshMyNodeNum = 0L
@@ -102,7 +103,10 @@ class ScanService : Service(), RigLinkManager.Listener {
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
         override fun onMeshConnected() { logRunEvent("mesh radio connected") }
-        override fun onMeshDisconnected() { logRunEvent("mesh radio disconnected") }
+        override fun onMeshDisconnected() {
+            logRunEvent("mesh radio disconnected")
+            meshBridge.dropClient() // the Meshtastic app reconnects and re-reads once the radio is back
+        }
         override fun onMeshLog(msg: String) { listener?.onRigLogLine(msg) }
         override fun onMeshMessage(msg: MeshProto.Message) {
             if (msg is MeshProto.Message.MyInfo) {
@@ -276,6 +280,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         dao = AppDatabase.get(this).dao()
         rigLink = RigLinkManager(applicationContext, this)
         meshLink = MeshtasticRadioLink(applicationContext, meshCallbacks)
+        meshBridge = MeshBridgeServer(meshLink) { listener?.onRigLogLine(it) }
+        meshLink.onFromRadioRaw = { meshBridge.forward(it) }
         uploadRelay = RigUploadRelay(
             applicationContext, appSettings,
             send = { line -> rigLink.sendRaw(line) },
@@ -333,7 +339,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         // force-stop mid-run skips that and leaves an empty entry in the logs forever.
         // Nothing is running yet at this point, so every empty run is an orphan.
         dbExecutor.execute {
-            dao.allRunSummaries().filter { it.count == 0 }.forEach { dao.deleteRunWithObservations(it.id) }
+            // A run with only Meshtastic nodes (no WiFi/BLE/cell) isn't empty - keep it to upload.
+            dao.allRunSummaries().filter { it.count == 0 && dao.meshNodeCount(it.id) == 0 }.forEach { dao.deleteRunWithObservations(it.id) }
         }
         val days = appSettings.retentionDays
         if (days <= 0) return
@@ -450,6 +457,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         spoken.shutdown()
         stopRun(notifyRig = false, reason = "app closed")
         rigLink.stop()
+        meshBridge.stop()
         meshLink.stop()
         super.onDestroy()
     }
@@ -538,6 +546,7 @@ class ScanService : Service(), RigLinkManager.Listener {
                 dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) }
             }
             meshLink.start(appSettings.meshRadioAddress)
+            if (appSettings.meshBridge) meshBridge.start()
         }
         if (notifyRig) rigLink.sendScanStart()
 
@@ -556,6 +565,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         wifiScanner.stop()
         bleScanner.stop()
         cellScanner.stop()
+        meshBridge.stop()
         meshLink.stop() // frees the radio for the Meshtastic app again
         if (meshNodeCountThisRun > 0) logRunEvent("mesh: $meshNodeCountThisRun nodes this run")
         // A run that starts and stops without ever logging anything (a quick
@@ -575,7 +585,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         listener?.onRunStateChanged(false)
         updateExternalUi(force = true)
         spoken.onRunStopped(wifiCountThisRun, bleCountThisRun)
-        if (finishedRunId != null) AutoUploader.maybeUpload(this, finishedRunId)
+        // Queued behind the run's last observation / mesh-node writes on the same single-thread
+        // executor, so the upload never misses the final seconds of the run.
+        if (finishedRunId != null) dbExecutor.execute { AutoUploader.maybeUpload(this, finishedRunId) }
     }
 
     // Suspends scanning without ending the run - the run/dedup state/DB row

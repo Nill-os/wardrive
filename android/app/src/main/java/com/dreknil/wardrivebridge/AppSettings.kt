@@ -86,6 +86,12 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("mesh_collect", false)
         set(value) = prefs.edit().putBoolean("mesh_collect", value).apply()
 
+    /** During runs, let the Meshtastic app use the radio through this app (MeshBridgeServer,
+     *  127.0.0.1:4403) instead of over its own Bluetooth connection. */
+    var meshBridge: Boolean
+        get() = prefs.getBoolean("mesh_bridge", false)
+        set(value) = prefs.edit().putBoolean("mesh_bridge", value).apply()
+
     /** Bluetooth address and name of that radio (picked from the phone's paired devices). */
     var meshRadioAddress: String
         get() = prefs.getString("mesh_radio_address", "") ?: ""

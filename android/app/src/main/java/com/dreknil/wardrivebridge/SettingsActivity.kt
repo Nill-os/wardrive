@@ -47,6 +47,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.autoUploadCheck.isChecked = settings.autoUploadOnWifi
         binding.tripModeCheck.isChecked = settings.tripMode
         binding.meshCollectCheck.isChecked = settings.meshCollect
+        binding.meshBridgeCheck.isChecked = settings.meshBridge
         showMeshRadio()
         binding.meshRadioButton.setOnClickListener { chooseMeshRadio() }
 
@@ -292,6 +293,7 @@ class SettingsActivity : AppCompatActivity() {
         pushRigNetworkSettings()
         settings.tripMode = binding.tripModeCheck.isChecked
         settings.meshCollect = binding.meshCollectCheck.isChecked
+        settings.meshBridge = binding.meshBridgeCheck.isChecked
         if (settings.meshCollect && settings.meshRadioAddress.isEmpty()) {
             Toast.makeText(this, "Saved - choose your Meshtastic radio too, or no mesh nodes will be collected", Toast.LENGTH_LONG).show()
             return

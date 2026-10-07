@@ -20,7 +20,9 @@ import javax.crypto.spec.SecretKeySpec
  * (internet, not heard over the air) are left out. Call off the main thread.
  */
 object MeshUploader {
-    data class Result(val attempted: Boolean, val ok: Boolean, val message: String)
+    /** nothingToSend: a key is set but the run has no node WDGWars could take (none, or none
+     *  with a position / outside the home zone), so the run needs no upload. */
+    data class Result(val attempted: Boolean, val ok: Boolean, val message: String, val nothingToSend: Boolean = false)
 
     fun uploadRun(context: Context, runId: Long, wdgwarsKey: String): Result {
         if (wdgwarsKey.isBlank()) return Result(false, false, "skipped (no WDGWars key)")
@@ -44,7 +46,8 @@ object MeshUploader {
                 if (n.longName.isNotBlank()) put("name", n.longName)
             })
         }
-        if (items.length() == 0) return Result(false, false, if (nodes.isEmpty()) "no mesh nodes this run" else "no mesh node had a position")
+        if (items.length() == 0) return Result(false, false,
+            if (nodes.isEmpty()) "no mesh nodes this run" else "no mesh node had a position", nothingToSend = true)
         // The server answers "Invalid data format" unless the payload has its "networks" list,
         // even an empty one (checked against the live API 2026-10-07).
         val payload = JSONObject().put("networks", JSONArray()).put("meshcore_nodes", items).toString()

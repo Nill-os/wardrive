@@ -26,6 +26,19 @@ object CsvExporter {
             w.appendLine("WigleWifi-1.6,appRelease=1.0,model=WardriveBridge,release=1.0,device=Android,display=none,board=phone,brand=DIY")
             w.appendLine("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type")
             for (o in rows) {
+                if (o.type in CELL_TYPES) {
+                    val cell = wigleCell(o) ?: continue // incomplete tower identity: WiGLE drops these too
+                    val fcn = if (o.channel > 0) o.channel.toString() else ""
+                    w.appendLine(
+                        "%s,%s,%s,%s,%s,%s,%d,%.6f,%.6f,%.1f,%.1f,%s".format(
+                            Locale.US,
+                            cell.key, sanitize(cell.operatorName), cell.authMode, o.firstSeenIso,
+                            fcn, fcn, o.rssi,
+                            o.lat, o.lon, o.altitudeM, o.accuracyM, o.type,
+                        )
+                    )
+                    continue
+                }
                 w.appendLine(
                     "%s,%s,%s,%s,%d,%d,%d,%.6f,%.6f,%.1f,%.1f,%s".format(
                         Locale.US,
@@ -40,4 +53,37 @@ object CsvExporter {
     }
 
     private fun sanitize(s: String): String = s.replace(",", " ").replace("\n", " ").replace("\r", " ")
+
+    private val CELL_TYPES = setOf("GSM", "WCDMA", "LTE", "NR", "CDMA")
+
+    private class WigleCell(val key: String, val operatorName: String, val authMode: String)
+
+    /** A cell row the way the WiGLE app writes it (wiglenet/wigle-wifi-wardriving GsmOperator /
+     *  CellReceiver; api.wigle.net/csvFormat-1_6.html), from this app's internal identity
+     *  "<TYPE>-<mcc>-<mnc>-<lac|tac>-<cid|ci|nci>" (CDMA: "CDMA-<sid>-<nid>-<bid>"):
+     *  MAC = MCC+MNC_LAC_CID, SSID = carrier name, AuthMode = "<TYPE>;<MCC+MNC>", Channel and
+     *  Frequency = the EARFCN/ARFCN/UARFCN/NRARFCN. Returns null for a cell WiGLE would drop
+     *  (missing or out-of-range MCC/MNC/LAC/CID). */
+    private fun wigleCell(o: ObservationEntity): WigleCell? {
+        val p = o.mac.split('-')
+        if (o.type == "CDMA") {
+            if (p.size != 4) return null
+            val ids = p.drop(1).map { it.toLongOrNull() ?: return null }
+            if (ids.any { it < 0 || it >= Int.MAX_VALUE }) return null
+            return WigleCell(ids.joinToString("_"), "", "CDMA;")
+        }
+        if (p.size != 5) return null
+        val mcc = p[1]
+        var mnc = p[2]
+        val mccN = mcc.toIntOrNull() ?: return null
+        val mncN = mnc.toIntOrNull() ?: return null
+        if (mccN !in 1..999 || mncN !in 0..999) return null
+        if (mccN in 310..316 && mnc.length < 3) mnc = mnc.padStart(3, '0') // North America: 3-digit MNC (older rows stored it as a number)
+        val area = p[3].toLongOrNull() ?: return null
+        val cid = p[4].toLongOrNull() ?: return null
+        if (area <= 0 || area >= Int.MAX_VALUE) return null
+        if (cid <= 0 || (o.type != "NR" && cid >= Int.MAX_VALUE)) return null
+        val operator = mcc + mnc
+        return WigleCell("${operator}_${area}_$cid", CarrierLookup.carrierFor(o.mac) ?: "", "${o.type};$operator")
+    }
 }

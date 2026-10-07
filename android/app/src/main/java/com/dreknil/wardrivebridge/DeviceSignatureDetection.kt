@@ -75,7 +75,7 @@ object DeviceSignatureDetection {
     // Meshtastic's own published BLE service UUID (from their firmware's
     // BluetoothCommon code) - real, not reverse-engineered. Same phone-only
     // caveat as isDrone() above.
-    private const val MESHTASTIC_SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eaf4"
+    private const val MESHTASTIC_SERVICE_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd" // meshtastic/firmware BluetoothCommon.h (was mistyped ...eaf4, which never matched)
 
     fun isMeshRadio(serviceUuids: List<String>): Boolean =
         serviceUuids.any { it.equals(MESHTASTIC_SERVICE_UUID, ignoreCase = true) }

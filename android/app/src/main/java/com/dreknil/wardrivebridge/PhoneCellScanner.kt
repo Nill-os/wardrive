@@ -18,7 +18,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private data class CellReading(val identity: String, val rssi: Int, val rsrp: Int, val rsrq: Int)
+private data class CellReading(val identity: String, val rssi: Int, val rsrp: Int, val rsrq: Int, val fcn: Int = 0)
 
 /**
  * Periodically polls the cellular baseband for towers currently visible to
@@ -66,17 +66,17 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val ci = cell.cellIdentity
                     if (ci.ci == CellInfo.UNAVAILABLE) continue // no real cell ID - nothing useful to log
                     val ss = cell.cellSignalStrength
-                    CellReading("LTE-${v(ci.mcc)}-${v(ci.mnc)}-${v(ci.tac)}-${ci.ci}", ss.dbm, vOrZero(ss.rsrp), vOrZero(ss.rsrq))
+                    CellReading("LTE-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.tac)}-${ci.ci}", ss.dbm, vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
                 }
                 cell is CellInfoGsm -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading("GSM-${v(ci.mcc)}-${v(ci.mnc)}-${v(ci.lac)}-${ci.cid}", cell.cellSignalStrength.dbm, 0, 0)
+                    CellReading("GSM-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}", cell.cellSignalStrength.dbm, 0, 0, vOrZero(ci.arfcn))
                 }
                 cell is CellInfoWcdma -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading("WCDMA-${v(ci.mcc)}-${v(ci.mnc)}-${v(ci.lac)}-${ci.cid}", cell.cellSignalStrength.dbm, 0, 0)
+                    CellReading("WCDMA-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}", cell.cellSignalStrength.dbm, 0, 0, vOrZero(ci.uarfcn))
                 }
                 cell is CellInfoCdma -> {
                     val ci = cell.cellIdentity
@@ -85,12 +85,12 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                 }
                 Build.VERSION.SDK_INT >= 29 && cell is CellInfoNr -> {
                     val ci = cell.cellIdentity as CellIdentityNr
-                    if (ci.nci == CellInfo.UNAVAILABLE_LONG) continue
+                    if (ci.nci == CellInfo.UNAVAILABLE_LONG || ci.nci == 0L) continue // neighbour cells often carry no identity at all
                     val ss = cell.cellSignalStrength as CellSignalStrengthNr
                     val mcc = ci.mccString ?: "?"
                     val mnc = ci.mncString ?: "?"
                     val tac = if (ci.tac == CellInfo.UNAVAILABLE) "?" else ci.tac.toString()
-                    CellReading("NR-$mcc-$mnc-$tac-${ci.nci}", ss.dbm, vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq))
+                    CellReading("NR-$mcc-$mnc-$tac-${ci.nci}", ss.dbm, vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq), vOrZero(ci.nrarfcn))
                 }
                 else -> continue
             }
@@ -101,8 +101,10 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     mac = reading.identity,
                     label = "",
                     authOrType = cellTypeToken(cell),
-                    channel = 0,
-                    frequencyMHz = 0,
+                    // The channel number (EARFCN / ARFCN / UARFCN / NRARFCN), which WiGLE's CSV
+                    // format carries in both Channel and Frequency for cell rows (0 = not reported).
+                    channel = reading.fcn,
+                    frequencyMHz = reading.fcn,
                     rssi = reading.rssi,
                     lat = 0.0, lon = 0.0, altitudeM = 0.0, accuracyM = 0.0,
                     firstSeenIso = isoFormat.format(Date()),
@@ -124,6 +126,13 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
     // for MCC/MNC/TAC on some carriers/readings) - showing that raw number
     // is meaningless noise, so it becomes "?" instead.
     private fun v(value: Int): String = if (value == CellInfo.UNAVAILABLE) "?" else value.toString()
+
+    // MCC/MNC as the modem reports them, so an MNC keeps its leading zero ("004" is not "4";
+    // WiGLE's cell key is MCC+MNC concatenated). The *String getters are API 28+.
+    @Suppress("DEPRECATION")
+    private fun mcc(str: String?, int: Int): String = if (Build.VERSION.SDK_INT >= 28) str ?: "?" else v(int)
+    @Suppress("DEPRECATION")
+    private fun mnc(str: String?, int: Int): String = if (Build.VERSION.SDK_INT >= 28) str ?: "?" else v(int)
 
     private fun cellTypeToken(cell: CellInfo): String = when (cell) {
         is CellInfoLte -> "LTE"

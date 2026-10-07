@@ -31,6 +31,9 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
      *  so it never receives the tail of a node-list read this app asked for before it connected. */
     @Volatile private var clientActive = false
 
+    /** True while the Meshtastic app is connected through the bridge. */
+    val hasClient: Boolean get() = client != null && clientActive
+
     fun start() {
         if (server != null) return
         val s = try {

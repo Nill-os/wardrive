@@ -101,6 +101,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     private var meshMyNodeNum = 0L
     private var meshSyncNodes = 0 // NodeInfos in the current node-list read, for the log line
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
+    val meshAppBridged get() = ::meshBridge.isInitialized && meshBridge.hasClient
     private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
         override fun onMeshConnected() { logRunEvent("mesh radio connected") }
         override fun onMeshDisconnected() {

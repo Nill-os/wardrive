@@ -691,6 +691,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         while (terminalLines.size > 200) terminalLines.removeFirst()
         binding.terminalLog.text = terminalLines.joinToString("\n")
         binding.terminalScroll.post { binding.terminalScroll.fullScroll(View.FOCUS_DOWN) }
+        if (line.startsWith("[mesh]")) updateStatusText() // radio / bridge state changed - refresh MESH: in the header
 
         // The rig announces its service-mode URL (log web server) as
         // "WD:SERVICE on ip=<addr> [pw=<code>]" the moment it joins WiFi - pop the
@@ -1201,6 +1202,21 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             else -> " CYD: DOWN"
         }
         binding.telemetryLinkText.setTextColor(ContextCompat.getColor(this, if (rigConnected) R.color.cyan_500 else R.color.text_secondary))
+
+        // The user's Meshtastic radio: only connected during runs (that's when the app logs nodes).
+        val meshOn = appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty()
+        binding.loraDot.visibility = if (meshOn) View.VISIBLE else View.GONE
+        binding.telemetryLoraText.visibility = if (meshOn) View.VISIBLE else View.GONE
+        if (meshOn) {
+            val (loraLabel, loraColor) = when {
+                service?.running != true -> " MESH: OFF" to R.color.text_secondary
+                service.meshRadioConnected -> (if (service.meshAppBridged) " MESH: UP+APP" else " MESH: UP") to R.color.cyan_500
+                else -> " MESH: DOWN" to R.color.red_error
+            }
+            binding.telemetryLoraText.text = loraLabel
+            binding.telemetryLoraText.setTextColor(ContextCompat.getColor(this, loraColor))
+            binding.loraDot.setTextColor(ContextCompat.getColor(this, if (loraColor == R.color.text_secondary) R.color.text_secondary else if (loraColor == R.color.cyan_500) R.color.green_ok else R.color.red_error))
+        }
 
         // Only meaningful once the phone's own USB link to cyd_node is up - with no link at all
         // there's no way to know whether the rest of the rig is reachable, so hide it rather than

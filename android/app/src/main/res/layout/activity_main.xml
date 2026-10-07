@@ -114,12 +114,38 @@
 
                         <TextView
                             android:id="@+id/telemetryLinkText"
-                            android:layout_width="0dp"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
                             android:text=" CYD: DOWN"
                             android:textColor="@color/text_secondary"
                             android:textSize="11sp" />
+
+                        <!-- The user's Meshtastic radio (MeshtasticRadioLink): UP while this app
+                             holds its Bluetooth link during a run, +APP when the Meshtastic app is
+                             bridged through it. Hidden when mesh collection is off in Settings. -->
+                        <TextView
+                            android:id="@+id/loraDot"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="●"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp"
+                            android:layout_marginStart="8dp"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/telemetryLoraText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text=" MESH: OFF"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
+
+                        <View
+                            android:layout_width="0dp"
+                            android:layout_height="1dp"
+                            android:layout_weight="1" />
 
                         <!-- Whether cyd_node (the board the phone is USB-linked to, above) can
                              itself reach the rest of the rig over its own mesh link - a third,

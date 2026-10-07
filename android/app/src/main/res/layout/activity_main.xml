@@ -159,11 +159,12 @@
 
                     <!-- Multimeter-style counter grid, fixed-width evenly
                          spaced columns separated by divider lines - same
-                         WIGLE/WDGW/BT/CELL semantics as the rig's own CYD
-                         dashboard (WIGLE = unique WiFi APs, WDGW = the full
-                         WiFi+BLE take, BT = unique BLE devices), except CELL
-                         is real here - the phone has an actual cellular
-                         modem the rig's ESP32 boards don't. -->
+                         WIGLE/BT/WDGW semantics as the rig's own CYD
+                         dashboard (WIGLE = unique WiFi APs, BT = unique BLE
+                         devices), plus CELL (the phone's own modem) and MESH
+                         (Meshtastic nodes from the user's LoRa radio). The
+                         everything-count (WDGW, or ALL in found mode) sits at
+                         the far right. -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -182,11 +183,15 @@
 
                             <TextView
                                 android:id="@+id/wigleCountBig"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:autoSizeTextType="uniform"
+                                android:autoSizeMinTextSize="14sp"
+                                android:autoSizeMaxTextSize="30sp"
                                 android:text="0"
                                 android:textColor="@color/cyan_500"
-                                android:textSize="32sp"
                                 android:textStyle="bold" />
 
                             <TextView
@@ -212,43 +217,16 @@
                             android:gravity="center">
 
                             <TextView
-                                android:id="@+id/wdgwCountBig"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="0"
-                                android:textColor="@color/cyan_500"
-                                android:textSize="32sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:id="@+id/wdgwCountLabel"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="WDGW"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <View
-                            android:layout_width="1dp"
-                            android:layout_height="match_parent"
-                            android:background="@color/text_secondary" />
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center">
-
-                            <TextView
                                 android:id="@+id/btCountBig"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:autoSizeTextType="uniform"
+                                android:autoSizeMinTextSize="14sp"
+                                android:autoSizeMaxTextSize="30sp"
                                 android:text="0"
                                 android:textColor="@color/cyan_500"
-                                android:textSize="32sp"
                                 android:textStyle="bold" />
 
                             <TextView
@@ -275,17 +253,90 @@
 
                             <TextView
                                 android:id="@+id/cellCountBig"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:autoSizeTextType="uniform"
+                                android:autoSizeMinTextSize="14sp"
+                                android:autoSizeMaxTextSize="30sp"
                                 android:text="0"
                                 android:textColor="@color/cyan_500"
-                                android:textSize="32sp"
                                 android:textStyle="bold" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="CELL"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="1dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/text_secondary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/meshCountBig"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:autoSizeTextType="uniform"
+                                android:autoSizeMinTextSize="14sp"
+                                android:autoSizeMaxTextSize="30sp"
+                                android:text="0"
+                                android:textColor="@color/cyan_500"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="MESH"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="1dp"
+                            android:layout_height="match_parent"
+                            android:background="@color/text_secondary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/wdgwCountBig"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:autoSizeTextType="uniform"
+                                android:autoSizeMinTextSize="14sp"
+                                android:autoSizeMaxTextSize="30sp"
+                                android:text="0"
+                                android:textColor="@color/cyan_500"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/wdgwCountLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="WDGW"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="11sp"
                                 android:textStyle="bold" />

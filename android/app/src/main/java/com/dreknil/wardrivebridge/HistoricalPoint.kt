@@ -43,6 +43,15 @@ fun HistoricalPoint.formatDetails(): String = buildString {
         appendLine("Last seen: $firstSeen")
         return@buildString
     }
+    if (type == "MESH") { // a Meshtastic node (see MainActivity's MeshNodeEntity.toHistoricalPoint())
+        appendLine("Node: $mac")
+        appendLine("Name: ${label.ifBlank { "(unnamed)" }}")
+        appendLine("Hardware: $authType")
+        if (rssi != 0) appendLine("SNR: $rssi dB")
+        if (lat != 0.0 || lon != 0.0) appendLine("Location: %.6f, %.6f".format(lat, lon)) else appendLine("Location: none reported")
+        appendLine("Last heard: $firstSeen")
+        return@buildString
+    }
     appendLine("MAC: $mac")
     appendLine("Label: ${label.ifBlank { "(hidden)" }}")
     appendLine("Type: $type")

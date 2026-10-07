@@ -1262,15 +1262,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (groups == null) {
             val foundMode = appSettings.rigCountFoundMode
             binding.wigleCountLabel.text = if (foundMode) "APS" else "WIGLE"
-            binding.wdgwCountLabel.text = if (foundMode) "BT" else "WDGW"
-            binding.btCountLabel.text = if (foundMode) "ALL" else "BT"
+            binding.btCountLabel.text = "BT"
+            binding.wdgwCountLabel.text = if (foundMode) "ALL" else "WDGW"
             binding.wigleCountBig.text = "0"
             binding.wdgwCountBig.text = "0"
             binding.btCountBig.text = "0"
             binding.cellCountBig.text = "0"
+            binding.meshCountBig.text = "0"
             binding.countsStatus.text = "RIG WIFI 0 · RIG BT 0 · PHONE WIFI 0 · PHONE BT 0"
             binding.totalStatus.text = "TOTAL: 0"
-            updateMapStatusOverlay(service, 0, 0, 0)
+            updateMapStatusOverlay(service, 0, 0, 0, 0)
         } else {
             val rigWifi = groups.getValue(Source.RIG_WIFI).size
             val rigBle = groups.getValue(Source.RIG_BLE).size
@@ -1287,19 +1288,22 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             // drawTabMain() for the original design this mirrors.
             val wifiShown = service.wifiCountThisRun
             val bleShown = service.bleCountThisRun
+            // Meshtastic nodes heard over the air this run by the user's own LoRa radio.
+            val mesh = service.meshNodeCountThisRun
             // One setting (Settings -> counters) switches the dashboard, the CYD screen and
-            // the map overlay together: WIGLE / WDGW / BT, or the found-device view
-            // APS / BT / ALL in the same order the CYD draws it.
+            // the map overlay together: WIGLE / BT / ... / WDGW, or the found-device view
+            // APS / BT / ... / ALL. The everything-count sits at the far right: WDGW is what goes
+            // to WDGWars and is sure to count (WiFi + BLE + mesh), ALL is every column added up.
+            binding.btCountLabel.text = "BT"; binding.btCountBig.text = "$bleShown"
             if (appSettings.rigCountFoundMode) {
                 binding.wigleCountLabel.text = "APS"; binding.wigleCountBig.text = "$wifiShown"
-                binding.wdgwCountLabel.text = "BT"; binding.wdgwCountBig.text = "$bleShown"
-                binding.btCountLabel.text = "ALL"; binding.btCountBig.text = "${wifiShown + bleShown}"
+                binding.wdgwCountLabel.text = "ALL"; binding.wdgwCountBig.text = "${wifiShown + bleShown + cell + mesh}"
             } else {
                 binding.wigleCountLabel.text = "WIGLE"; binding.wigleCountBig.text = "$wifiShown"
-                binding.wdgwCountLabel.text = "WDGW"; binding.wdgwCountBig.text = "${wifiShown + bleShown}"
-                binding.btCountLabel.text = "BT"; binding.btCountBig.text = "$bleShown"
+                binding.wdgwCountLabel.text = "WDGW"; binding.wdgwCountBig.text = "${wifiShown + bleShown + mesh}"
             }
             binding.cellCountBig.text = "$cell"
+            binding.meshCountBig.text = "$mesh"
             val health = service.rigHealth?.takeIf { service.rigConnected && System.currentTimeMillis() - it.atMs < 10_000 }
             // The rig's own totals (its ESP32 and CYD scanners combined - the same numbers as the
             // CYD screen) when it reports them; otherwise what the phone has received from it.
@@ -1328,7 +1332,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                     if (health.gpsFix && health.sdOk && !nodeDown) R.color.cyan_500 else R.color.red_error))
             }
 
-            val shown = wifiShown + bleShown + cell
+            val shown = wifiShown + bleShown + cell + mesh
             val excluded = service.excludedCount
             val newFinds = service.newThisRun
             val newSuffix = if (newFinds > 0) "  ·  NEW $newFinds" else ""
@@ -1338,7 +1342,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 "TOTAL: $shown$newSuffix"
             }
 
-            updateMapStatusOverlay(service, wifiShown, wifiShown + bleShown, bleShown)
+            updateMapStatusOverlay(service, wifiShown, wifiShown + bleShown + mesh, bleShown, mesh,
+                all = wifiShown + bleShown + cell + mesh)
         }
 
         // Live speed/heading/distance - the same totalDistanceMeters Session
@@ -1383,7 +1388,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     // at a glance while actually looking at the map, which is what you're doing most of a drive.
     // Deliberately never hidden, including while stopped - the point is a glance answers "is
     // everything connected and running" without needing to already be running first (2026-09-28).
-    private fun updateMapStatusOverlay(service: ScanService?, wigle: Int, wdgw: Int, bt: Int) {
+    private fun updateMapStatusOverlay(service: ScanService?, wigle: Int, wdgw: Int, bt: Int, mesh: Int, all: Int = wdgw) {
         val running = service?.running == true
         val paused = service?.paused == true
         val rigConnected = service?.rigConnected == true
@@ -1406,19 +1411,18 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             colorOf(if (running && !paused) R.color.green_ok else R.color.red_error),
         )
         builder.append("  ·  ")
-        if (appSettings.rigCountFoundMode) { // same order/colors as the CYD's found-device view
-            appendColored("APS $wigle", colorOf(R.color.cyan_500))
+        // Same order as the dashboard: WiFi, BT, mesh (only when collecting it), then the
+        // everything-count at the end.
+        val found = appSettings.rigCountFoundMode
+        appendColored("${if (found) "APS" else "WIGLE"} $wigle", colorOf(R.color.cyan_500))
+        builder.append("  ·  ")
+        appendColored("BT $bt", colorOf(R.color.green_ok))
+        if (appSettings.meshCollect) {
             builder.append("  ·  ")
-            appendColored("BT $bt", colorOf(R.color.green_ok))
-            builder.append("  ·  ")
-            appendColored("ALL $wdgw", colorOf(R.color.purple_500))
-        } else {
-            appendColored("WIGLE $wigle", colorOf(R.color.cyan_500))
-            builder.append("  ·  ")
-            appendColored("WDGW $wdgw", colorOf(R.color.purple_500))
-            builder.append("  ·  ")
-            appendColored("BT $bt", colorOf(R.color.green_ok))
+            appendColored("MESH $mesh", colorOf(R.color.cyan_500))
         }
+        builder.append("  ·  ")
+        appendColored(if (found) "ALL $all" else "WDGW $wdgw", colorOf(R.color.purple_500))
         builder.append("  ·  ")
         appendColored(
             if (rigConnected) "CYD ${service?.rigLink?.connectionType ?: "✓"}" else "CYD ✗",
@@ -1675,10 +1679,12 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         Thread {
             val points = dao.latestPerMac().map { it.toHistoricalPoint() }
             val satellites = dao.allGnssSatellites()
+            val meshNodes = dao.allMeshNodes().distinctBy { it.nodeNum }.filter { !it.viaMqtt }.map { it.toHistoricalPoint() }
             runOnUiThread {
-                binding.logsEmptyText.visibility = if (points.isEmpty()) View.VISIBLE else View.GONE
-                binding.logsList.visibility = if (points.isEmpty()) View.GONE else View.VISIBLE
-                historicalAdapter.submitList(buildHistoricalGroupedFeed(points, satellites))
+                val empty = points.isEmpty() && meshNodes.isEmpty()
+                binding.logsEmptyText.visibility = if (empty) View.VISIBLE else View.GONE
+                binding.logsList.visibility = if (empty) View.GONE else View.VISIBLE
+                historicalAdapter.submitList(buildHistoricalGroupedFeed(points, satellites, meshNodes))
             }
         }.start()
     }
@@ -1707,6 +1713,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun buildHistoricalGroupedFeed(
         points: List<HistoricalPoint>,
         satellites: List<GnssSatelliteEntity> = emptyList(),
+        meshNodes: List<HistoricalPoint> = emptyList(),
     ): List<HistoricalFeedItem> {
         val query = logsSearchQuery.trim()
         val filteredPoints = if (query.isEmpty()) points else points.filter { matchesQuery(it.label, it.mac, query) }
@@ -1749,6 +1756,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             val expanded = if (query.isNotEmpty()) list.isNotEmpty() else (expandedHistGroups[label] ?: false)
             out.add(HistoricalFeedItem.Header(label, list.size, expanded))
             if (expanded) out.addAll(list.map { HistoricalFeedItem.Row(it) })
+        }
+
+        // Meshtastic Nodes: LoRa mesh nodes the user's own radio heard during runs (mesh_nodes,
+        // one entry per node across all runs) - a separate source from "Mesh Radios" above, which
+        // is mesh hardware spotted over Bluetooth.
+        val meshShown = if (query.isEmpty()) meshNodes else meshNodes.filter { matchesQuery(it.label, it.mac, query) }
+        if (meshShown.isNotEmpty() || query.isEmpty()) {
+            val expanded = if (query.isNotEmpty()) meshShown.isNotEmpty() else (expandedHistGroups["Meshtastic Nodes"] ?: false)
+            out.add(HistoricalFeedItem.Header("Meshtastic Nodes", meshShown.size, expanded))
+            if (expanded) out.addAll(meshShown.map { HistoricalFeedItem.Row(it) })
         }
 
         // Cell Towers: the same Cell rows, sub-grouped by technology - a
@@ -1817,6 +1834,22 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }
 
         return out
+    }
+
+    private fun MeshNodeEntity.toHistoricalPoint(): HistoricalPoint {
+        val own = lat != 0.0 || lon != 0.0
+        val heardMs = if (heardAtMs > 0) heardAtMs else updatedAtMs
+        return HistoricalPoint(
+            mac = nodeId,
+            label = longName.ifBlank { shortName },
+            authType = MeshProto.hardwareName(hwModel),
+            firstSeen = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(heardMs)),
+            channel = 0, frequency = 0,
+            rssi = snr.toInt(),
+            lat = if (own) lat else heardLat, lon = if (own) lon else heardLon,
+            altitude = altitudeM.toDouble(), accuracy = 0.0,
+            type = "MESH",
+        )
     }
 
     private fun GnssSatelliteEntity.toHistoricalPoint() = HistoricalPoint(

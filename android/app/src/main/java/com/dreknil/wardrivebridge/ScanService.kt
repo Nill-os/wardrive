@@ -97,17 +97,25 @@ class ScanService : Service(), RigLinkManager.Listener {
     private lateinit var meshLink: MeshtasticRadioLink
     private val meshNodesThisRun = HashMap<Long, MeshNodeEntity>()
     var meshNodeCountThisRun = 0; private set
+    private var meshMyNodeNum = 0L
+    val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
         override fun onMeshConnected() { logRunEvent("mesh radio connected") }
         override fun onMeshDisconnected() { logRunEvent("mesh radio disconnected") }
         override fun onMeshLog(msg: String) { listener?.onRigLogLine(msg) }
         override fun onMeshMessage(msg: MeshProto.Message) {
+            if (msg is MeshProto.Message.MyInfo) { meshMyNodeNum = msg.nodeNum; return }
             if (paused) return
             val runId = currentRunId ?: return
             when (msg) {
-                is MeshProto.Message.NodeInfo -> mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
-                is MeshProto.Message.Heard -> if (msg.from != 0L && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
-                    MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr), heardNow = true)
+                // The radio's node list also holds nodes it heard days ago or only over the internet
+                // (MQTT): only count ones it heard over the air since this run started. The user's
+                // own radio isn't a find.
+                is MeshProto.Message.NodeInfo -> if (msg.node.num != meshMyNodeNum && !msg.node.viaMqtt &&
+                    msg.node.lastHeard >= runStartMs / 1000 - 60) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
+                is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from != meshMyNodeNum && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
+                    MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr, hopsAway = msg.hopsAway),
+                    heardNow = true, direct = msg.hopsAway == 0)
                 else -> {}
             }
         }
@@ -116,9 +124,11 @@ class ScanService : Service(), RigLinkManager.Listener {
     /** Folds a radio report into this run's row for that node: keeps whatever is already known
      *  (name, position) when the new report lacks it, and stamps where this phone was when the
      *  node was heard live. */
-    private fun mergeMeshNode(runId: Long, num: Long, n: MeshProto.Node, heardNow: Boolean) {
+    private fun mergeMeshNode(runId: Long, num: Long, n: MeshProto.Node, heardNow: Boolean, direct: Boolean = false) {
         val prev = meshNodesThisRun[num]
-        val here = if (heardNow) locationTracker.lastLocation?.takeIf { locationTracker.hasFix() } else null
+        // Where the phone was only stands in for the node's position when the node was heard
+        // directly - a packet relayed over several hops may come from miles away.
+        val here = if (heardNow && direct) locationTracker.lastLocation?.takeIf { locationTracker.hasFix() } else null
         val pos = n.position
         val merged = MeshNodeEntity(
             id = prev?.id ?: 0,

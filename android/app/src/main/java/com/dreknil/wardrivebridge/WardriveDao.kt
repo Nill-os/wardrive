@@ -304,6 +304,10 @@ interface WardriveDao {
     @Query("SELECT * FROM mesh_nodes WHERE runId = :runId")
     fun meshNodesForRun(runId: Long): List<MeshNodeEntity>
 
+    /** Every run's mesh node rows, newest first (the Field Report keeps the newest per node). */
+    @Query("SELECT * FROM mesh_nodes ORDER BY updatedAtMs DESC")
+    fun allMeshNodes(): List<MeshNodeEntity>
+
     @Query("SELECT COUNT(*) FROM observations WHERE runId = :runId")
     fun observationCount(runId: Long): Int
 

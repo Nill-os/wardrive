@@ -98,13 +98,20 @@ class ScanService : Service(), RigLinkManager.Listener {
     private val meshNodesThisRun = HashMap<Long, MeshNodeEntity>()
     var meshNodeCountThisRun = 0; private set
     private var meshMyNodeNum = 0L
+    private var meshSyncNodes = 0 // NodeInfos in the current node-list read, for the log line
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
         override fun onMeshConnected() { logRunEvent("mesh radio connected") }
         override fun onMeshDisconnected() { logRunEvent("mesh radio disconnected") }
         override fun onMeshLog(msg: String) { listener?.onRigLogLine(msg) }
         override fun onMeshMessage(msg: MeshProto.Message) {
-            if (msg is MeshProto.Message.MyInfo) { meshMyNodeNum = msg.nodeNum; return }
+            if (msg is MeshProto.Message.MyInfo) { meshMyNodeNum = msg.nodeNum; meshSyncNodes = 0; return }
+            if (msg is MeshProto.Message.NodeInfo) meshSyncNodes++
+            if (msg is MeshProto.Message.ConfigComplete) {
+                listener?.onRigLogLine("[mesh] node list read: radio knows $meshSyncNodes nodes, $meshNodeCountThisRun heard over the air this run")
+                meshSyncNodes = 0
+                return
+            }
             if (paused) return
             val runId = currentRunId ?: return
             when (msg) {

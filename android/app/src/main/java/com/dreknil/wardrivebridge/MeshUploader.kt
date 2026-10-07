@@ -45,7 +45,9 @@ object MeshUploader {
             })
         }
         if (items.length() == 0) return Result(false, false, if (nodes.isEmpty()) "no mesh nodes this run" else "no mesh node had a position")
-        val payload = JSONObject().put("meshcore_nodes", items).toString()
+        // The server answers "Invalid data format" unless the payload has its "networks" list,
+        // even an empty one (checked against the live API 2026-10-07).
+        val payload = JSONObject().put("networks", JSONArray()).put("meshcore_nodes", items).toString()
         val (ok, msg) = post(wdgwarsKey, payload)
         return Result(true, ok, summarize(msg) ?: msg)
     }
@@ -57,13 +59,16 @@ object MeshUploader {
         return d[0] <= s.homeRadiusM
     }
 
-    /** "12 new, 3 rejected (no_gps 2, bad_node_id 1)" from the upload answer, or null. */
+    /** "mesh: 12 new, 5 already logged, rejected (no_gps 2)" from the upload answer, or null. */
     fun summarize(message: String): String? {
-        val imported = Regex("\"meshcore_imported\"\\s*:\\s*(\\d+)").find(message)?.groupValues?.get(1) ?: return null
+        fun num(key: String) = Regex("\"$key\"\\s*:\\s*(\\d+)").find(message)?.groupValues?.get(1)?.toInt()
+        val imported = num("meshcore_imported") ?: return null
+        val known = (num("meshcore_already_seen") ?: 0) + (num("meshcore_yours_known") ?: 0) + (num("meshcore_owned_by_others") ?: 0)
         val reasons = Regex("\"meshcore_reject_reasons\"\\s*:\\s*\\{([^}]*)\\}").find(message)?.groupValues?.get(1)
-            ?.let { Regex("\"(\\w+)\"\\s*:\\s*(\\d+)").findAll(it).map { m -> "${m.groupValues[1]} ${m.groupValues[2]}" }.toList() }
+            ?.let { Regex("\"(\\w+)\"\\s*:\\s*(\\d+)").findAll(it).filter { m -> m.groupValues[2] != "0" }.map { m -> "${m.groupValues[1]} ${m.groupValues[2]}" }.toList() }
             .orEmpty()
-        return "mesh: $imported new" + if (reasons.isEmpty()) "" else ", rejected (${reasons.joinToString(", ")})"
+        return "mesh: $imported new" + (if (known > 0) ", $known already logged" else "") +
+            if (reasons.isEmpty()) "" else ", rejected (${reasons.joinToString(", ")})"
     }
 
     private fun post(apiKey: String, payloadJson: String): Pair<Boolean, String> {

@@ -78,7 +78,7 @@ object CsvExporter {
         val mccN = mcc.toIntOrNull() ?: return null
         val mncN = mnc.toIntOrNull() ?: return null
         if (mccN !in 1..999 || mncN !in 0..999) return null
-        if (mccN in 310..316 && mnc.length < 3) mnc = mnc.padStart(3, '0') // North America: 3-digit MNC (older rows stored it as a number)
+        mnc = CellIds.canonicalMnc(mcc, mnc) // older rows stored it as a plain number ("310-4")
         val area = p[3].toLongOrNull() ?: return null
         val cid = p[4].toLongOrNull() ?: return null
         if (area <= 0 || area >= Int.MAX_VALUE) return null

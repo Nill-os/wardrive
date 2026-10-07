@@ -66,17 +66,17 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val ci = cell.cellIdentity
                     if (ci.ci == CellInfo.UNAVAILABLE) continue // no real cell ID - nothing useful to log
                     val ss = cell.cellSignalStrength
-                    CellReading("LTE-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.tac)}-${ci.ci}", ss.dbm, vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
+                    CellReading(CellIds.canonical("LTE-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.tac)}-${ci.ci}"), ss.dbm, vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
                 }
                 cell is CellInfoGsm -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading("GSM-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}", cell.cellSignalStrength.dbm, 0, 0, vOrZero(ci.arfcn))
+                    CellReading(CellIds.canonical("GSM-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), cell.cellSignalStrength.dbm, 0, 0, vOrZero(ci.arfcn))
                 }
                 cell is CellInfoWcdma -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading("WCDMA-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}", cell.cellSignalStrength.dbm, 0, 0, vOrZero(ci.uarfcn))
+                    CellReading(CellIds.canonical("WCDMA-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), cell.cellSignalStrength.dbm, 0, 0, vOrZero(ci.uarfcn))
                 }
                 cell is CellInfoCdma -> {
                     val ci = cell.cellIdentity
@@ -90,7 +90,7 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val mcc = ci.mccString ?: "?"
                     val mnc = ci.mncString ?: "?"
                     val tac = if (ci.tac == CellInfo.UNAVAILABLE) "?" else ci.tac.toString()
-                    CellReading("NR-$mcc-$mnc-$tac-${ci.nci}", ss.dbm, vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq), vOrZero(ci.nrarfcn))
+                    CellReading(CellIds.canonical("NR-$mcc-$mnc-$tac-${ci.nci}"), ss.dbm, vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq), vOrZero(ci.nrarfcn))
                 }
                 else -> continue
             }

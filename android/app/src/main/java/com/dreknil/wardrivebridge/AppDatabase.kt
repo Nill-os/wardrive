@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [RunEntity::class, ObservationEntity::class, GnssSatelliteEntity::class, MeshNodeEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -82,10 +82,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Rewrites cell-tower identities stored with the MNC as a plain number ("LTE-310-4-...")
+        // into the canonical form new scans use ("LTE-310-004-...", see CellIds), so a tower seen
+        // before and after that change counts once, and its WiGLE key is right. No schema change.
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val renames = mutableListOf<Pair<String, String>>()
+                db.query("SELECT DISTINCT mac FROM observations WHERE type IN ('GSM', 'WCDMA', 'LTE', 'NR')").use { c ->
+                    while (c.moveToNext()) {
+                        val old = c.getString(0) ?: continue
+                        val canonical = CellIds.canonical(old)
+                        if (canonical != old) renames.add(old to canonical)
+                    }
+                }
+                for ((old, canonical) in renames) {
+                    db.execSQL("UPDATE observations SET mac = ? WHERE mac = ?", arrayOf<Any>(canonical, old))
+                }
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "wardrive.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build().also { instance = it }
             }
     }

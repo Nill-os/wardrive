@@ -385,12 +385,14 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     callbacks.onMeshLog("[mesh] write to radio failed ($status)")
                     // Our own config request: try it once more rather than wait for the resync.
                     if (done != null && done.ours && !clientAttached) {
-                        if (!done.retried) {
-                            writes.addFirst(Write(done.payload, ours = true, retried = true))
-                            // The radio may have taken it after all: a retry identical to its last
-                            // accepted write would be dropped, so put a heartbeat in front.
-                            if (done.payload.contentEquals(lastAccepted)) writes.addFirst(Write(MeshProto.HEARTBEAT, ours = true, retried = true))
-                        } else { reconnectLater(); return@post } // failed twice - start the connection over
+                        if (!done.retried) writes.addFirst(Write(done.payload, ours = true, retried = true))
+                        else { reconnectLater(); return@post } // failed twice - start the connection over
+                    }
+                    // After any failed write, the next one may now repeat the radio's last accepted
+                    // write (which it would silently drop) - put a heartbeat in front if so.
+                    writes.firstOrNull()?.let { next ->
+                        if (next.payload.contentEquals(lastAccepted) && !next.payload.contentEquals(MeshProto.HEARTBEAT))
+                            writes.addFirst(Write(MeshProto.HEARTBEAT, ours = true))
                     }
                 }
                 readSoon() // the radio answers through FromRadio

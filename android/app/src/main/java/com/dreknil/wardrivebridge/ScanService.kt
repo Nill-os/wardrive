@@ -105,7 +105,14 @@ class ScanService : Service(), RigLinkManager.Listener {
     // True once the radio has sent my_info on the current connection: no node is logged before the
     // radio has said which node it is (MeshtasticRadioLink asks for it first on every connect).
     private var meshIdentified = false
+    /** Bluetooth addresses of the user's own radios and rig - never logged (see isFiltered). */
+    @Volatile private var ownDeviceMacs: Set<String> = emptySet()
+    private fun refreshOwnDeviceMacs() {
+        ownDeviceMacs = appSettings.meshOwnRadioAddresses() +
+            setOfNotNull(appSettings.pairedRigAddress.uppercase().takeIf { it.isNotBlank() })
+    }
     private var meshClockAheadLogged = false
+    private var meshClockBehindLogged = false
     // Paused stretches of this run (epoch seconds): a node the radio heard only then wasn't part of
     // the run, even if a later node-list read reports it.
     private val pausedSpans = mutableListOf<LongRange>()
@@ -166,9 +173,19 @@ class ScanService : Service(), RigLinkManager.Listener {
                         meshClockAheadLogged = true
                         listener?.onRigLogLine("[mesh] the radio's clock is ${msg.rxTime - nowSec}s ahead of the phone's")
                     }
-                    val rxKnown = msg.rxTime > VALID_EPOCH_SEC && msg.rxTime <= nowSec + 60
-                    val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.rxTime)
-                               else !msg.backlog // unknown receive time + from the queue: can't place it in time
+                    // Same for a clock running behind: a live (not queued) packet can't really be
+                    // minutes old, so a far-past rx_time on one is skew, not age.
+                    val behind = !msg.backlog && msg.rxTime > VALID_EPOCH_SEC && msg.rxTime < nowSec - CLOCK_BEHIND_SEC
+                    if (behind && !meshClockBehindLogged) {
+                        meshClockBehindLogged = true
+                        listener?.onRigLogLine("[mesh] the radio's clock is ${nowSec - msg.rxTime}s behind the phone's")
+                    }
+                    val rxKnown = msg.rxTime > VALID_EPOCH_SEC && msg.rxTime <= nowSec + 60 && !behind
+                    // A live packet (read after the queued backlog) was received during this run - the
+                    // link only runs during runs and paused ones are dropped above - whatever the
+                    // radio's clock says. Only queued packets are judged by their receive time.
+                    val keep = if (msg.backlog) rxKnown && msg.rxTime >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.rxTime)
+                               else true
                     if (keep) {
                         // By the radio's receive time when known (a packet can also wait behind a config
                         // stream); otherwise only a packet read after the queued backlog counts as fresh.
@@ -339,6 +356,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         meshLink = MeshtasticRadioLink(applicationContext, meshCallbacks)
         meshBridge = MeshBridgeServer(meshLink) { listener?.onRigLogLine(it) }
         meshLink.onFromRadioRaw = { meshBridge.forward(it) }
+        refreshOwnDeviceMacs()
         uploadRelay = RigUploadRelay(
             applicationContext, appSettings,
             send = { line -> rigLink.sendRaw(line) },
@@ -670,6 +688,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         pausedSinceSec = 0L
         meshStarted = false
         meshClockAheadLogged = false
+        meshClockBehindLogged = false
+        refreshOwnDeviceMacs()
         startMeshIfConfigured()
         if (notifyRig) rigLink.sendScanStart()
 
@@ -996,6 +1016,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (obs.label.endsWith("_nomap", ignoreCase = true)) return true
         if (obs.label.endsWith("_optout", ignoreCase = true)) return true
         if (appSettings.macBlacklist().contains(obs.mac.uppercase())) return true
+        // The user's own gear - their Meshtastic radio(s) and the rig - would put their own device,
+        // and so where they are, into every upload (a radio's address even carries its node number).
+        if (obs.mac.uppercase() in ownDeviceMacs) return true
         if (obs.label.isNotBlank() && appSettings.ssidBlacklist().any { it.equals(obs.label, ignoreCase = true) }) return true
 
         val radius = appSettings.homeRadiusM
@@ -1255,6 +1278,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         private const val RUN_WAKELOCK_MAX_MS = 12 * 3600_000L
         private const val VALID_EPOCH_SEC = 1_600_000_000L // rx_time below this is the radio's uptime, not a date
         private const val FRESH_PACKET_SEC = 30L
+        private const val CLOCK_BEHIND_SEC = 300L // a live packet older than this by its rx_time = radio clock behind
 
         fun start(context: Context) {
             context.startService(Intent(context, ScanService::class.java))

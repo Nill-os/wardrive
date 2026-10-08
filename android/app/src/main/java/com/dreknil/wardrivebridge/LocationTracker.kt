@@ -125,8 +125,10 @@ class LocationTracker(private val context: Context) {
         override fun onProviderDisabled(provider: String) {}
     }
 
-    @SuppressLint("MissingPermission") // caller (MainActivity) checks permission first
+    @SuppressLint("MissingPermission") // checked right here (callers in ScanService check it too)
     fun start() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) return
         // Every provider the phone has, enabled or not: Android keeps a request on a switched-off
         // provider and starts delivering once Location is switched on - registering only enabled
         // ones left a run started with Location off without GPS for the whole drive.

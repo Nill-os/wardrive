@@ -101,6 +101,11 @@ class AppSettings(context: Context) {
     fun meshOwnNodeFor(address: String): Long? = meshOwnNodes.lineSequence()
         .map { it.split("|") }.firstOrNull { it.size == 2 && it[0] == address }?.get(1)?.toLongOrNull()
 
+    /** Bluetooth addresses of the user's own radios (the chosen one and every one remembered). */
+    fun meshOwnRadioAddresses(): Set<String> = (meshOwnNodes.lineSequence()
+        .mapNotNull { it.split("|").takeIf { p -> p.size == 2 }?.get(0) } + meshRadioAddress)
+        .filter { it.isNotBlank() }.map { it.uppercase() }.toSet()
+
     /** Every radio's confirmed own node number - all of them are the user's, never finds. */
     fun meshOwnNodeNums(): List<Long> = meshOwnNodes.lineSequence()
         .mapNotNull { it.split("|").takeIf { p -> p.size == 2 }?.get(1)?.toLongOrNull() }.toList()

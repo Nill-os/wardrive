@@ -105,6 +105,11 @@ class ScanService : Service(), RigLinkManager.Listener {
     // True once the radio has sent my_info on the current connection: no node is logged before the
     // radio has said which node it is (MeshtasticRadioLink asks for it first on every connect).
     private var meshIdentified = false
+    // Paused stretches of this run (epoch seconds): a node the radio heard only then wasn't part of
+    // the run, even if a later node-list read reports it.
+    private val pausedSpans = mutableListOf<LongRange>()
+    private var pausedSinceSec = 0L
+    private fun heardWhilePaused(lastHeardSec: Long): Boolean = pausedSpans.any { lastHeardSec in it }
     private var meshSyncNodes = 0 // NodeInfos in the current node-list read, for the log line
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     val meshAppBridged get() = ::meshBridge.isInitialized && meshBridge.hasClient
@@ -147,7 +152,7 @@ class ScanService : Service(), RigLinkManager.Listener {
                 // (MQTT): only count ones it heard over the air since this run started. The user's
                 // own radio isn't a find.
                 is MeshProto.Message.NodeInfo -> if (msg.node.num !in meshOwnNums && !msg.node.viaMqtt &&
-                    msg.node.lastHeard >= runStartMs / 1000 - 60) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
+                    msg.node.lastHeard >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.node.lastHeard)) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
                 is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from !in meshOwnNums && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
                     MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr, hopsAway = msg.hopsAway),
                     heardNow = true, direct = msg.hopsAway == 0)
@@ -609,6 +614,8 @@ class ScanService : Service(), RigLinkManager.Listener {
             // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
             meshOwnNums.clear()
             meshIdentified = false
+            pausedSpans.clear()
+            pausedSinceSec = 0L
             // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
             // (right on nRF52 radios), plus every own number radios have confirmed on earlier runs.
             ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }
@@ -680,6 +687,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         cellScanner.stop()
         lastFixForDistance = null // avoid a fake distance jump if GPS reacquires somewhere else on resume
         releaseRunWakeLock() // nothing to keep awake for while paused
+        pausedSinceSec = System.currentTimeMillis() / 1000
         listener?.onPauseStateChanged(true)
     }
 
@@ -691,6 +699,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
         if (hasCellPermission()) cellScanner.start()
         try { runWakeLock?.acquire(RUN_WAKELOCK_MAX_MS) } catch (_: Exception) {}
+        if (pausedSinceSec > 0) pausedSpans.add(pausedSinceSec..System.currentTimeMillis() / 1000)
+        pausedSinceSec = 0L
         listener?.onPauseStateChanged(false)
     }
 

@@ -28,7 +28,7 @@ class RunTileService : TileService() {
                 android.app.PendingIntent.getActivity(this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE),
             )
         } else {
-            @Suppress("DEPRECATION")
+            @Suppress("DEPRECATION") // the Intent overload is the only one before API 34
             startActivityAndCollapse(intent)
         }
     }

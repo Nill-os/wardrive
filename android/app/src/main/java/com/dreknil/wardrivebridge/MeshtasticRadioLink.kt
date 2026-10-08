@@ -216,7 +216,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             busy = true
             val ok = try {
                 if (Build.VERSION.SDK_INT >= 33) {
-                    g.writeCharacteristic(c, next.payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
+                    g.writeCharacteristic(c, next.payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == android.bluetooth.BluetoothStatusCodes.SUCCESS
                 } else {
                     @Suppress("DEPRECATION") c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                     @Suppress("DEPRECATION") c.value = next.payload
@@ -333,7 +333,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                 fromRadio = from
                 val enable = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 val subscribed = g.setCharacteristicNotification(num, true) && try {
-                    if (Build.VERSION.SDK_INT >= 33) g.writeDescriptor(cccd, enable) == BluetoothGatt.GATT_SUCCESS
+                    if (Build.VERSION.SDK_INT >= 33) g.writeDescriptor(cccd, enable) == android.bluetooth.BluetoothStatusCodes.SUCCESS
                     else { @Suppress("DEPRECATION") cccd.value = enable; @Suppress("DEPRECATION") g.writeDescriptor(cccd) }
                 } catch (_: Exception) { false }
                 if (!subscribed) { // no callback will come - don't sit half-connected for the whole run

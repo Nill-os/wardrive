@@ -66,17 +66,17 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val ci = cell.cellIdentity
                     if (ci.ci == CellInfo.UNAVAILABLE) continue // no real cell ID - nothing useful to log
                     val ss = cell.cellSignalStrength
-                    CellReading(canonId("LTE-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.tac)}-${ci.ci}"), vOrZero(ss.dbm), vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
+                    CellReading(canonId("LTE-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.tac)}-${ci.ci}"), vOrZero(ss.dbm), vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
                 }
                 cell is CellInfoGsm -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading(canonId("GSM-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.arfcn))
+                    CellReading(canonId("GSM-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.arfcn))
                 }
                 cell is CellInfoWcdma -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading(canonId("WCDMA-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.uarfcn))
+                    CellReading(canonId("WCDMA-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.uarfcn))
                 }
                 cell is CellInfoCdma -> {
                     val ci = cell.cellIdentity
@@ -89,6 +89,7 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val ss = cell.cellSignalStrength as CellSignalStrengthNr
                     val mcc = ci.mccString ?: "?"
                     val mnc = ci.mncString ?: "?"
+                    @android.annotation.SuppressLint("Range") // the UNAVAILABLE check is the point (lint: tac <= 2^24-1)
                     val tac = if (ci.tac == CellInfo.UNAVAILABLE) "?" else ci.tac.toString()
                     CellReading(canonId("NR-$mcc-$mnc-$tac-${ci.nci}"), vOrZero(ss.dbm), vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq), vOrZero(ci.nrarfcn))
                 }
@@ -133,18 +134,19 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
 
     // MCC/MNC as the modem reports them, so an MNC keeps its leading zero ("004" is not "4";
     // WiGLE's cell key is MCC+MNC concatenated). The *String getters are API 28+.
-    @Suppress("DEPRECATION")
-    private fun mcc(str: String?, int: Int): String = if (Build.VERSION.SDK_INT >= 28) str ?: "?" else v(int)
-    @Suppress("DEPRECATION")
-    private fun mnc(str: String?, int: Int): String = if (Build.VERSION.SDK_INT >= 28) str ?: "?" else v(int)
+    // The string getters are taken as lambdas so they're only *called* on API 28+ - passed as
+    // plain arguments they'd be evaluated before the version check and crash API 26/27
+    // (NoSuchMethodError).
+    private inline fun mcc(str: () -> String?, int: Int): String = if (Build.VERSION.SDK_INT >= 28) str() ?: "?" else v(int)
+    private inline fun mnc(str: () -> String?, int: Int): String = if (Build.VERSION.SDK_INT >= 28) str() ?: "?" else v(int)
 
     private fun cellTypeToken(cell: CellInfo): String = when (cell) {
         is CellInfoLte -> "LTE"
         is CellInfoGsm -> "GSM"
         is CellInfoWcdma -> "WCDMA"
         is CellInfoCdma -> "CDMA"
-        is CellInfoNr -> "NR"
-        else -> "CELL"
+        // CellInfoNr only exists on API 29+: an `is` check against it can't run on older phones.
+        else -> if (Build.VERSION.SDK_INT >= 29 && cell is CellInfoNr) "NR" else "CELL"
     }
 
     companion object {

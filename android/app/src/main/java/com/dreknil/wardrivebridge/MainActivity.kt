@@ -120,6 +120,17 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (result.isEmpty()) return@registerForActivityResult // cancelled (e.g. overlapping request) - not an answer
+        if (locationRequestedAtMs > 0 && hasAnyLocation()) {
+            locationRequestedAtMs = 0L
+            // Granted from the "Can't start a run" notice (or a refused START): start the run now -
+            // the app is in front, so the foreground service is allowed - then ask for the rest.
+            if (startAfterLocation) {
+                startAfterLocation = false
+                scanService?.let { if (!it.running) it.startRun(notifyRig = true, reason = "Location granted", fromUi = true) }
+            }
+            requestNeededPermissions()
+            return@registerForActivityResult
+        }
         // Asked for Location and Android answered at once without showing a prompt (denied for
         // good): open the app's settings instead. A real prompt takes the user longer than this to
         // answer, so a "Don't allow" tapped by the user never jumps to settings.
@@ -128,6 +139,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         locationRequestedAtMs = 0L
     }
     private var locationRequestedAtMs = 0L
+    private var startAfterLocation = false
 
     private var currentFloorPlanImage: File? = null
     private var floorPlanMarkers: MutableList<FloorPlanMarker> = mutableListOf()
@@ -165,7 +177,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (service.running) service.stopRun(notifyRig = true, reason = "phone STOP button")
             else {
                 service.startRun(notifyRig = true, reason = "phone START button", fromUi = true)
-                if (!service.running && !hasAnyLocation()) askForLocation() // refused for Location - ask now
+                if (!service.running && !hasAnyLocation()) { startAfterLocation = true; askForLocation() } // refused for Location - ask now
             }
         }
 
@@ -298,7 +310,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         // One permission request at a time: launched from the "Can't start a run" notice, the
         // Location ask (which includes the rest) replaces the generic one.
-        if (askLocationNow && !hasAnyLocation()) askForLocation() else requestNeededPermissions()
+        if (askLocationNow && !hasAnyLocation()) { startAfterLocation = true; askForLocation() } else requestNeededPermissions()
         ScanService.start(this)
         bindService(Intent(this, ScanService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
         updateStatusText()
@@ -528,7 +540,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         startRunRequested = false
         if (!s.running) {
             s.startRun(notifyRig = true, reason = "tile/widget/notification START", fromUi = true) // onRunStateChanged updates the buttons
-            if (!s.running && !hasAnyLocation()) askForLocation() // refused for Location - ask right here
+            if (!s.running && !hasAnyLocation()) { startAfterLocation = true; askForLocation() } // refused for Location - ask right here
         }
     }
 
@@ -538,7 +550,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             startRunRequested = true
             maybeStartRunFromShortcut()
         }
-        if (intent.action == ScanService.ACTION_ASK_LOCATION) askForLocation()
+        if (intent.action == ScanService.ACTION_ASK_LOCATION) { startAfterLocation = true; askForLocation() }
         if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
             scanService?.connectRig()
         }

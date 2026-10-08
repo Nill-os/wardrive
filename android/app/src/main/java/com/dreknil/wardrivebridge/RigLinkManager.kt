@@ -250,6 +250,7 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
+            // Before API 33 there's no export flag (and the broadcast is our own explicit PendingIntent).
             context.registerReceiver(permissionReceiver, filter)
         }
         receiverRegistered = true

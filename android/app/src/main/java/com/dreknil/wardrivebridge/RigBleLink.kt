@@ -359,7 +359,7 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
         val ok = try {
             if (Build.VERSION.SDK_INT >= 33) {
                 g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-                    BluetoothGatt.GATT_SUCCESS
+                    android.bluetooth.BluetoothStatusCodes.SUCCESS // API 33 returns a status code (0 too)
             } else {
                 @Suppress("DEPRECATION")
                 c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT

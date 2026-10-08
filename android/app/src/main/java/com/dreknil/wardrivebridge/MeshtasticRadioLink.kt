@@ -196,8 +196,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         // The firmware silently drops a ToRadio identical to the last one it accepted (NimBLE and
         // nRF52 "Drop dup ToRadio packet" - seen on the user's radio), which made every resync and
         // retry a no-op. A heartbeat in between makes the request new again.
-        val previous = writes.lastOrNull()?.payload ?: lastAccepted
-        if (previous != null && previous.contentEquals(request)) enqueueWrite(Write(MeshProto.HEARTBEAT))
+        val previous = writes.lastOrNull()?.payload ?: inFlight?.payload ?: lastAccepted
+        if (previous != null && previous.contentEquals(request)) enqueueWrite(Write(MeshProto.HEARTBEAT, ours = true))
         enqueueWrite(Write(request, ours = true))
         // Until the radio has identified itself and a node list has come back on this connection
         // (syncPending), re-ask after SYNC_CHECK_MS without stream data - re-armed by each
@@ -385,8 +385,12 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     callbacks.onMeshLog("[mesh] write to radio failed ($status)")
                     // Our own config request: try it once more rather than wait for the resync.
                     if (done != null && done.ours && !clientAttached) {
-                        if (!done.retried) writes.addFirst(Write(done.payload, ours = true, retried = true))
-                        else { reconnectLater(); return@post } // failed twice - start the connection over
+                        if (!done.retried) {
+                            writes.addFirst(Write(done.payload, ours = true, retried = true))
+                            // The radio may have taken it after all: a retry identical to its last
+                            // accepted write would be dropped, so put a heartbeat in front.
+                            if (done.payload.contentEquals(lastAccepted)) writes.addFirst(Write(MeshProto.HEARTBEAT, ours = true, retried = true))
+                        } else { reconnectLater(); return@post } // failed twice - start the connection over
                     }
                 }
                 readSoon() // the radio answers through FromRadio

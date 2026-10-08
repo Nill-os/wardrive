@@ -138,7 +138,6 @@ class LocationTracker(private val context: Context) {
                     if (lastLocation == null || it.time > (lastLocation?.time ?: 0)) lastLocation = it
                 }
             } catch (_: IllegalArgumentException) { // an OEM without this provider after all
-            } catch (_: SecurityException) { // permission revoked under us
             }
         }
         locationManager.registerGnssStatusCallback(gnssCallback, null)

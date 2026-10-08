@@ -105,6 +105,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     // True once the radio has sent my_info on the current connection: no node is logged before the
     // radio has said which node it is (MeshtasticRadioLink asks for it first on every connect).
     private var meshIdentified = false
+    private var meshClockAheadLogged = false
     // Paused stretches of this run (epoch seconds): a node the radio heard only then wasn't part of
     // the run, even if a later node-list read reports it.
     private val pausedSpans = mutableListOf<LongRange>()
@@ -159,8 +160,14 @@ class ScanService : Service(), RigLinkManager.Listener {
                     // The radio queues packets while no app is connected, so a packet can be old:
                     // judge it by when the radio received it, not when it reached the phone.
                     val nowSec = System.currentTimeMillis() / 1000
-                    val rxKnown = msg.rxTime > VALID_EPOCH_SEC
-                    val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && msg.rxTime <= nowSec + 60 && !heardWhilePaused(msg.rxTime)
+                    // A receive time in the future means the radio's clock runs ahead: treat it as
+                    // unknown (live packets still count; queued ones can't be placed in time).
+                    if (msg.rxTime > nowSec + 60 && !meshClockAheadLogged) {
+                        meshClockAheadLogged = true
+                        listener?.onRigLogLine("[mesh] the radio's clock is ${msg.rxTime - nowSec}s ahead of the phone's")
+                    }
+                    val rxKnown = msg.rxTime > VALID_EPOCH_SEC && msg.rxTime <= nowSec + 60
+                    val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.rxTime)
                                else !msg.backlog // unknown receive time + from the queue: can't place it in time
                     if (keep) {
                         // By the radio's receive time when known (a packet can also wait behind a config
@@ -662,6 +669,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         pausedSpans.clear()
         pausedSinceSec = 0L
         meshStarted = false
+        meshClockAheadLogged = false
         startMeshIfConfigured()
         if (notifyRig) rigLink.sendScanStart()
 

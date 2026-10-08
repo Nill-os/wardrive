@@ -189,10 +189,12 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         enqueueWrite(Write(MeshProto.wantConfig(nonce), ours = true))
         // Until a node list has come back on this connection, re-ask after SYNC_CHECK_MS without
         // any data (re-armed by every message) rather than wait for the 5-min resync.
-        if (!nodesReadOnce) { handler.removeCallbacks(syncCheck); handler.postDelayed(syncCheck, SYNC_CHECK_MS) }
+        if (syncPending()) { handler.removeCallbacks(syncCheck); handler.postDelayed(syncCheck, SYNC_CHECK_MS) }
     }
 
-    private val syncCheck = Runnable { if (isConnected && !nodesReadOnce && !clientAttached) requestNodes() }
+    // Still waiting for this connection's identification or first node list.
+    private fun syncPending() = !nodesReadOnce || !gotMyInfo
+    private val syncCheck = Runnable { if (isConnected && syncPending() && !clientAttached) requestNodes() }
 
     private fun enqueueWrite(w: Write) {
         if (writes.size >= MAX_QUEUED_WRITES) { callbacks.onMeshLog("[mesh] radio write queue full - dropping a message"); return }
@@ -269,11 +271,11 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             callbacks.onMeshLog("[mesh] couldn't decode a message (${e.message})"); MeshProto.Message.Other
         }
         if (msg is MeshProto.Message.MyInfo && msg.nodeNum != 0L) gotMyInfo = true
+        if (msg is MeshProto.Message.ConfigComplete) failures = 0 // a working connection - back to fast retries if it drops
         if (msg is MeshProto.Message.ConfigComplete && msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) {
             nodesReadOnce = true
-            failures = 0 // a fully working connection - back to fast retries if it drops
-            handler.removeCallbacks(syncCheck)
-        } else if (!nodesReadOnce && msg !is MeshProto.Message.Heard) {
+            if (!syncPending()) handler.removeCallbacks(syncCheck)
+        } else if (syncPending() && msg !is MeshProto.Message.Heard && msg !is MeshProto.Message.UnreadablePacket) {
             // Inactivity, not a deadline: a big node list can take longer than SYNC_CHECK_MS to
             // read, and re-asking mid-stream would restart it from the top every time. Live
             // packets don't count as progress - they keep coming after a lost config_complete.

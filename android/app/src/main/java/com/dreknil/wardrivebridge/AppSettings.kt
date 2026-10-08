@@ -106,7 +106,8 @@ class AppSettings(context: Context) {
         .mapNotNull { it.split("|").takeIf { p -> p.size == 2 }?.get(1)?.toLongOrNull() }.toList()
 
     fun setMeshOwnNode(address: String, nodeNum: Long) {
-        if (address.isEmpty() || meshOwnNodeFor(address) == nodeNum) return
+        if (address.isEmpty()) return
+        if (meshOwnNodeFor(address) == nodeNum && meshOwnNodes.lines().lastOrNull { it.isNotBlank() } == "$address|$nodeNum") return
         val others = meshOwnNodes.lines().filter { it.isNotBlank() && !it.startsWith("$address|") }.takeLast(63) // effectively unbounded - a forgotten own radio would be logged as a find
         meshOwnNodes = (others + "$address|$nodeNum").joinToString("\n")
     }

@@ -49,6 +49,8 @@ object MeshProto {
         data class Heard(val from: Long, val position: Position?, val user: User?, val snr: Float,
                          val rssi: Int, val viaMqtt: Boolean, val hopsAway: Int = -1) : Message()
         object Other : Message()
+        /** A live mesh packet this app can't read (encrypted for a channel it doesn't hold). */
+        object UnreadablePacket : Message()
     }
 
     /** Meshtastic HardwareModel names (meshtastic/protobufs mesh.proto), for display. */
@@ -96,7 +98,7 @@ object MeshProto {
         while (r.hasMore()) {
             val (field, wire) = r.tag()
             when {
-                field == 2 && wire == 2 -> return parsePacket(r.bytes()) ?: Message.Other
+                field == 2 && wire == 2 -> return parsePacket(r.bytes()) ?: Message.UnreadablePacket
                 field == 3 && wire == 2 -> return Message.MyInfo(parseMyInfo(r.bytes()))
                 field == 4 && wire == 2 -> return Message.NodeInfo(parseNode(r.bytes()))
                 field == 7 && wire == 0 -> return Message.ConfigComplete(r.varint())

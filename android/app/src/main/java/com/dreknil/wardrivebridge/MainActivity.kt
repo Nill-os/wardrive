@@ -118,13 +118,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) {
-        // Location asked for but still off with no prompt possible any more: go straight to settings.
-        if (locationJustRequested && !hasAnyLocation() &&
-            !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) openAppSettingsForLocation()
-        locationJustRequested = false
+    ) { result ->
+        if (result.isEmpty()) return@registerForActivityResult // cancelled (e.g. overlapping request) - not an answer
+        // Asked for Location and Android answered at once without showing a prompt (denied for
+        // good): open the app's settings instead. A real prompt takes the user longer than this to
+        // answer, so a "Don't allow" tapped by the user never jumps to settings.
+        val noPromptShown = android.os.SystemClock.elapsedRealtime() - locationRequestedAtMs < NO_PROMPT_MS
+        if (locationRequestedAtMs > 0 && noPromptShown && !hasAnyLocation()) openAppSettingsForLocation()
+        locationRequestedAtMs = 0L
     }
-    private var locationJustRequested = false
+    private var locationRequestedAtMs = 0L
 
     private var currentFloorPlanImage: File? = null
     private var floorPlanMarkers: MutableList<FloorPlanMarker> = mutableListOf()
@@ -143,7 +146,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         // the same intent again and would start a run the user may already have stopped.
         val freshLaunch = savedInstanceState == null && (intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0
         if (freshLaunch && intent?.action == ScanService.ACTION_START) startRunRequested = true
-        if (freshLaunch && intent?.action == ScanService.ACTION_ASK_LOCATION) binding.root.post { askForLocation() }
+        val askLocationNow = freshLaunch && intent?.action == ScanService.ACTION_ASK_LOCATION
         adapter = ObservationAdapter(
             onHeaderClick = { source -> toggleGroup(source) },
             onRowLongClick = { obs -> startHunt(obs) },
@@ -293,7 +296,9 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             }
         })
 
-        requestNeededPermissions()
+        // One permission request at a time: launched from the "Can't start a run" notice, the
+        // Location ask (which includes the rest) replaces the generic one.
+        if (askLocationNow) askForLocation() else requestNeededPermissions()
         ScanService.start(this)
         bindService(Intent(this, ScanService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
         updateStatusText()
@@ -522,7 +527,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (!startRunRequested) return
         startRunRequested = false
         if (!s.running) {
-            s.startRun(notifyRig = true, reason = "tile/widget/notification START") // onRunStateChanged updates the buttons
+            s.startRun(notifyRig = true, reason = "tile/widget/notification START", fromUi = true) // onRunStateChanged updates the buttons
+            if (!s.running && !hasAnyLocation()) askForLocation() // refused for Location - ask right here
         }
     }
 
@@ -645,7 +651,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
      *  for good) - open this app's settings page so it can be switched on there. */
     private fun askForLocation() {
         if (hasAnyLocation()) return
-        locationJustRequested = true
+        locationRequestedAtMs = android.os.SystemClock.elapsedRealtime()
         requestNeededPermissions() // if Android won't show the prompt, the result opens settings
     }
 
@@ -2189,6 +2195,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     }
 
     companion object {
+        private const val NO_PROMPT_MS = 500L // a permission result faster than this means no prompt was shown
         private const val BATTERY_CHECK_INTERVAL_MS = 5000L
     }
 }

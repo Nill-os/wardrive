@@ -30,6 +30,15 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
     // permanently reported 0 BLE devices with no error, indistinguishable from "none nearby."
     private var wantScanning = false
     private var receiverRegistered = false
+    // Which kind of scan is running: unfiltered with the screen on, filtered with it off.
+    private var scanningFiltered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            if (!scanning || !wantScanning) return
+            val wantFiltered = !isScreenOn()
+            if (wantFiltered != scanningFiltered) restartScan()
+        }
+    }
     private val btStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON) {
@@ -124,6 +133,9 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         wantScanning = true
         if (!receiverRegistered) {
             appContext.registerReceiver(btStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+            appContext.registerReceiver(screenReceiver, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
+            })
             receiverRegistered = true
         }
         attemptStart()
@@ -138,10 +150,12 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        // One empty (match-everything) filter instead of none: Android 8.1+ pauses *unfiltered*
-        // BLE scans while the screen is off, which silently stopped phone BLE logging with the
-        // phone locked or in a pocket. A filtered scan keeps running in the background.
-        scanner.startScan(listOf(ScanFilter.Builder().build()), settings, callback)
+        // Android 8.1+ suspends an *unfiltered* BLE scan while the screen is off (seen on the
+        // Pixel: suspended ~90% of the time with the phone locked), and an all-empty filter
+        // counts as unfiltered. So: unfiltered with the screen on (sees everything), and with it
+        // off a set of real filters that still catches most devices - see SCREEN_OFF_FILTERS.
+        scanningFiltered = !isScreenOn()
+        scanner.startScan(if (scanningFiltered) SCREEN_OFF_FILTERS else null, settings, callback)
         scanning = true
     }
 
@@ -150,11 +164,48 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         wantScanning = false
         if (receiverRegistered) {
             appContext.unregisterReceiver(btStateReceiver)
+            appContext.unregisterReceiver(screenReceiver)
             receiverRegistered = false
         }
         if (!scanning) return
         adapter?.bluetoothLeScanner?.stopScan(callback)
         scanning = false
+    }
+
+    private fun isScreenOn(): Boolean =
+        (appContext.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
+
+    @SuppressLint("MissingPermission")
+    private fun restartScan() {
+        try { adapter?.bluetoothLeScanner?.stopScan(callback) } catch (_: Exception) {}
+        scanning = false
+        attemptStart()
+    }
+
+    companion object {
+        // Screen-off scan filters (they OR together). A service-UUID filter with an all-zero mask
+        // matches any device that advertises at least one service (trackers, Fast Pair, wearables,
+        // Flipper, most IoT); the manufacturer filters catch the big makers' devices that
+        // advertise only manufacturer data (Apple Find My / AirTags, Samsung SmartTags, ...).
+        private val SCREEN_OFF_FILTERS: List<ScanFilter> = buildList {
+            val zero = android.os.ParcelUuid(java.util.UUID(0L, 0L))
+            add(ScanFilter.Builder().setServiceUuid(zero, zero).build())
+            for (company in intArrayOf(
+                0x004C, // Apple
+                0x0075, // Samsung
+                0x00E0, // Google
+                0x0006, // Microsoft
+                0x01AB, // Meta (glasses)
+                0x08AA, // DJI (drones)
+                0x0087, // Garmin
+                0x0171, // Amazon
+                0x038F, // Xiaomi
+                0x027D, // Huawei
+                0x012D, // Sony
+                0x009E, // Bose
+                0x02F2, // GoPro
+            )) add(ScanFilter.Builder().setManufacturerData(company, ByteArray(0)).build())
+        }
     }
 
     // BluetoothManager.adapter is backed by the same platform default adapter

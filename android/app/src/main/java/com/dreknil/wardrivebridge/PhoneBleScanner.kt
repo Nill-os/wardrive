@@ -105,6 +105,9 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         } catch (e: SecurityException) {
             emptyList()
         }
+        // The user's own rig advertises its link service whenever no phone is connected (also over
+        // USB-only setups that never paired by Bluetooth) - it's not a find.
+        if (uuids.any { it.equals(RigBleLink.SERVICE_UUID.toString(), ignoreCase = true) }) return
         val drone = DeviceSignatureDetection.isDrone(uuids)
         val meshRadio = DeviceSignatureDetection.isMeshRadio(uuids)
         val glasses = DeviceSignatureDetection.isGlasses(name)

@@ -63,7 +63,9 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     // One GATT operation at a time (Android drops an op issued while another is in flight):
     // writes queue here, and a read of FromRadio runs whenever no write is waiting.
     // ours = this app's own config request (retried once if the write fails).
-    private class Write(val payload: ByteArray, val ours: Boolean = false, val retried: Boolean = false)
+    private class Write(val payload: ByteArray, val ours: Boolean = false, val retried: Boolean = false) {
+        var heartbeatAdded = false // at most one heartbeat put in front of it (a failing link can't loop)
+    }
     private val writes = ArrayDeque<Write>()
     private var inFlight: Write? = null
     private var lastAccepted: ByteArray? = null // the last ToRadio the radio took (it drops an identical next one)
@@ -285,7 +287,13 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         }
         if (drainingBacklog && msg is MeshProto.Message.Heard) msg = msg.copy(backlog = true)
         if (msg is MeshProto.Message.MyInfo && msg.nodeNum != 0L) gotMyInfo = true
-        if (msg is MeshProto.Message.ConfigComplete) failures = 0 // a working connection - back to fast retries if it drops
+        if (msg is MeshProto.Message.ConfigComplete) {
+            failures = 0 // a working connection - back to fast retries if it drops
+            // What follows any config stream (ours or the bridged app's) is the radio's queue - and on
+            // 2.8+ firmware a replay of cached packets for every known node, shaped like live ones -
+            // so it counts as backlog until the next empty read.
+            drainingBacklog = true
+        }
         if (msg is MeshProto.Message.ConfigComplete && msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) {
             nodesReadOnce = true
             if (!syncPending()) handler.removeCallbacks(syncCheck)
@@ -391,8 +399,10 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     // After any failed write, the next one may now repeat the radio's last accepted
                     // write (which it would silently drop) - put a heartbeat in front if so.
                     writes.firstOrNull()?.let { next ->
-                        if (next.payload.contentEquals(lastAccepted) && !next.payload.contentEquals(MeshProto.HEARTBEAT))
+                        if (!next.heartbeatAdded && next.payload.contentEquals(lastAccepted) && !next.payload.contentEquals(MeshProto.HEARTBEAT)) {
+                            next.heartbeatAdded = true
                             writes.addFirst(Write(MeshProto.HEARTBEAT, ours = true))
+                        }
                     }
                 }
                 readSoon() // the radio answers through FromRadio

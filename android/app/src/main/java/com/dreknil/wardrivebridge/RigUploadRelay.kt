@@ -44,6 +44,8 @@ class RigUploadRelay(
     private var connected = false
     private var currentRetries = 0
     private val retryCounts = HashMap<String, Int>()
+    // The user's own devices and blacklisted MACs (uppercase), refreshed for each file received.
+    private var excludedMacs: Set<String> = emptySet()
 
     fun onConnected() {
         connected = true
@@ -76,7 +78,11 @@ class RigUploadRelay(
             }
             line.startsWith("WD:FROW ") -> {
                 if (state == State.RECEIVING) {
-                    currentWriter?.write(line.substring(8))
+                    val row = line.substring(8)
+                    // The rig logs every advertiser, the user's own Meshtastic radio and the rig itself
+                    // included, and it has no blacklist of its own: drop those rows before upload.
+                    if (row.substringBefore(',').trim().uppercase() in excludedMacs) { lastActivityMs = System.currentTimeMillis(); return true }
+                    currentWriter?.write(row)
                     currentWriter?.write("\n")
                     rowsWritten++
                     lastActivityMs = System.currentTimeMillis()
@@ -138,6 +144,8 @@ class RigUploadRelay(
     }
 
     private fun startReceiving(name: String?) {
+        excludedMacs = settings.meshOwnRadioAddresses() + settings.macBlacklist() +
+            setOfNotNull(settings.pairedRigAddress.uppercase().takeIf { it.isNotBlank() })
         if (name == null || !safeName(name)) { dropCurrent(); fetchNext(); return }
         current = name
         val f = File(dir, name)

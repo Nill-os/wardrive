@@ -311,6 +311,10 @@ interface WardriveDao {
     @Query("SELECT COUNT(*) FROM observations WHERE runId = :runId")
     fun observationCount(runId: Long): Int
 
+    /** The user's own devices (their Meshtastic radios, the rig) - purged from every run. */
+    @Query("DELETE FROM observations WHERE UPPER(mac) IN (:macs)")
+    fun deleteObservationsByMacs(macs: List<String>)
+
     @Query("DELETE FROM mesh_nodes WHERE nodeNum = :nodeNum")
     fun deleteMeshNodeEverywhere(nodeNum: Long)
 

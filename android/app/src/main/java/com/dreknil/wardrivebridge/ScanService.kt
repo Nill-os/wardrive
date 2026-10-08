@@ -108,8 +108,16 @@ class ScanService : Service(), RigLinkManager.Listener {
     /** Bluetooth addresses of the user's own radios and rig - never logged (see isFiltered). */
     @Volatile private var ownDeviceMacs: Set<String> = emptySet()
     private fun refreshOwnDeviceMacs() {
-        ownDeviceMacs = appSettings.meshOwnRadioAddresses() +
+        val macs = appSettings.meshOwnRadioAddresses() +
             setOfNotNull(appSettings.pairedRigAddress.uppercase().takeIf { it.isNotBlank() })
+        if (macs == ownDeviceMacs) return
+        ownDeviceMacs = macs
+        if (macs.isEmpty()) return
+        // Also out of what's already logged - this run's live lists and every stored run (rows from
+        // before the device was chosen/paired, or from builds without this filter).
+        for (map in groups.values) map.keys.removeAll { it.uppercase() in macs }
+        val list = macs.toList()
+        dbExecutor.execute { dao.deleteObservationsByMacs(list) }
     }
     private var meshClockAheadLogged = false
     private var meshClockBehindLogged = false
@@ -590,6 +598,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     /** Starts the Meshtastic link (and bridge) for the run if it's set up and permitted - at run
      *  start, or later when the Bluetooth permission is granted mid-run. */
     private fun startMeshIfConfigured() {
+        refreshOwnDeviceMacs() // a radio chosen mid-run is the user's own from now on
         if (meshStarted || !(appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission())) return
         meshStarted = true
         // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
@@ -611,6 +620,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     /** Permissions granted while a run is going (e.g. Nearby devices / Phone right after Location):
      *  start whatever they unlock now instead of waiting for the next run. Safe to call repeatedly. */
     fun applyGrantedPermissions() {
+        refreshOwnDeviceMacs() // also runs on every return to the app: picks up a radio chosen in Settings
         if (!running || paused) return
         if (hasLocationPermission()) { locationTracker.start(); wifiScanner.start() }
         if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
@@ -873,7 +883,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         // counted, exported, uploaded or alerted on - that's the privacy guarantee
         // that actually matters. See the short-circuit right after the group add.
         val filtered = isFiltered(tagged)
-        if (filtered && excludedMacs.add(tagged.mac)) excludedCount++ // unique excluded devices, for the dashboard
+        // (The user's own radio/rig aren't "excluded finds" - left out of that dashboard number.)
+        if (filtered && tagged.mac.uppercase() !in ownDeviceMacs && excludedMacs.add(tagged.mac)) excludedCount++
 
         val map = groups.getValue(tagged.source)
         val existing = map[tagged.mac]
@@ -1153,6 +1164,7 @@ class ScanService : Service(), RigLinkManager.Listener {
 
     override fun onRigConnected() {
         mainHandler.post {
+            refreshOwnDeviceMacs() // a rig paired just now (main thread: it touches the live lists)
             rigConnected = true
             uploadRelay.onConnected()
             // Re-assert scan state on every reconnect, not just the run's original start - a USB

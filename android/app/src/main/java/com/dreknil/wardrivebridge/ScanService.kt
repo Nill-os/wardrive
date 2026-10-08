@@ -161,7 +161,9 @@ class ScanService : Service(), RigLinkManager.Listener {
                     val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.rxTime)
                                else !msg.backlog // unknown receive time + from the queue: can't place it in time
                     if (keep) {
-                        val fresh = !msg.backlog || (rxKnown && nowSec - msg.rxTime <= FRESH_PACKET_SEC)
+                        // By the radio's receive time when known (a packet can also wait behind a config
+                        // stream); otherwise only a packet read after the queued backlog counts as fresh.
+                        val fresh = if (rxKnown) nowSec - msg.rxTime in -FRESH_PACKET_SEC..FRESH_PACKET_SEC else !msg.backlog
                         mergeMeshNode(runId, msg.from,
                             MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr,
                                 lastHeard = if (rxKnown) msg.rxTime else 0, hopsAway = msg.hopsAway),
@@ -735,6 +737,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         try { runWakeLock?.acquire(RUN_WAKELOCK_MAX_MS) } catch (_: Exception) {}
         if (pausedSinceSec > 0) pausedSpans.add(pausedSinceSec..System.currentTimeMillis() / 1000)
         pausedSinceSec = 0L
+        startMeshIfConfigured() // e.g. Nearby devices granted while paused
         listener?.onPauseStateChanged(false)
     }
 

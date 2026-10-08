@@ -127,8 +127,12 @@ class LocationTracker(private val context: Context) {
 
     @SuppressLint("MissingPermission") // caller (MainActivity) checks permission first
     fun start() {
+        // Every provider the phone has, enabled or not: Android keeps a request on a switched-off
+        // provider and starts delivering once Location is switched on - registering only enabled
+        // ones left a run started with Location off without GPS for the whole drive.
+        val available = locationManager.allProviders
         for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
-            if (locationManager.isProviderEnabled(provider)) {
+            if (provider in available) {
                 locationManager.requestLocationUpdates(provider, 1000L, 0f, listener)
                 locationManager.getLastKnownLocation(provider)?.let {
                     if (lastLocation == null || it.time > (lastLocation?.time ?: 0)) lastLocation = it

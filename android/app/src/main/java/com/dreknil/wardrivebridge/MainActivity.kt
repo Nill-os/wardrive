@@ -128,6 +128,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (startAfterLocation) {
                 startAfterLocation = false
                 startRunRequested = true // same path as a shortcut start - also waits for the service bind
+                shortcutStartReason = "Location granted"
                 maybeStartRunFromShortcut()
             }
             requestNeededPermissions()
@@ -536,12 +537,16 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     // ScanService.toggleRun() for why they can't start it themselves.
     private var startRunRequested = false
 
+    private var shortcutStartReason = "tile/widget/notification START"
+
     private fun maybeStartRunFromShortcut() {
         val s = scanService ?: return
         if (!startRunRequested) return
         startRunRequested = false
+        val reason = shortcutStartReason
+        shortcutStartReason = "tile/widget/notification START"
         if (!s.running) {
-            s.startRun(notifyRig = true, reason = "tile/widget/notification START", fromUi = true) // onRunStateChanged updates the buttons
+            s.startRun(notifyRig = true, reason = reason, fromUi = true) // onRunStateChanged updates the buttons
             if (!s.running && !hasAnyLocation()) { startAfterLocation = true; askForLocation() } // refused for Location - ask right here
         }
     }
@@ -592,6 +597,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         scanService?.let {
             it.listener = this
             for (map in it.groups.values) for (obs in map.values) mapManager.upsertLive(obs)
+            it.applyGrantedPermissions() // e.g. a permission switched on in Android's Settings mid-run
         }
         refreshDetailFeedIfShown()
         binding.mapView.onResume()
@@ -1923,7 +1929,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     private fun MeshNodeEntity.toHistoricalPoint(): HistoricalPoint {
         val own = lat != 0.0 || lon != 0.0
-        val heardMs = if (heardAtMs > 0) heardAtMs else updatedAtMs
+        // When the radio heard it (its clock), else when the phone stamped it, else when it was saved.
+        val heardMs = when { lastHeard > 0 -> lastHeard * 1000; heardAtMs > 0 -> heardAtMs; else -> updatedAtMs }
         return HistoricalPoint(
             mac = "!%08x".format(nodeNum), // from the number (see MeshUploader)
             label = longName.ifBlank { shortName },

@@ -92,6 +92,12 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("mesh_bridge", false)
         set(value) = prefs.edit().putBoolean("mesh_bridge", value).apply()
 
+    /** "address|nodeNum" of the radio's own node as last confirmed by the radio, so it's excluded
+     *  from the finds from the first second of a run (see ScanService.meshOwnNums). */
+    var meshOwnNode: String
+        get() = prefs.getString("mesh_own_node", "") ?: ""
+        set(value) = prefs.edit().putString("mesh_own_node", value).apply()
+
     /** Bluetooth address and name of that radio (picked from the phone's paired devices). */
     var meshRadioAddress: String
         get() = prefs.getString("mesh_radio_address", "") ?: ""

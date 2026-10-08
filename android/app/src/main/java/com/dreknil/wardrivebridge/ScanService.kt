@@ -99,7 +99,9 @@ class ScanService : Service(), RigLinkManager.Listener {
     private lateinit var meshBridge: MeshBridgeServer // lets the Meshtastic app share the radio during runs
     private val meshNodesThisRun = HashMap<Long, MeshNodeEntity>()
     var meshNodeCountThisRun = 0; private set
-    private var meshMyNodeNum = 0L
+    // The user's own radio's node number(s) - never a find. Confirmed numbers (from my_info or
+    // the first NodeInfo after a nodes-only request) are remembered per radio across runs.
+    private val meshOwnNums = HashSet<Long>()
     private var meshSyncNodes = 0 // NodeInfos in the current node-list read, for the log line
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     val meshAppBridged get() = ::meshBridge.isInitialized && meshBridge.hasClient
@@ -112,8 +114,15 @@ class ScanService : Service(), RigLinkManager.Listener {
         override fun onMeshLog(msg: String) { listener?.onRigLogLine(msg) }
         override fun onMeshMessage(msg: MeshProto.Message) {
             if (msg is MeshProto.Message.MyInfo) {
-                if (msg.nodeNum != meshMyNodeNum) { val own = msg.nodeNum; dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) } }
-                meshMyNodeNum = msg.nodeNum; meshSyncNodes = 0; return
+                val own = msg.nodeNum
+                meshSyncNodes = 0
+                if (own == 0L) return
+                appSettings.meshOwnNode = "${appSettings.meshRadioAddress}|$own"
+                if (meshOwnNums.add(own)) {
+                    if (meshNodesThisRun.remove(own) != null) meshNodeCountThisRun--
+                    dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) }
+                }
+                return
             }
             if (msg is MeshProto.Message.NodeInfo) meshSyncNodes++
             if (msg is MeshProto.Message.ConfigComplete) {
@@ -127,9 +136,9 @@ class ScanService : Service(), RigLinkManager.Listener {
                 // The radio's node list also holds nodes it heard days ago or only over the internet
                 // (MQTT): only count ones it heard over the air since this run started. The user's
                 // own radio isn't a find.
-                is MeshProto.Message.NodeInfo -> if (msg.node.num != meshMyNodeNum && !msg.node.viaMqtt &&
+                is MeshProto.Message.NodeInfo -> if (msg.node.num !in meshOwnNums && !msg.node.viaMqtt &&
                     msg.node.lastHeard >= runStartMs / 1000 - 60) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
-                is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from != meshMyNodeNum && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
+                is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from !in meshOwnNums && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
                     MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr, hopsAway = msg.hopsAway),
                     heardNow = true, direct = msg.hopsAway == 0)
                 else -> {}
@@ -459,6 +468,7 @@ class ScanService : Service(), RigLinkManager.Listener {
 
     override fun onDestroy() {
         releaseRunWakeLock()
+        if (::meshBridge.isInitialized) meshBridge.shutdown()
         instance = null
         mainHandler.removeCallbacks(relayTicker)
         mainHandler.removeCallbacks(watchSweep)
@@ -554,14 +564,16 @@ class ScanService : Service(), RigLinkManager.Listener {
         meshNodesThisRun.clear()
         meshNodeCountThisRun = 0
         if (appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission()) {
-            // The radio's own node number is the low 4 bytes of its Bluetooth address (how
-            // Meshtastic derives it); the nodes-only read doesn't always send my_info, so this is
-            // what keeps the user's own radio - and its position, i.e. where they are - out of
-            // the finds. Also clears any rows an earlier build saved for it.
-            ownMeshNodeNum(appSettings.meshRadioAddress)?.let { own ->
-                meshMyNodeNum = own
-                dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) }
-            }
+            // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
+            meshOwnNums.clear()
+            // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
+            // (right on nRF52 radios), plus the number confirmed for this radio on an earlier run.
+            ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }
+            appSettings.meshOwnNode.split("|").takeIf { it.size == 2 && it[0] == appSettings.meshRadioAddress }
+                ?.get(1)?.toLongOrNull()?.let { confirmed ->
+                    meshOwnNums.add(confirmed)
+                    dbExecutor.execute { dao.deleteMeshNodeEverywhere(confirmed) }
+                }
             meshLink.start(appSettings.meshRadioAddress)
             if (appSettings.meshBridge) meshBridge.start()
         }
@@ -623,6 +635,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         bleScanner.stop()
         cellScanner.stop()
         lastFixForDistance = null // avoid a fake distance jump if GPS reacquires somewhere else on resume
+        releaseRunWakeLock() // nothing to keep awake for while paused
         listener?.onPauseStateChanged(true)
     }
 
@@ -633,6 +646,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (hasLocationPermission()) wifiScanner.start()
         if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
         if (hasCellPermission()) cellScanner.start()
+        try { runWakeLock?.acquire(RUN_WAKELOCK_MAX_MS) } catch (_: Exception) {}
         listener?.onPauseStateChanged(false)
     }
 

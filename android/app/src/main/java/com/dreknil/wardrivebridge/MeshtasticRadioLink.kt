@@ -49,10 +49,17 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     private var toRadio: BluetoothGattCharacteristic? = null
     private var fromRadio: BluetoothGattCharacteristic? = null
     private var failures = 0
+    private var loggedWaiting = false
 
     // One GATT operation at a time (Android drops an op issued while another is in flight):
     // writes queue here, and a read of FromRadio runs whenever no write is waiting.
-    private val writes = ArrayDeque<ByteArray>()
+    // Each queued write carries what it means for "the next NodeInfo is the radio's own":
+    // true = a nodes-only want_config, false = any other want_config, null = no effect. It only
+    // takes effect once the radio confirms that write (onCharacteristicWrite) - a read already in
+    // flight still belongs to the stream the radio was sending before.
+    private class Write(val payload: ByteArray, val armsOwnNode: Boolean?)
+    private val writes = ArrayDeque<Write>()
+    private var inFlight: Write? = null
     private var busy = false
     private var wantRead = false
     // Set after a nodes-only request: the firmware sends the radio's own NodeInfo first
@@ -92,10 +99,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     fun sendToRadio(payload: ByteArray) {
         if (!isConnected) return
         // want_config_id (field 3): a nodes-only request makes the radio send its own node first.
-        if (payload.isNotEmpty() && payload[0] == 0x18.toByte()) {
-            awaitOwnNode = MeshProto.readWantConfig(payload) == MeshProto.NONCE_ONLY_NODES.toLong()
-        }
-        enqueueWrite(payload)
+        val nonce = MeshProto.readWantConfig(payload)
+        enqueueWrite(Write(payload, if (nonce < 0) null else nonce == MeshProto.NONCE_ONLY_NODES.toLong()))
     }
 
     private fun hasPermissions(): Boolean {
@@ -108,13 +113,20 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     private fun connect() {
         if (!running || gatt != null) return
         if (adapter == null || !adapter.isEnabled || !hasPermissions() || address.isEmpty()) {
+            if (!loggedWaiting) {
+                loggedWaiting = true
+                callbacks.onMeshLog(if (!hasPermissions()) "[mesh] waiting for the Nearby devices (Bluetooth) permission"
+                                    else "[mesh] waiting for Bluetooth to be turned on")
+            }
             handler.postDelayed(retry, RETRY_MS)
             return
         }
+        loggedWaiting = false
         val device = try { adapter.getRemoteDevice(address) } catch (_: Exception) { null }
         if (device == null) { callbacks.onMeshLog("[mesh] saved radio address is invalid - choose the radio again in Settings"); return }
         callbacks.onMeshLog("[mesh] connecting to ${device.name ?: address}")
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        if (gatt == null) handler.postDelayed(retry, RETRY_MS) // stack refused - try again
     }
 
     private fun close() {
@@ -122,6 +134,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         isConnected = false
         handler.removeCallbacks(resync)
         handler.removeCallbacks(retry)
+        handler.removeCallbacks(pumpRetry)
+        inFlight = null
         toRadio = null
         fromRadio = null
         writes.clear()
@@ -143,15 +157,17 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
 
     private fun requestNodes() {
         if (clientAttached) return
-        awaitOwnNode = true
-        enqueueWrite(MeshProto.wantConfig(MeshProto.NONCE_ONLY_NODES))
+        enqueueWrite(Write(MeshProto.wantConfig(MeshProto.NONCE_ONLY_NODES), true))
     }
 
-    private fun enqueueWrite(payload: ByteArray) {
+    private fun enqueueWrite(w: Write) {
         if (writes.size >= MAX_QUEUED_WRITES) { callbacks.onMeshLog("[mesh] radio write queue full - dropping a message"); return }
-        writes.addLast(payload)
+        writes.addLast(w)
         pump()
     }
+
+    private val pumpRetry = Runnable { pump() }
+    private fun retryPumpSoon() { handler.removeCallbacks(pumpRetry); handler.postDelayed(pumpRetry, 500) }
 
     /** Starts the next GATT operation if none is in flight: queued writes first, then a read. */
     private fun pump() {
@@ -163,15 +179,15 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             busy = true
             val ok = try {
                 if (Build.VERSION.SDK_INT >= 33) {
-                    g.writeCharacteristic(c, next, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
+                    g.writeCharacteristic(c, next.payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
                 } else {
                     @Suppress("DEPRECATION") c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                    @Suppress("DEPRECATION") c.value = next
+                    @Suppress("DEPRECATION") c.value = next.payload
                     @Suppress("DEPRECATION") g.writeCharacteristic(c)
                 }
             } catch (_: Exception) { false }
-            if (ok) writes.removeFirst()
-            else { busy = false; handler.postDelayed({ pump() }, 500) } // stack busy - try again shortly
+            if (ok) { writes.removeFirst(); inFlight = next }
+            else { busy = false; retryPumpSoon() } // stack busy - try again shortly
             return
         }
         if (wantRead) {
@@ -179,7 +195,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             busy = true
             wantRead = false
             val ok = try { g.readCharacteristic(c) } catch (_: Exception) { false }
-            if (!ok) { busy = false; wantRead = true; handler.postDelayed({ pump() }, 500) }
+            if (!ok) { busy = false; wantRead = true; retryPumpSoon() }
         }
     }
 
@@ -217,8 +233,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     if (!g.requestMtu(512)) g.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    callbacks.onMeshLog("[mesh] disconnected (status $status)")
                     reconnectLater()
+                    callbacks.onMeshLog("[mesh] disconnected (status $status)") // after close(), so the status refresh shows DOWN
                 }
             }
         }
@@ -277,7 +293,10 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             handler.post {
                 if (gatt !== g || c.uuid != TORADIO_UUID) return@post
                 busy = false
+                val done = inFlight
+                inFlight = null
                 if (status != BluetoothGatt.GATT_SUCCESS) callbacks.onMeshLog("[mesh] write to radio failed ($status)")
+                else done?.armsOwnNode?.let { awaitOwnNode = it } // the radio now streams this request's answer
                 readSoon() // the radio answers through FromRadio
             }
         }

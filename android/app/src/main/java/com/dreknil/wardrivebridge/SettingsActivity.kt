@@ -327,6 +327,10 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
         val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
+        if (adapter == null || !adapter.isEnabled) {
+            Toast.makeText(this, "Turn Bluetooth on first", Toast.LENGTH_SHORT).show()
+            return
+        }
         val bonded = try { adapter?.bondedDevices?.toList().orEmpty() } catch (_: SecurityException) { emptyList() }
         if (bonded.isEmpty()) {
             Toast.makeText(this, "No paired devices - pair the radio in Android's Bluetooth settings (or the Meshtastic app) first", Toast.LENGTH_LONG).show()

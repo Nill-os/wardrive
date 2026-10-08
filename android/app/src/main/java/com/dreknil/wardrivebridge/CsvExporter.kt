@@ -28,12 +28,14 @@ object CsvExporter {
             for (o in rows) {
                 if (o.type in CELL_TYPES) {
                     val cell = wigleCell(o) ?: continue // incomplete tower identity: WiGLE drops these too
-                    val fcn = if (o.channel > 0) o.channel.toString() else ""
+                    val fcn = if (o.channel > 0) o.channel.toString() else "0"
+                    // Older rows can hold Android's "unavailable" (Int.MAX_VALUE) as RSSI.
+                    val rssi = if (o.rssi in -150..-1) o.rssi else 0
                     w.appendLine(
                         "%s,%s,%s,%s,%s,%s,%d,%.6f,%.6f,%.1f,%.1f,%s".format(
                             Locale.US,
                             cell.key, sanitize(cell.operatorName), cell.authMode, o.firstSeenIso,
-                            fcn, fcn, o.rssi,
+                            fcn, fcn, rssi,
                             o.lat, o.lon, o.altitudeM, o.accuracyM, o.type,
                         )
                     )

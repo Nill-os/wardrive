@@ -1702,7 +1702,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         Thread {
             val points = dao.latestPerMac().map { it.toHistoricalPoint() }
             val satellites = dao.allGnssSatellites()
-            val meshNodes = dao.allMeshNodes().distinctBy { it.nodeNum }.filter { !it.viaMqtt }.map { it.toHistoricalPoint() }
+            // One entry per node: its newest over-the-air row that has a position, else its newest.
+            val meshNodes = dao.allMeshNodes().filter { !it.viaMqtt }.groupBy { it.nodeNum }.values.map { rows ->
+                rows.firstOrNull { it.lat != 0.0 || it.lon != 0.0 || it.heardLat != 0.0 || it.heardLon != 0.0 } ?: rows.first()
+            }.map { it.toHistoricalPoint() }
             runOnUiThread {
                 val empty = points.isEmpty() && meshNodes.isEmpty()
                 binding.logsEmptyText.visibility = if (empty) View.VISIBLE else View.GONE

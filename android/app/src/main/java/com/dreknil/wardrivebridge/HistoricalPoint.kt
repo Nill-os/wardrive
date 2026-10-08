@@ -56,8 +56,10 @@ fun HistoricalPoint.formatDetails(): String = buildString {
     appendLine("Label: ${label.ifBlank { "(hidden)" }}")
     appendLine("Type: $type")
     if (authType.isNotBlank()) appendLine("Auth: $authType")
-    if (channel > 0) appendLine("Channel: $channel")
-    if (frequency > 0) appendLine("Frequency: $frequency MHz")
+    // Cell rows keep the radio channel number (EARFCN/ARFCN/NR-ARFCN) in channel and frequency, not MHz.
+    val isCell = type in setOf("GSM", "WCDMA", "LTE", "NR", "CDMA")
+    if (channel > 0 && !isCell) appendLine("Channel: $channel")
+    if (frequency > 0) appendLine(if (isCell) "ARFCN: $frequency" else "Frequency: $frequency MHz")
     appendLine("RSSI: $rssi dBm")
     appendLine("Location: %.6f, %.6f".format(lat, lon))
     if (accuracy > 0) appendLine("GPS accuracy: ±${accuracy.toInt()} m")

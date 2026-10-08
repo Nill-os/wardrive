@@ -9,6 +9,8 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Lets the official Meshtastic app use the radio while this app holds its Bluetooth link (a
@@ -26,7 +28,11 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
     private val handler = Handler(Looper.getMainLooper())
     private val writer = Executors.newSingleThreadExecutor()
     @Volatile private var server: ServerSocket? = null
-    @Volatile private var client: Socket? = null
+    private val clientRef = AtomicReference<Socket?>(null)
+    private val client: Socket? get() = clientRef.get()
+    // Frames queued for the client but not yet written: a client that stops reading would
+    // otherwise grow this without bound.
+    private val backlog = AtomicInteger(0)
     /** Set once the client has sent its first message: only then is radio traffic forwarded to it,
      *  so it never receives the tail of a node-list read this app asked for before it connected. */
     @Volatile private var clientActive = false
@@ -62,10 +68,22 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
      *  asks for a fresh config once the radio is back. */
     fun dropClient() {
         val c = client ?: return
-        client = null
+        dropClient(c)
+    }
+
+    /** Drops [c] only if it's still the current client (a stale error path can't drop a newer one). */
+    private fun dropClient(c: Socket) {
+        if (!clientRef.compareAndSet(c, null)) return
         clientActive = false
+        backlog.set(0)
         try { c.close() } catch (_: IOException) {}
         handler.post { link.clientAttached = false }
+    }
+
+    /** Final cleanup when the service is destroyed. */
+    fun shutdown() {
+        stop()
+        writer.shutdownNow()
     }
 
     /** A FromRadio message just read from the radio (main thread). */
@@ -76,8 +94,13 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
         frame[0] = START1; frame[1] = START2
         frame[2] = (fromRadio.size ushr 8).toByte(); frame[3] = fromRadio.size.toByte()
         fromRadio.copyInto(frame, 4)
-        writer.execute {
-            try { c.getOutputStream().apply { write(frame); flush() } } catch (_: IOException) { if (client === c) dropClient() }
+        if (backlog.incrementAndGet() > MAX_BACKLOG) { dropClient(c); return } // not reading - let it reconnect
+        try {
+            writer.execute {
+                try { c.getOutputStream().apply { write(frame); flush() } } catch (_: IOException) { dropClient(c) }
+                backlog.decrementAndGet()
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) { // shut down
         }
     }
 
@@ -89,8 +112,9 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
                 continue
             }
             dropClient() // one client at a time; a new connection replaces a stale one
-            c.tcpNoDelay = true
-            client = c
+            try { c.tcpNoDelay = true } catch (_: IOException) {}
+            clientRef.set(c)
+            if (server !== s) { dropClient(c); return } // stop() ran while this was accepted
             handler.post { log("[mesh] Meshtastic app connected through the bridge") }
             Thread({ readLoop(c) }, "mesh-bridge-read").start()
         }
@@ -135,7 +159,7 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
         }
         if (client === c) {
             handler.post { log("[mesh] Meshtastic app disconnected from the bridge") }
-            dropClient()
+            dropClient(c)
         }
     }
 
@@ -144,5 +168,6 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
         private const val START1 = 0x94.toByte()
         private const val START2 = 0xC3.toByte()
         private const val MAX_PAYLOAD = 512
+        private const val MAX_BACKLOG = 256
     }
 }

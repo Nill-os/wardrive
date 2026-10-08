@@ -32,17 +32,31 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
     private var receiverRegistered = false
     // Which kind of scan is running: unfiltered with the screen on, filtered with it off.
     private var scanningFiltered = false
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    // Android refuses a 6th scan start within 30 s per app (and the rig link's scans count
+    // too) - silently, with no onScanFailed - so starts are rate-guarded and retried.
+    private val startTimes = ArrayDeque<Long>()
+    private val startRunnable = Runnable { attemptStart() }
+    private val restartRunnable = Runnable { restartScan() }
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
-            if (!scanning || !wantScanning) return
-            val wantFiltered = !isScreenOn()
-            if (wantFiltered != scanningFiltered) restartScan()
+            if (!wantScanning) return
+            if (!scanning) { attemptStart(); return }
+            // Debounced: a quick glance at the phone (on/off/on/off) shouldn't burn scan starts.
+            handler.removeCallbacks(restartRunnable)
+            if (!isScreenOn() != scanningFiltered) handler.postDelayed(restartRunnable, SCREEN_DEBOUNCE_MS)
         }
     }
     private val btStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
-            if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON) {
-                attemptStart()
+            when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)) {
+                BluetoothAdapter.STATE_ON -> attemptStart()
+                // Bluetooth going off drops the scan without a callback - forget it so STATE_ON
+                // starts a fresh one.
+                BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> {
+                    scanning = false
+                    handler.removeCallbacks(restartRunnable)
+                }
             }
         }
     }
@@ -58,6 +72,8 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
 
         override fun onScanFailed(errorCode: Int) {
             scanning = false
+            handler.removeCallbacks(startRunnable)
+            handler.postDelayed(startRunnable, RETRY_MS)
         }
     }
 
@@ -147,6 +163,13 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         // Bluetooth off (or still coming up) - nothing to do right now, btStateReceiver retries
         // this once BluetoothAdapter.ACTION_STATE_CHANGED reports STATE_ON.
         val scanner = adapter?.bluetoothLeScanner ?: return
+        val now = android.os.SystemClock.elapsedRealtime()
+        while (startTimes.isNotEmpty() && now - startTimes.first() > START_WINDOW_MS) startTimes.removeFirst()
+        if (startTimes.size >= MAX_STARTS_PER_WINDOW) { // try again once the oldest start ages out
+            handler.removeCallbacks(startRunnable)
+            handler.postDelayed(startRunnable, START_WINDOW_MS - (now - startTimes.first()) + 500)
+            return
+        }
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
@@ -155,13 +178,26 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         // counts as unfiltered. So: unfiltered with the screen on (sees everything), and with it
         // off a set of real filters that still catches most devices - see SCREEN_OFF_FILTERS.
         scanningFiltered = !isScreenOn()
-        scanner.startScan(if (scanningFiltered) SCREEN_OFF_FILTERS else null, settings, callback)
+        try {
+            scanner.startScan(if (scanningFiltered) SCREEN_OFF_FILTERS else null, settings, callback)
+        } catch (_: Exception) { // e.g. Bluetooth turning off right now
+            handler.removeCallbacks(startRunnable)
+            handler.postDelayed(startRunnable, RETRY_MS)
+            return
+        }
+        startTimes.addLast(now)
         scanning = true
+        // Android demotes any regular scan to opportunistic after 30 min; restart before that so
+        // a long drive with the phone locked keeps scanning.
+        handler.removeCallbacks(restartRunnable)
+        handler.postDelayed(restartRunnable, REFRESH_MS)
     }
 
     @SuppressLint("MissingPermission")
     fun stop() {
         wantScanning = false
+        handler.removeCallbacks(startRunnable)
+        handler.removeCallbacks(restartRunnable)
         if (receiverRegistered) {
             appContext.unregisterReceiver(btStateReceiver)
             appContext.unregisterReceiver(screenReceiver)
@@ -183,6 +219,12 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
     }
 
     companion object {
+        private const val START_WINDOW_MS = 30_000L
+        private const val MAX_STARTS_PER_WINDOW = 4 // Android allows 5; leave one for the rig link
+        private const val SCREEN_DEBOUNCE_MS = 2_000L
+        private const val RETRY_MS = 5_000L
+        private const val REFRESH_MS = 25 * 60_000L
+
         // Screen-off scan filters (they OR together). A service-UUID filter with an all-zero mask
         // matches any device that advertises at least one service (trackers, Fast Pair, wearables,
         // Flipper, most IoT); the manufacturer filters catch the big makers' devices that

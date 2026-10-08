@@ -175,7 +175,9 @@ class MapManager(
         appendLine("Type/Auth: ${obs.authOrType}")
         if (obs.channel > 0) appendLine("Channel: ${obs.channel}")
         if (obs.channelWidthMHz > 0) appendLine("Channel width: ${obs.channelWidthMHz} MHz")
-        if (obs.frequencyMHz > 0) appendLine("Frequency: ${obs.frequencyMHz} MHz")
+        if (obs.frequencyMHz > 0) appendLine(
+            if (obs.source == Source.PHONE_CELL) "ARFCN: ${obs.frequencyMHz}" else "Frequency: ${obs.frequencyMHz} MHz" // cells store the channel number
+        )
         appendLine("RSSI: ${obs.rssi} dBm")
         if (obs.rsrp != 0) appendLine("RSRP: ${obs.rsrp}")
         if (obs.rsrq != 0) appendLine("RSRQ: ${obs.rsrq}")

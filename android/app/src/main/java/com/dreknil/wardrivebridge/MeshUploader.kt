@@ -52,7 +52,10 @@ object MeshUploader {
         // even an empty one (checked against the live API 2026-10-07).
         val payload = JSONObject().put("networks", JSONArray()).put("meshcore_nodes", items).toString()
         val (ok, msg) = post(wdgwarsKey, payload)
-        return Result(true, ok, summarize(msg) ?: msg)
+        // Only a real import answer counts as success (a 200 carrying just an "error" must not
+        // mark the run uploaded).
+        val summary = summarize(msg)
+        return Result(true, ok && summary != null, summary ?: msg)
     }
 
     private fun insideHomeZone(s: AppSettings, lat: Double, lon: Double): Boolean {

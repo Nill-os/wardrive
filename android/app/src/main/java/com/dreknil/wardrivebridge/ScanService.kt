@@ -109,7 +109,10 @@ class ScanService : Service(), RigLinkManager.Listener {
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     val meshAppBridged get() = ::meshBridge.isInitialized && meshBridge.hasClient
     private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
-        override fun onMeshConnected() { logRunEvent("mesh radio connected") }
+        override fun onMeshConnected() {
+            meshBridge.dropClient() // a bridge client never spans two radio connections
+            logRunEvent("mesh radio connected")
+        }
         override fun onMeshDisconnected() {
             meshIdentified = false
             logRunEvent("mesh radio disconnected")
@@ -171,7 +174,9 @@ class ScanService : Service(), RigLinkManager.Listener {
             id = prev?.id ?: 0,
             runId = runId,
             nodeNum = num,
-            nodeId = n.user?.id?.takeIf { it.length >= 8 } ?: prev?.nodeId ?: n.nodeId,
+            // From the node number (packet sender / node DB key), never the broadcast user.id - a
+            // node can put any id in its own NodeInfo, e.g. the user's radio's.
+            nodeId = "!%08x".format(num),
             longName = n.user?.longName?.ifBlank { null } ?: prev?.longName ?: "",
             shortName = n.user?.shortName?.ifBlank { null } ?: prev?.shortName ?: "",
             hwModel = n.user?.hwModel ?: prev?.hwModel ?: 0,
@@ -397,7 +402,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     private fun showJoinPrompt() {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0)
         val tap = PendingIntent.getActivity(this, 2, startRunIntent(this), flags)
-        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+        val n = NotificationCompat.Builder(this, ATTENTION_CHANNEL_ID)
             .setContentTitle("The rig is scanning")
             .setContentText("Tap to join its run")
             .setSmallIcon(R.drawable.ic_radar)
@@ -410,8 +415,9 @@ class ScanService : Service(), RigLinkManager.Listener {
     /** A run couldn't start because Location is off for the app - say so (opens the app, which asks). */
     private fun showLocationNeeded() {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0)
-        val tap = PendingIntent.getActivity(this, 3, Intent(this, MainActivity::class.java), flags)
-        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+        val tap = PendingIntent.getActivity(this, 3,
+            Intent(this, MainActivity::class.java).setAction(ACTION_ASK_LOCATION), flags) // MainActivity asks for it
+        val n = NotificationCompat.Builder(this, ATTENTION_CHANNEL_ID)
             .setContentTitle("Can't start a run")
             .setContentText("Allow Location for Nill OS - Wardriver")
             .setSmallIcon(R.drawable.ic_radar)
@@ -591,6 +597,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         }).get()
         loadHistoricalIndex()
 
+        if (!hasLocationPermission()) logRunEvent("precise Location is off - phone GPS, WiFi and cell aren't scanning this run")
         if (hasLocationPermission()) locationTracker.start()
         if (hasLocationPermission()) wifiScanner.start()
         if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
@@ -953,6 +960,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         channel.description = "Shown while a wardrive run is actively collecting data"
         nm.createNotificationChannel(channel)
         // Higher-importance channel so watchlist hits pop as a heads-up.
+        nm.createNotificationChannel(NotificationChannel(ATTENTION_CHANNEL_ID, "Run needs attention", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "A run the rig started needs a tap to join, or can't start without Location"
+        })
         val watch = NotificationChannel(WATCH_CHANNEL_ID, "Watchlist alerts", NotificationManager.IMPORTANCE_HIGH)
         watch.description = "A watched WiFi/BLE device came into range or left"
         nm.createNotificationChannel(watch)
@@ -1159,6 +1169,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     companion object {
         private const val CHANNEL_ID = "wardrive_scan"
         private const val WATCH_CHANNEL_ID = "wardrive_watchlist"
+        private const val ATTENTION_CHANNEL_ID = "wardrive_attention" // "tap to join" / "can't start" - must be seen
         private const val NOTIF_ID = 1
         private const val JOIN_NOTIF_ID = 2
         // BLE sightings are bursty - a stationary device isn't reported every
@@ -1178,6 +1189,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         private const val GNSS_PERSIST_INTERVAL_MS = 15000L
 
         const val ACTION_START = "com.dreknil.wardrivebridge.START_RUN"
+        const val ACTION_ASK_LOCATION = "com.dreknil.wardrivebridge.ASK_LOCATION"
         const val ACTION_STOP = "com.dreknil.wardrivebridge.STOP_RUN"
         private const val EXTERNAL_UI_INTERVAL_MS = 5_000L
         // Safety cap so a run that's never stopped can't hold the CPU awake forever; the idle

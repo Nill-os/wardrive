@@ -72,8 +72,9 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     // is preceded by a config-only request (whose stream starts with my_info), and ScanService
     // logs no finds - so the user's own radio is known by number before any node is considered.
     private var gotMyInfo = false
+    private var nodesReadOnce = false // a nodes-only stream completed on this connection
     private var myInfoAttempts = 0
-    private var writeStartFailures = 0
+    private var opStartFailures = 0
 
     @Volatile var isConnected = false
         private set
@@ -155,8 +156,10 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         handler.removeCallbacks(setupTimeout)
         failedReads = 0
         gotMyInfo = false
+        nodesReadOnce = false
+        handler.removeCallbacks(syncCheck)
         myInfoAttempts = 0
-        writeStartFailures = 0
+        opStartFailures = 0
         inFlight = null
         toRadio = null
         fromRadio = null
@@ -184,7 +187,12 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         if (clientAttached) return
         val nonce = if (gotMyInfo) MeshProto.NONCE_ONLY_NODES else MeshProto.NONCE_ONLY_CONFIG
         enqueueWrite(Write(MeshProto.wantConfig(nonce), ours = true))
+        // Until a node list has come back on this connection, check again soon rather than wait
+        // for the 5-min resync (a lost config_complete would otherwise stall the sequence).
+        if (!nodesReadOnce) { handler.removeCallbacks(syncCheck); handler.postDelayed(syncCheck, SYNC_CHECK_MS) }
     }
+
+    private val syncCheck = Runnable { if (isConnected && !nodesReadOnce && !clientAttached) requestNodes() }
 
     private fun enqueueWrite(w: Write) {
         if (writes.size >= MAX_QUEUED_WRITES) { callbacks.onMeshLog("[mesh] radio write queue full - dropping a message"); return }
@@ -212,8 +220,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     @Suppress("DEPRECATION") g.writeCharacteristic(c)
                 }
             } catch (_: Exception) { false }
-            if (ok) { writes.removeFirst(); inFlight = next; writeStartFailures = 0; armWatchdog() }
-            else if (++writeStartFailures > MAX_WRITE_START_FAILURES) { // the stack keeps refusing - start over
+            if (ok) { writes.removeFirst(); inFlight = next; opStartFailures = 0; armWatchdog() }
+            else if (++opStartFailures > MAX_OP_START_FAILURES) { // the stack keeps refusing - start over
                 callbacks.onMeshLog("[mesh] the radio connection refuses writes - reconnecting")
                 reconnectLater()
             } else { busy = false; retryPumpSoon() } // stack busy - try again shortly
@@ -224,7 +232,11 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             busy = true
             wantRead = false
             val ok = try { g.readCharacteristic(c) } catch (_: Exception) { false }
-            if (ok) armWatchdog() else { busy = false; wantRead = true; retryPumpSoon() }
+            if (ok) { opStartFailures = 0; armWatchdog() }
+            else if (++opStartFailures > MAX_OP_START_FAILURES) {
+                callbacks.onMeshLog("[mesh] the radio connection refuses reads - reconnecting")
+                reconnectLater()
+            } else { busy = false; wantRead = true; retryPumpSoon() }
         }
     }
 
@@ -256,7 +268,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         val msg = try { MeshProto.parseFromRadio(value) } catch (e: Exception) {
             callbacks.onMeshLog("[mesh] couldn't decode a message (${e.message})"); MeshProto.Message.Other
         }
-        if (msg is MeshProto.Message.MyInfo) gotMyInfo = true
+        if (msg is MeshProto.Message.MyInfo && msg.nodeNum != 0L) gotMyInfo = true
+        if (msg is MeshProto.Message.ConfigComplete && msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) nodesReadOnce = true
         if (msg is MeshProto.Message.ConfigComplete && !clientAttached) {
             when {
                 gotMyInfo && msg.id == MeshProto.NONCE_ONLY_CONFIG.toLong() -> requestNodes() // identified - now the nodes
@@ -345,8 +358,9 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     callbacks.onMeshLog("[mesh] write to radio failed ($status)")
                     // Our own config request: try it once more rather than wait for the resync.
-                    if (done != null && done.ours && !done.retried && !clientAttached) {
-                        writes.addFirst(Write(done.payload, ours = true, retried = true))
+                    if (done != null && done.ours && !clientAttached) {
+                        if (!done.retried) writes.addFirst(Write(done.payload, ours = true, retried = true))
+                        else { reconnectLater(); return@post } // failed twice - start the connection over
                     }
                 }
                 readSoon() // the radio answers through FromRadio
@@ -388,8 +402,9 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         private const val RESYNC_MS = 5 * 60_000L
         private const val MAX_QUEUED_WRITES = 64
         private const val MAX_FAILED_READS = 2
-        private const val MAX_WRITE_START_FAILURES = 10
+        private const val MAX_OP_START_FAILURES = 10
         private const val SETUP_TIMEOUT_MS = 30_000L
+        private const val SYNC_CHECK_MS = 30_000L
         private const val OP_TIMEOUT_MS = 10_000L
     }
 }

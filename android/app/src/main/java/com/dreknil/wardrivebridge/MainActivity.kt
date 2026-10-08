@@ -149,7 +149,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         binding.startStopButton.setOnClickListener {
             val service = scanService ?: return@setOnClickListener
-            if (service.running) service.stopRun(notifyRig = true, reason = "phone STOP button") else service.startRun(notifyRig = true, reason = "phone START button")
+            if (service.running) service.stopRun(notifyRig = true, reason = "phone STOP button")
+            else {
+                service.startRun(notifyRig = true, reason = "phone START button")
+                if (!service.running && !hasAnyLocation()) askForLocation() // refused for Location - ask now
+            }
         }
 
         binding.pauseResumeButton.setOnClickListener {
@@ -518,6 +522,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             startRunRequested = true
             maybeStartRunFromShortcut()
         }
+        if (intent.action == ScanService.ACTION_ASK_LOCATION) askForLocation()
         if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
             scanService?.connectRig()
         }
@@ -621,6 +626,24 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     }
 
     // ---- Permissions ----
+
+    private fun hasAnyLocation(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** Runs need Location: ask for it, or - once Android won't show the prompt any more (denied
+     *  for good) - open this app's settings page so it can be switched on there. */
+    private fun askForLocation() {
+        if (hasAnyLocation()) return
+        if (!shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) && askedLocationOnce) {
+            Toast.makeText(this, "Allow Location for this app (Permissions -> Location)", Toast.LENGTH_LONG).show()
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)))
+            return
+        }
+        askedLocationOnce = true
+        requestNeededPermissions()
+    }
+    private var askedLocationOnce = false
 
     private fun requestNeededPermissions() {
         val needed = mutableListOf(
@@ -1263,6 +1286,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (service != null) {
             val label = if (scanning) "> STOP" else "> START"
             if (binding.startStopButton.text != label) binding.startStopButton.text = label
+            // Same for PAUSE (a run started while another screen held the listener left it hidden).
+            binding.pauseResumeButton.visibility = if (scanning) View.VISIBLE else View.GONE
+            val pauseLabel = if (service.paused) "> RESUME" else "> PAUSE"
+            if (binding.pauseResumeButton.text != pauseLabel) binding.pauseResumeButton.text = pauseLabel
         }
         binding.telemetryScanStatus.setTextColor(ContextCompat.getColor(this, if (scanning) R.color.cyan_500 else R.color.text_secondary))
 
@@ -2108,7 +2135,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         // Decided now, before anything is built or sent: a run that's still going is never marked
         // uploaded by this upload (rows logged after it - even if the run stops mid-upload - must
         // still go up via AutoUploader or a later upload from Logs).
-        val wasLive = runId == scanService?.currentRunId()
+        // Not bound to the service yet (screen just recreated): assume live - never mark then.
+        val wasLive = scanService?.let { runId == it.currentRunId() } ?: true
         Thread {
             if (dao.observationCount(runId) == 0 && dao.meshNodeCount(runId) > 0) { // mesh nodes only - nothing for the CSV
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)

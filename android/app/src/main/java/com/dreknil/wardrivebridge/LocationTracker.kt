@@ -132,11 +132,13 @@ class LocationTracker(private val context: Context) {
         // ones left a run started with Location off without GPS for the whole drive.
         val available = locationManager.allProviders
         for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
-            if (provider in available) {
+            if (provider in available) try {
                 locationManager.requestLocationUpdates(provider, 1000L, 0f, listener)
                 locationManager.getLastKnownLocation(provider)?.let {
                     if (lastLocation == null || it.time > (lastLocation?.time ?: 0)) lastLocation = it
                 }
+            } catch (_: IllegalArgumentException) { // an OEM without this provider after all
+            } catch (_: SecurityException) { // permission revoked under us
             }
         }
         locationManager.registerGnssStatusCallback(gnssCallback, null)

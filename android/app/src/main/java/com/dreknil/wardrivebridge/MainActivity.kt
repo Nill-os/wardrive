@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             val bound = (service as ScanService.LocalBinder).service
             scanService = bound
             bound.listener = this@MainActivity
+            bound.applyGrantedPermissions() // grants made while this screen was gone (e.g. in Android Settings)
             // The service may have kept running (and collecting) while this
             // Activity was gone - resync the UI to whatever it's already
             // doing instead of assuming a fresh start.

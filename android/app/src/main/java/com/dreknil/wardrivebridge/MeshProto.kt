@@ -95,6 +95,9 @@ object MeshProto {
         "HELTEC_MESH_TOWER_V2", 140 to "MESHNOLOGY_W10"
     )
 
+    /** ToRadio{heartbeat = {}} (field 7): a keepalive the radio answers with a queue status. */
+    val HEARTBEAT: ByteArray = byteArrayOf(0x3A, 0x00)
+
     fun wantConfig(nonce: Int): ByteArray = byteArrayOf(0x18) + varint(nonce.toLong() and 0xffffffffL) // field 3, varint
 
     fun parseFromRadio(b: ByteArray): Message {
@@ -251,7 +254,7 @@ object MeshProto {
         }
         fun bytes(): ByteArray {
             val n = varint()
-            if (n < 0 || pos + n > b.size) throw IllegalArgumentException("truncated bytes")
+            if (n < 0 || n > b.size - pos) throw IllegalArgumentException("truncated bytes") // no pos + n overflow
             return b.copyOfRange(pos, pos + n.toInt()).also { pos += n.toInt() }
         }
         fun string(): String = String(bytes(), Charsets.UTF_8)
@@ -265,7 +268,7 @@ object MeshProto {
                 5 -> 4
                 else -> throw IllegalArgumentException("unsupported wire type $wire")
             }
-            if (n < 0 || pos + n > b.size) throw IllegalArgumentException("truncated field")
+            if (n < 0 || n > b.size - pos) throw IllegalArgumentException("truncated field") // no pos + n overflow
             pos += n.toInt()
         }
     }

@@ -322,7 +322,8 @@ class SettingsActivity : AppCompatActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 31 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 0)
+            // Both: the mesh link starts only with SCAN too (runtime permissions are granted one by one).
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN), 0)
             Toast.makeText(this, "Allow Bluetooth access, then tap again", Toast.LENGTH_SHORT).show()
             return
         }

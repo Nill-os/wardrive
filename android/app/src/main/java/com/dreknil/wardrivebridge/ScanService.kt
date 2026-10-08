@@ -150,15 +150,17 @@ class ScanService : Service(), RigLinkManager.Listener {
             when (msg) {
                 // The radio's node list also holds nodes it heard days ago or only over the internet
                 // (MQTT): only count ones it heard over the air since this run started. The user's
-                // own radio isn't a find.
+                // own radio isn't a find. (The upper bound: a radio clock running ahead must not pass
+                // old nodes off as new.)
                 is MeshProto.Message.NodeInfo -> if (msg.node.num !in meshOwnNums && !msg.node.viaMqtt &&
-                    msg.node.lastHeard >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.node.lastHeard)) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
+                    msg.node.lastHeard >= runStartMs / 1000 - 60 && msg.node.lastHeard <= System.currentTimeMillis() / 1000 + 60 &&
+                    !heardWhilePaused(msg.node.lastHeard)) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
                 is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from !in meshOwnNums && !msg.viaMqtt) {
                     // The radio queues packets while no app is connected, so a packet can be old:
                     // judge it by when the radio received it, not when it reached the phone.
                     val nowSec = System.currentTimeMillis() / 1000
                     val rxKnown = msg.rxTime > VALID_EPOCH_SEC
-                    val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.rxTime)
+                    val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && msg.rxTime <= nowSec + 60 && !heardWhilePaused(msg.rxTime)
                                else !msg.backlog // unknown receive time + from the queue: can't place it in time
                     if (keep) {
                         // By the radio's receive time when known (a packet can also wait behind a config

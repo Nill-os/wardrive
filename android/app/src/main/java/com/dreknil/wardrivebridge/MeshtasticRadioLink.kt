@@ -66,6 +66,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     private class Write(val payload: ByteArray, val ours: Boolean = false, val retried: Boolean = false)
     private val writes = ArrayDeque<Write>()
     private var inFlight: Write? = null
+    private var lastAccepted: ByteArray? = null // the last ToRadio the radio took (it drops an identical next one)
     private var busy = false
     private var wantRead = false
     // True once the radio has sent my_info on this connection. Until then each node-list request
@@ -156,6 +157,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         handler.removeCallbacks(retry)
         handler.removeCallbacks(pumpRetry)
         handler.removeCallbacks(opWatchdog)
+        lastAccepted = null // the firmware forgets it on disconnect too
         handler.removeCallbacks(setupTimeout)
         failedReads = 0
         gotMyInfo = false
@@ -190,7 +192,13 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     private fun requestNodes() {
         if (clientAttached) return
         val nonce = if (gotMyInfo) MeshProto.NONCE_ONLY_NODES else MeshProto.NONCE_ONLY_CONFIG
-        enqueueWrite(Write(MeshProto.wantConfig(nonce), ours = true))
+        val request = MeshProto.wantConfig(nonce)
+        // The firmware silently drops a ToRadio identical to the last one it accepted (NimBLE and
+        // nRF52 "Drop dup ToRadio packet" - seen on the user's radio), which made every resync and
+        // retry a no-op. A heartbeat in between makes the request new again.
+        val previous = writes.lastOrNull()?.payload ?: lastAccepted
+        if (previous != null && previous.contentEquals(request)) enqueueWrite(Write(MeshProto.HEARTBEAT))
+        enqueueWrite(Write(request, ours = true))
         // Until the radio has identified itself and a node list has come back on this connection
         // (syncPending), re-ask after SYNC_CHECK_MS without stream data - re-armed by each
         // non-packet message - rather than wait for the 5-min resync.
@@ -372,6 +380,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                 busy = false
                 val done = inFlight
                 inFlight = null
+                if (status == BluetoothGatt.GATT_SUCCESS && done != null) lastAccepted = done.payload
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     callbacks.onMeshLog("[mesh] write to radio failed ($status)")
                     // Our own config request: try it once more rather than wait for the resync.

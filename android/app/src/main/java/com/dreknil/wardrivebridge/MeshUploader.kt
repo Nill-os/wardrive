@@ -58,7 +58,7 @@ object MeshUploader {
         // Success = a 2xx whose JSON isn't an error ("ok": false / an "error" key) - a 200 carrying
         // just an error must not mark the run uploaded. meshcore_imported is optional in the answer.
         val body = msg.substringAfter(": ", "").trim()
-        val accepted = ok && (body.isEmpty() || try {
+        val accepted = ok && (msg.startsWith("HTTP 409") || body.isEmpty() || try {
             val j = JSONObject(body)
             val err = j.opt("error")
             val hasError = err != null && err != JSONObject.NULL && err != false && err.toString().isNotBlank()
@@ -115,7 +115,8 @@ object MeshUploader {
             c.outputStream.use { it.write(body) }
             val code = c.responseCode
             val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }?.take(1_000_000) ?: ""
-            val ok = code in 200..299 && !Regex("\"(ok|success)\"\\s*:\\s*false").containsMatchIn(text)
+            // 409 = the server already has this payload (its dedup) - as UploadManager treats the CSV.
+            val ok = (code in 200..299 && !Regex("\"(ok|success)\"\\s*:\\s*false").containsMatchIn(text)) || code == 409
             ok to "HTTP $code: $text"
         } catch (e: Exception) {
             val c = conn

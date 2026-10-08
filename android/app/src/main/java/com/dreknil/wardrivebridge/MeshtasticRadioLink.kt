@@ -187,8 +187,9 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         if (clientAttached) return
         val nonce = if (gotMyInfo) MeshProto.NONCE_ONLY_NODES else MeshProto.NONCE_ONLY_CONFIG
         enqueueWrite(Write(MeshProto.wantConfig(nonce), ours = true))
-        // Until a node list has come back on this connection, re-ask after SYNC_CHECK_MS without
-        // any data (re-armed by every message) rather than wait for the 5-min resync.
+        // Until the radio has identified itself and a node list has come back on this connection
+        // (syncPending), re-ask after SYNC_CHECK_MS without stream data - re-armed by each
+        // non-packet message - rather than wait for the 5-min resync.
         if (syncPending()) { handler.removeCallbacks(syncCheck); handler.postDelayed(syncCheck, SYNC_CHECK_MS) }
     }
 
@@ -350,7 +351,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     reconnectLater()
                     return@post
                 }
-                handler.removeCallbacks(setupTimeout) // (failures resets once a node list has come back)
+                handler.removeCallbacks(setupTimeout) // (failures resets on the first completed config stream)
                 isConnected = true
                 callbacks.onMeshLog("[mesh] connected - reading the node list")
                 callbacks.onMeshConnected()

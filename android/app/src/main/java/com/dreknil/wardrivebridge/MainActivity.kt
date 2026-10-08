@@ -298,7 +298,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
         // One permission request at a time: launched from the "Can't start a run" notice, the
         // Location ask (which includes the rest) replaces the generic one.
-        if (askLocationNow) askForLocation() else requestNeededPermissions()
+        if (askLocationNow && !hasAnyLocation()) askForLocation() else requestNeededPermissions()
         ScanService.start(this)
         bindService(Intent(this, ScanService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
         updateStatusText()
@@ -652,7 +652,9 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun askForLocation() {
         if (hasAnyLocation()) return
         locationRequestedAtMs = android.os.SystemClock.elapsedRealtime()
-        requestNeededPermissions() // if Android won't show the prompt, the result opens settings
+        // Location only: another permission's prompt would make the result slow and hide the
+        // "Android showed no prompt" case. The rest is asked on the next launch.
+        permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
     private fun openAppSettingsForLocation() {
@@ -2195,7 +2197,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     }
 
     companion object {
-        private const val NO_PROMPT_MS = 500L // a permission result faster than this means no prompt was shown
+        private const val NO_PROMPT_MS = 900L // a permission result faster than this means no prompt was shown (allows a cold permission screen)
         private const val BATTERY_CHECK_INTERVAL_MS = 5000L
     }
 }

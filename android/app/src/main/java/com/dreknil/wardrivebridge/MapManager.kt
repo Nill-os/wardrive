@@ -173,7 +173,7 @@ class MapManager(
         appendLine("MAC: ${obs.mac}")
         appendLine("Label: ${obs.label.ifBlank { "(hidden)" }}")
         appendLine("Type/Auth: ${obs.authOrType}")
-        if (obs.channel > 0) appendLine("Channel: ${obs.channel}")
+        if (obs.channel > 0 && obs.source != Source.PHONE_CELL) appendLine("Channel: ${obs.channel}") // cells: shown as ARFCN below
         if (obs.channelWidthMHz > 0) appendLine("Channel width: ${obs.channelWidthMHz} MHz")
         if (obs.frequencyMHz > 0) appendLine(
             if (obs.source == Source.PHONE_CELL) "ARFCN: ${obs.frequencyMHz}" else "Frequency: ${obs.frequencyMHz} MHz" // cells store the channel number

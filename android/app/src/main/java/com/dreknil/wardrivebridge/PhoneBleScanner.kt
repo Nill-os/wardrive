@@ -37,14 +37,17 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
     // too) - silently, with no onScanFailed - so starts are rate-guarded and retried.
     private val startTimes = ArrayDeque<Long>()
     private val startRunnable = Runnable { attemptStart() }
-    private val restartRunnable = Runnable { restartScan() }
+    private val restartRunnable = Runnable { restartScan() } // the 25-min refresh
+    private val screenRunnable = Runnable { // debounced screen on/off switch (own runnable: must not cancel the refresh)
+        if (scanning && !isScreenOn() != scanningFiltered) restartScan()
+    }
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             if (!wantScanning) return
             if (!scanning) { attemptStart(); return }
             // Debounced: a quick glance at the phone (on/off/on/off) shouldn't burn scan starts.
-            handler.removeCallbacks(restartRunnable)
-            if (!isScreenOn() != scanningFiltered) handler.postDelayed(restartRunnable, SCREEN_DEBOUNCE_MS)
+            handler.removeCallbacks(screenRunnable)
+            if (!isScreenOn() != scanningFiltered) handler.postDelayed(screenRunnable, SCREEN_DEBOUNCE_MS)
         }
     }
     private val btStateReceiver = object : BroadcastReceiver() {
@@ -54,8 +57,13 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
                 // Bluetooth going off drops the scan without a callback - forget it so STATE_ON
                 // starts a fresh one.
                 BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> {
+                    // Unregister too: the scanner keeps the callback registered across a BT toggle
+                    // (BLE stays up with location scanning on), and the restart would then fail
+                    // with SCAN_FAILED_ALREADY_STARTED forever.
+                    stopScanQuietly()
                     scanning = false
                     handler.removeCallbacks(restartRunnable)
+                    handler.removeCallbacks(screenRunnable)
                 }
             }
         }
@@ -71,6 +79,7 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         }
 
         override fun onScanFailed(errorCode: Int) {
+            if (errorCode == SCAN_FAILED_ALREADY_STARTED) stopScanQuietly()
             scanning = false
             handler.removeCallbacks(startRunnable)
             handler.postDelayed(startRunnable, RETRY_MS)
@@ -198,13 +207,13 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         wantScanning = false
         handler.removeCallbacks(startRunnable)
         handler.removeCallbacks(restartRunnable)
+        handler.removeCallbacks(screenRunnable)
         if (receiverRegistered) {
             appContext.unregisterReceiver(btStateReceiver)
             appContext.unregisterReceiver(screenReceiver)
             receiverRegistered = false
         }
-        if (!scanning) return
-        adapter?.bluetoothLeScanner?.stopScan(callback)
+        stopScanQuietly() // unconditionally: a failed/half-started scan may still be registered
         scanning = false
     }
 
@@ -212,15 +221,21 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         (appContext.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
 
     @SuppressLint("MissingPermission")
-    private fun restartScan() {
+    private fun stopScanQuietly() {
         try { adapter?.bluetoothLeScanner?.stopScan(callback) } catch (_: Exception) {}
+    }
+
+    private fun restartScan() {
+        stopScanQuietly()
         scanning = false
         attemptStart()
     }
 
     companion object {
         private const val START_WINDOW_MS = 30_000L
-        private const val MAX_STARTS_PER_WINDOW = 4 // Android allows 5; leave one for the rig link
+        // Android allows 5 per app; the rig link's search cycles its own scan about every 13 s
+        // while the rig isn't connected (~3 starts per 30 s), so this scanner keeps to 2.
+        private const val MAX_STARTS_PER_WINDOW = 2
         private const val SCREEN_DEBOUNCE_MS = 2_000L
         private const val RETRY_MS = 5_000L
         private const val REFRESH_MS = 25 * 60_000L

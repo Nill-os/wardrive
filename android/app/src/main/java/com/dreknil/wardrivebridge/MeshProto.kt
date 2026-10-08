@@ -208,7 +208,8 @@ object MeshProto {
             }
         }
         // hop_start is 0 on firmware older than 2.3, so the hop count is unknown there.
-        val hops = if (hopStart > 0) (hopStart - hopLimit).coerceAtLeast(0) else -1
+        // A hop_limit above hop_start is malformed/forged: unknown, never "heard directly".
+        val hops = if (hopStart > 0 && hopLimit <= hopStart) hopStart - hopLimit else -1
         return when (port) {
             PORT_POSITION -> Message.Heard(from, parsePosition(payload), null, snr, rssi, mqtt, hops)
             PORT_NODEINFO -> Message.Heard(from, null, parseUser(payload), snr, rssi, mqtt, hops)

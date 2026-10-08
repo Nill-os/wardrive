@@ -47,15 +47,18 @@ object MeshUploader {
             })
         }
         if (items.length() == 0) return Result(false, false,
-            if (nodes.isEmpty()) "no mesh nodes this run" else "no mesh node had a position", nothingToSend = true)
+            if (nodes.isEmpty()) "no mesh nodes this run" else "no mesh node to send (none with a position outside the home zone)", nothingToSend = true)
         // The server answers "Invalid data format" unless the payload has its "networks" list,
         // even an empty one (checked against the live API 2026-10-07).
         val payload = JSONObject().put("networks", JSONArray()).put("meshcore_nodes", items).toString()
         val (ok, msg) = post(wdgwarsKey, payload)
-        // Only a real import answer counts as success (a 200 carrying just an "error" must not
-        // mark the run uploaded).
-        val summary = summarize(msg)
-        return Result(true, ok && summary != null, summary ?: msg)
+        // Success = a 2xx whose JSON isn't an error ("ok": false / an "error" key) - a 200 carrying
+        // just an error must not mark the run uploaded. meshcore_imported is optional in the answer.
+        val accepted = ok && try {
+            val j = JSONObject(msg.substringAfter(": ", ""))
+            !j.has("error") && j.optBoolean("ok", true) && j.optBoolean("success", true)
+        } catch (_: Exception) { false }
+        return Result(true, accepted, summarize(msg) ?: msg.take(300))
     }
 
     private fun insideHomeZone(s: AppSettings, lat: Double, lon: Double): Boolean {
@@ -95,7 +98,7 @@ object MeshUploader {
             c.setRequestProperty("X-API-Key", apiKey)
             c.outputStream.use { it.write(body) }
             val code = c.responseCode
-            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }?.take(800) ?: ""
+            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }?.take(64_000) ?: ""
             val ok = code in 200..299 && !Regex("\"(ok|success)\"\\s*:\\s*false").containsMatchIn(text)
             ok to "HTTP $code: $text"
         } catch (e: Exception) {

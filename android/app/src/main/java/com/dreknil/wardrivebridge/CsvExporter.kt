@@ -72,7 +72,7 @@ object CsvExporter {
             if (p.size != 4) return null
             val ids = p.drop(1).map { it.toLongOrNull() ?: return null }
             if (ids.any { it < 0 || it >= Int.MAX_VALUE }) return null
-            return WigleCell(ids.joinToString("_"), "", "CDMA;")
+            return WigleCell(ids.joinToString("_"), "", "CDMA;${ids[0]}") // WiGLE 1.6: network type ; system id
         }
         if (p.size != 5) return null
         val mcc = p[1]

@@ -117,7 +117,7 @@ class ScanService : Service(), RigLinkManager.Listener {
                 val own = msg.nodeNum
                 meshSyncNodes = 0
                 if (own == 0L) return
-                appSettings.meshOwnNode = "${appSettings.meshRadioAddress}|$own"
+                appSettings.setMeshOwnNode(meshLink.radioAddress, own)
                 if (meshOwnNums.add(own)) {
                     if (meshNodesThisRun.remove(own) != null) meshNodeCountThisRun--
                     dbExecutor.execute { dao.deleteMeshNodeEverywhere(own) }
@@ -126,7 +126,8 @@ class ScanService : Service(), RigLinkManager.Listener {
             }
             if (msg is MeshProto.Message.NodeInfo) meshSyncNodes++
             if (msg is MeshProto.Message.ConfigComplete) {
-                listener?.onRigLogLine("[mesh] node list read: radio knows $meshSyncNodes nodes, $meshNodeCountThisRun heard over the air this run")
+                if (msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) // not the Meshtastic app's config-only read
+                    listener?.onRigLogLine("[mesh] node list read: radio knows $meshSyncNodes nodes, $meshNodeCountThisRun heard over the air this run")
                 meshSyncNodes = 0
                 return
             }
@@ -377,11 +378,13 @@ class ScanService : Service(), RigLinkManager.Listener {
     private fun logRunEvent(event: String) {
         val line = "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())} $event"
         listener?.onRigLogLine("[run] $event")
-        try {
-            val f = java.io.File(filesDir, "run_events.log")
-            val kept = if (f.exists()) f.readLines().takeLast(499) else emptyList()
-            f.writeText((kept + line).joinToString("\n", postfix = "\n"))
-        } catch (_: Exception) {
+        dbExecutor.execute { // file I/O off the main thread (radio connects/disconnects log here too)
+            try {
+                val f = java.io.File(filesDir, "run_events.log")
+                val kept = if (f.exists()) f.readLines().takeLast(499) else emptyList()
+                f.writeText((kept + line).joinToString("\n", postfix = "\n"))
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -569,8 +572,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
             // (right on nRF52 radios), plus the number confirmed for this radio on an earlier run.
             ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }
-            appSettings.meshOwnNode.split("|").takeIf { it.size == 2 && it[0] == appSettings.meshRadioAddress }
-                ?.get(1)?.toLongOrNull()?.let { confirmed ->
+            appSettings.meshOwnNodeFor(appSettings.meshRadioAddress)?.let { confirmed ->
                     meshOwnNums.add(confirmed)
                     dbExecutor.execute { dao.deleteMeshNodeEverywhere(confirmed) }
                 }

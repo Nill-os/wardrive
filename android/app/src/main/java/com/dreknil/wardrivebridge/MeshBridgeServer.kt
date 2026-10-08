@@ -32,7 +32,7 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
     private val client: Socket? get() = clientRef.get()
     // Frames queued for the client but not yet written: a client that stops reading would
     // otherwise grow this without bound.
-    private val backlog = AtomicInteger(0)
+    @Volatile private var backlog = AtomicInteger(0) // a fresh counter per client
     /** Set once the client has sent its first message: only then is radio traffic forwarded to it,
      *  so it never receives the tail of a node-list read this app asked for before it connected. */
     @Volatile private var clientActive = false
@@ -75,7 +75,6 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
     private fun dropClient(c: Socket) {
         if (!clientRef.compareAndSet(c, null)) return
         clientActive = false
-        backlog.set(0)
         try { c.close() } catch (_: IOException) {}
         handler.post { link.clientAttached = false }
     }
@@ -94,11 +93,12 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
         frame[0] = START1; frame[1] = START2
         frame[2] = (fromRadio.size ushr 8).toByte(); frame[3] = fromRadio.size.toByte()
         fromRadio.copyInto(frame, 4)
-        if (backlog.incrementAndGet() > MAX_BACKLOG) { dropClient(c); return } // not reading - let it reconnect
+        val pending = backlog
+        if (pending.incrementAndGet() > MAX_BACKLOG) { dropClient(c); return } // not reading - let it reconnect
         try {
             writer.execute {
                 try { c.getOutputStream().apply { write(frame); flush() } } catch (_: IOException) { dropClient(c) }
-                backlog.decrementAndGet()
+                pending.decrementAndGet()
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) { // shut down
         }
@@ -113,6 +113,8 @@ class MeshBridgeServer(private val link: MeshtasticRadioLink, private val log: (
             }
             dropClient() // one client at a time; a new connection replaces a stale one
             try { c.tcpNoDelay = true } catch (_: IOException) {}
+            backlog = AtomicInteger(0)
+            clientActive = false // a racing main-thread post for the old client can't leave it set
             clientRef.set(c)
             if (server !== s) { dropClient(c); return } // stop() ran while this was accepted
             handler.post { log("[mesh] Meshtastic app connected through the bridge") }

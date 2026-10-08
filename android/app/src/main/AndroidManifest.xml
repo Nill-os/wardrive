@@ -33,7 +33,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
     <!-- Android 12+ Bluetooth permissions - harmlessly ignored by the OS below API 31 -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <!-- No neverForLocation: with it Android strips beacon advertisements from scan results,
+         and logging nearby devices with their location is exactly what this app does (it holds
+         ACCESS_FINE_LOCATION, which BLE scanning then requires). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <!-- Android 11+ package visibility: without this, TextToSpeech can't find the phone's

@@ -2108,7 +2108,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (dao.observationCount(runId) == 0 && dao.meshNodeCount(runId) > 0) { // mesh nodes only - nothing for the CSV
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
                 if ((mesh.attempted && mesh.ok) || mesh.nothingToSend) dao.markUploaded(runId, System.currentTimeMillis())
-                runOnUiThread { Toast.makeText(this, if (mesh.attempted) mesh.message else "mesh: ${mesh.message}", Toast.LENGTH_LONG).show() }
+                runOnUiThread {
+                    Toast.makeText(this, if (mesh.attempted) mesh.message else "mesh: ${mesh.message}", Toast.LENGTH_LONG).show()
+                    refreshLogsView()
+                    if (mesh.ok) refreshAccountStats()
+                }
                 return@Thread
             }
             val file = CsvExporter.materialize(this, dao, runId)

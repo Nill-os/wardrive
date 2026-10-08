@@ -118,7 +118,13 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* results checked on demand via hasPermission() below */ }
+    ) {
+        // Location asked for but still off with no prompt possible any more: go straight to settings.
+        if (locationJustRequested && !hasAnyLocation() &&
+            !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) openAppSettingsForLocation()
+        locationJustRequested = false
+    }
+    private var locationJustRequested = false
 
     private var currentFloorPlanImage: File? = null
     private var floorPlanMarkers: MutableList<FloorPlanMarker> = mutableListOf()
@@ -133,7 +139,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         ThemeManager.apply(binding.root, this)
 
         appSettings = AppSettings(this)
-        if (intent?.action == ScanService.ACTION_START) startRunRequested = true
+        // Only for a fresh launch: a recreate (rotation, theme) or a relaunch from Recents carries
+        // the same intent again and would start a run the user may already have stopped.
+        val freshLaunch = savedInstanceState == null && (intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0
+        if (freshLaunch && intent?.action == ScanService.ACTION_START) startRunRequested = true
+        if (freshLaunch && intent?.action == ScanService.ACTION_ASK_LOCATION) binding.root.post { askForLocation() }
         adapter = ObservationAdapter(
             onHeaderClick = { source -> toggleGroup(source) },
             onRowLongClick = { obs -> startHunt(obs) },
@@ -151,7 +161,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             val service = scanService ?: return@setOnClickListener
             if (service.running) service.stopRun(notifyRig = true, reason = "phone STOP button")
             else {
-                service.startRun(notifyRig = true, reason = "phone START button")
+                service.startRun(notifyRig = true, reason = "phone START button", fromUi = true)
                 if (!service.running && !hasAnyLocation()) askForLocation() // refused for Location - ask now
             }
         }
@@ -635,15 +645,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
      *  for good) - open this app's settings page so it can be switched on there. */
     private fun askForLocation() {
         if (hasAnyLocation()) return
-        if (!shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) && askedLocationOnce) {
-            Toast.makeText(this, "Allow Location for this app (Permissions -> Location)", Toast.LENGTH_LONG).show()
-            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)))
-            return
-        }
-        askedLocationOnce = true
-        requestNeededPermissions()
+        locationJustRequested = true
+        requestNeededPermissions() // if Android won't show the prompt, the result opens settings
     }
-    private var askedLocationOnce = false
+
+    private fun openAppSettingsForLocation() {
+        Toast.makeText(this, "Allow Location for this app (Permissions -> Location)", Toast.LENGTH_LONG).show()
+        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)))
+    }
 
     private fun requestNeededPermissions() {
         val needed = mutableListOf(
@@ -1894,7 +1903,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         val own = lat != 0.0 || lon != 0.0
         val heardMs = if (heardAtMs > 0) heardAtMs else updatedAtMs
         return HistoricalPoint(
-            mac = nodeId,
+            mac = "!%08x".format(nodeNum), // from the number (see MeshUploader)
             label = longName.ifBlank { shortName },
             authType = MeshProto.hardwareName(hwModel),
             firstSeen = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(heardMs)),

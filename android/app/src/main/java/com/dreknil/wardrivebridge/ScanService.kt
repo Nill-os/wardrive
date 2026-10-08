@@ -165,6 +165,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     }
 
     private fun mergeMeshNode(runId: Long, num: Long, n: MeshProto.Node, heardNow: Boolean, direct: Boolean = false) {
+        if (num == 0L || num == 0xffffffffL) return // not a node: unset / the broadcast address
         val prev = meshNodesThisRun[num]
         // Where the phone was only stands in for the node's position when the node was heard
         // directly - a packet relayed over several hops may come from miles away.
@@ -538,7 +539,7 @@ class ScanService : Service(), RigLinkManager.Listener {
     // start"/"scan stop" so the rig follows along. false when reacting to a
     // state change the rig already reported - echoing a command back for
     // something it already knows would just be redundant traffic.
-    fun startRun(notifyRig: Boolean, reason: String = "app") {
+    fun startRun(notifyRig: Boolean, reason: String = "app", fromUi: Boolean = false) {
         if (running) return
         // Android 14+ refuses to start a location foreground service while the app is in the
         // background (pocket, screen off). Try it first; if refused, ask the user to tap in
@@ -546,7 +547,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (!hasAnyLocationPermission()) { // the location service type needs it - not a background issue
             logRunEvent("can't start a run ($reason): Location permission is off")
             listener?.onRigLogLine("[run] allow Location for this app to start runs")
-            showLocationNeeded()
+            if (!fromUi) showLocationNeeded() // the in-app START asks right away instead
             return
         }
         try {

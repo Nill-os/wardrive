@@ -107,7 +107,7 @@ class AppSettings(context: Context) {
 
     fun setMeshOwnNode(address: String, nodeNum: Long) {
         if (address.isEmpty() || meshOwnNodeFor(address) == nodeNum) return
-        val others = meshOwnNodes.lines().filter { it.isNotBlank() && !it.startsWith("$address|") }.takeLast(7)
+        val others = meshOwnNodes.lines().filter { it.isNotBlank() && !it.startsWith("$address|") }.takeLast(63) // effectively unbounded - a forgotten own radio would be logged as a find
         meshOwnNodes = (others + "$address|$nodeNum").joinToString("\n")
     }
 

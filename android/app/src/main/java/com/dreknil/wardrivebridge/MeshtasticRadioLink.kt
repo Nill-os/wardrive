@@ -187,8 +187,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         if (clientAttached) return
         val nonce = if (gotMyInfo) MeshProto.NONCE_ONLY_NODES else MeshProto.NONCE_ONLY_CONFIG
         enqueueWrite(Write(MeshProto.wantConfig(nonce), ours = true))
-        // Until a node list has come back on this connection, check again soon rather than wait
-        // for the 5-min resync (a lost config_complete would otherwise stall the sequence).
+        // Until a node list has come back on this connection, re-ask after SYNC_CHECK_MS without
+        // any data (re-armed by every message) rather than wait for the 5-min resync.
         if (!nodesReadOnce) { handler.removeCallbacks(syncCheck); handler.postDelayed(syncCheck, SYNC_CHECK_MS) }
     }
 
@@ -269,7 +269,17 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             callbacks.onMeshLog("[mesh] couldn't decode a message (${e.message})"); MeshProto.Message.Other
         }
         if (msg is MeshProto.Message.MyInfo && msg.nodeNum != 0L) gotMyInfo = true
-        if (msg is MeshProto.Message.ConfigComplete && msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) nodesReadOnce = true
+        if (msg is MeshProto.Message.ConfigComplete && msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) {
+            nodesReadOnce = true
+            failures = 0 // a fully working connection - back to fast retries if it drops
+            handler.removeCallbacks(syncCheck)
+        } else if (!nodesReadOnce && msg !is MeshProto.Message.Heard) {
+            // Inactivity, not a deadline: a big node list can take longer than SYNC_CHECK_MS to
+            // read, and re-asking mid-stream would restart it from the top every time. Live
+            // packets don't count as progress - they keep coming after a lost config_complete.
+            handler.removeCallbacks(syncCheck)
+            handler.postDelayed(syncCheck, SYNC_CHECK_MS)
+        }
         if (msg is MeshProto.Message.ConfigComplete && !clientAttached) {
             when {
                 gotMyInfo && msg.id == MeshProto.NONCE_ONLY_CONFIG.toLong() -> requestNodes() // identified - now the nodes
@@ -338,8 +348,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     reconnectLater()
                     return@post
                 }
-                failures = 0
-                handler.removeCallbacks(setupTimeout)
+                handler.removeCallbacks(setupTimeout) // (failures resets once a node list has come back)
                 isConnected = true
                 callbacks.onMeshLog("[mesh] connected - reading the node list")
                 callbacks.onMeshConnected()

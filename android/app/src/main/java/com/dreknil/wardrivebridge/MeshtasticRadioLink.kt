@@ -50,6 +50,11 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     private var fromRadio: BluetoothGattCharacteristic? = null
     private var failures = 0
     private var loggedWaiting = false
+    private var failedReads = 0
+    // A GATT op that never calls back (an Android stack quirk) would leave busy set forever.
+    private val opWatchdog = Runnable {
+        if (busy && isConnected) { callbacks.onMeshLog("[mesh] radio stopped answering - reconnecting"); reconnectLater() }
+    }
 
     // One GATT operation at a time (Android drops an op issued while another is in flight):
     // writes queue here, and a read of FromRadio runs whenever no write is waiting.
@@ -140,6 +145,8 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         handler.removeCallbacks(resync)
         handler.removeCallbacks(retry)
         handler.removeCallbacks(pumpRetry)
+        handler.removeCallbacks(opWatchdog)
+        failedReads = 0
         inFlight = null
         toRadio = null
         fromRadio = null
@@ -191,7 +198,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     @Suppress("DEPRECATION") g.writeCharacteristic(c)
                 }
             } catch (_: Exception) { false }
-            if (ok) { writes.removeFirst(); inFlight = next }
+            if (ok) { writes.removeFirst(); inFlight = next; armWatchdog() }
             else { busy = false; retryPumpSoon() } // stack busy - try again shortly
             return
         }
@@ -200,9 +207,11 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             busy = true
             wantRead = false
             val ok = try { g.readCharacteristic(c) } catch (_: Exception) { false }
-            if (!ok) { busy = false; wantRead = true; retryPumpSoon() }
+            if (ok) armWatchdog() else { busy = false; wantRead = true; retryPumpSoon() }
         }
     }
+
+    private fun armWatchdog() { handler.removeCallbacks(opWatchdog); handler.postDelayed(opWatchdog, OP_TIMEOUT_MS) }
 
     private fun readSoon() { wantRead = true; pump() }
 
@@ -218,7 +227,12 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         busy = false
         // A failed read may have consumed the radio's own NodeInfo: never let the flag carry over
         // to whatever comes next (that would be someone else's node).
-        if (readFailed) awaitOwnNode = false
+        if (readFailed) {
+            awaitOwnNode = false
+            // Read the rest of the stream rather than wait for the next FromNum notify (which may
+            // not come on a quiet mesh) - but don't spin on a persistent error.
+            if (++failedReads <= MAX_FAILED_READS) { wantRead = true; retryPumpSoon(); return }
+        } else failedReads = 0
         if (value.isEmpty()) { pump(); return } // radio's queue is drained - run any waiting write
         onFromRadioRaw?.invoke(value)
         var decodeFailed = false
@@ -233,9 +247,10 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
                     // The firmware sends its own node without a hop count; anything else isn't it.
                     if (msg.node.hopsAway < 0) msg = MeshProto.Message.MyInfo(msg.node.num) // the radio itself, not a find
                 }
-                // An undecodable message may have been the own node; any other known message means
-                // the moment has passed. (Other = e.g. a queue-status reply - keep waiting.)
-                decodeFailed || msg !is MeshProto.Message.Other -> awaitOwnNode = false
+                // An undecodable message may have been the own node, and my_info / a finished stream
+                // mean the moment has passed. A live packet or a queue-status reply can only be a
+                // leftover from before the request - keep waiting.
+                decodeFailed || msg is MeshProto.Message.MyInfo || msg is MeshProto.Message.ConfigComplete -> awaitOwnNode = false
             }
         }
         callbacks.onMeshMessage(msg)
@@ -361,5 +376,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         private const val RETRY_SLOW_MS = 30_000L
         private const val RESYNC_MS = 5 * 60_000L
         private const val MAX_QUEUED_WRITES = 64
+        private const val MAX_FAILED_READS = 2
+        private const val OP_TIMEOUT_MS = 10_000L
     }
 }

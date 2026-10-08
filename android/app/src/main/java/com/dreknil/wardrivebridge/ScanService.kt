@@ -512,6 +512,11 @@ class ScanService : Service(), RigLinkManager.Listener {
         // Android 14+ refuses to start a location foreground service while the app is in the
         // background (pocket, screen off). Try it first; if refused, ask the user to tap in
         // rather than crashing - the tap opens the app, which starts the run.
+        if (!hasLocationPermission()) { // the location service type needs it - not a background issue
+            logRunEvent("can't start a run ($reason): Location permission is off")
+            listener?.onRigLogLine("[run] allow Location for this app to start runs")
+            return
+        }
         try {
             startForeground(NOTIF_ID, buildNotification())
         } catch (e: Exception) {
@@ -570,12 +575,14 @@ class ScanService : Service(), RigLinkManager.Listener {
             // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
             meshOwnNums.clear()
             // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
-            // (right on nRF52 radios), plus the number confirmed for this radio on an earlier run.
+            // (right on nRF52 radios), plus every own number radios have confirmed on earlier runs.
             ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }
-            appSettings.meshOwnNodeFor(appSettings.meshRadioAddress)?.let { confirmed ->
-                    meshOwnNums.add(confirmed)
-                    dbExecutor.execute { dao.deleteMeshNodeEverywhere(confirmed) }
-                }
+            // Every radio the user has linked is theirs (e.g. an old radio kept at home as a base):
+            // none of them is ever a find, and none of their rows stays in the log.
+            for (confirmed in appSettings.meshOwnNodeNums()) {
+                meshOwnNums.add(confirmed)
+                dbExecutor.execute { dao.deleteMeshNodeEverywhere(confirmed) }
+            }
             meshLink.start(appSettings.meshRadioAddress)
             if (appSettings.meshBridge) meshBridge.start()
         }

@@ -101,6 +101,10 @@ class AppSettings(context: Context) {
     fun meshOwnNodeFor(address: String): Long? = meshOwnNodes.lineSequence()
         .map { it.split("|") }.firstOrNull { it.size == 2 && it[0] == address }?.get(1)?.toLongOrNull()
 
+    /** Every radio's confirmed own node number - all of them are the user's, never finds. */
+    fun meshOwnNodeNums(): List<Long> = meshOwnNodes.lineSequence()
+        .mapNotNull { it.split("|").takeIf { p -> p.size == 2 }?.get(1)?.toLongOrNull() }.toList()
+
     fun setMeshOwnNode(address: String, nodeNum: Long) {
         if (address.isEmpty() || meshOwnNodeFor(address) == nodeNum) return
         val others = meshOwnNodes.lines().filter { it.isNotBlank() && !it.startsWith("$address|") }.takeLast(7)

@@ -163,15 +163,21 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
         // Cycled rather than left open forever - Android throttles apps that restart scans more
         // than 5 times per 30s, and a long-running scan can be quietly deprioritized, so a
         // bounded window with a fresh restart is the dependable pattern.
-        handler.postDelayed({
-            if (scanning && !isConnected && gatt == null) {
-                stopScan()
-                scheduleRescan(1_000)
-            }
-        }, SCAN_WINDOW_MS)
+        handler.removeCallbacks(scanWindowEnd)
+        handler.postDelayed(scanWindowEnd, SCAN_WINDOW_MS)
+    }
+
+    // Named so a leftover from an earlier scan can't cut a newer one short (each extra restart
+    // spends the app's 5-starts-per-30s scan budget, shared with PhoneBleScanner).
+    private val scanWindowEnd = Runnable {
+        if (scanning && !isConnected && gatt == null) {
+            stopScan()
+            scheduleRescan(1_000)
+        }
     }
 
     private fun stopScan() {
+        handler.removeCallbacks(scanWindowEnd)
         if (!scanning) return
         scanning = false
         try {

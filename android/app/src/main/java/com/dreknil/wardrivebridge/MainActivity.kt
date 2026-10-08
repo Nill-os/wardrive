@@ -2107,7 +2107,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         Thread {
             if (dao.observationCount(runId) == 0 && dao.meshNodeCount(runId) > 0) { // mesh nodes only - nothing for the CSV
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
-                if ((mesh.attempted && mesh.ok) || mesh.nothingToSend) dao.markUploaded(runId, System.currentTimeMillis())
+                // Never mark the run that's still going: rows logged after this upload must still go up.
+                if (((mesh.attempted && mesh.ok) || mesh.nothingToSend) && runId != scanService?.currentRunId()) dao.markUploaded(runId, System.currentTimeMillis())
                 runOnUiThread {
                     Toast.makeText(this, if (mesh.attempted) mesh.message else "mesh: ${mesh.message}", Toast.LENGTH_LONG).show()
                     refreshLogsView()
@@ -2130,7 +2131,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
                     (!mesh.attempted || mesh.ok)
-                if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
+                if (allOk && runId != scanService?.currentRunId()) dao.markUploaded(runId, System.currentTimeMillis()) // the live run keeps uploading
                 runOnUiThread {
                     val parts = mutableListOf<String>()
                     if (mesh.attempted) parts.add(if (mesh.ok) mesh.message else "mesh: ${mesh.message}")

@@ -66,17 +66,17 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val ci = cell.cellIdentity
                     if (ci.ci == CellInfo.UNAVAILABLE) continue // no real cell ID - nothing useful to log
                     val ss = cell.cellSignalStrength
-                    CellReading(CellIds.canonical("LTE-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.tac)}-${ci.ci}"), vOrZero(ss.dbm), vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
+                    CellReading(canonId("LTE-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.tac)}-${ci.ci}"), vOrZero(ss.dbm), vOrZero(ss.rsrp), vOrZero(ss.rsrq), vOrZero(ci.earfcn))
                 }
                 cell is CellInfoGsm -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading(CellIds.canonical("GSM-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.arfcn))
+                    CellReading(canonId("GSM-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.arfcn))
                 }
                 cell is CellInfoWcdma -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading(CellIds.canonical("WCDMA-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.uarfcn))
+                    CellReading(canonId("WCDMA-${mcc(ci.mccString, ci.mcc)}-${mnc(ci.mncString, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.uarfcn))
                 }
                 cell is CellInfoCdma -> {
                     val ci = cell.cellIdentity
@@ -90,7 +90,7 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                     val mcc = ci.mccString ?: "?"
                     val mnc = ci.mncString ?: "?"
                     val tac = if (ci.tac == CellInfo.UNAVAILABLE) "?" else ci.tac.toString()
-                    CellReading(CellIds.canonical("NR-$mcc-$mnc-$tac-${ci.nci}"), vOrZero(ss.dbm), vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq), vOrZero(ci.nrarfcn))
+                    CellReading(canonId("NR-$mcc-$mnc-$tac-${ci.nci}"), vOrZero(ss.dbm), vOrZero(ss.ssRsrp), vOrZero(ss.ssRsrq), vOrZero(ci.nrarfcn))
                 }
                 else -> continue
             }
@@ -126,6 +126,10 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
     // for MCC/MNC/TAC on some carriers/readings) - showing that raw number
     // is meaningless noise, so it becomes "?" instead.
     private fun v(value: Int): String = if (value == CellInfo.UNAVAILABLE) "?" else value.toString()
+
+    // API 28+ reports the MNC as the network's own string (authoritative - keep it exactly);
+    // older APIs only give a number, which CellIds pads back to the country's MNC length.
+    private fun canonId(id: String): String = if (Build.VERSION.SDK_INT >= 28) id else CellIds.canonical(id)
 
     // MCC/MNC as the modem reports them, so an MNC keeps its leading zero ("004" is not "4";
     // WiGLE's cell key is MCC+MNC concatenated). The *String getters are API 28+.

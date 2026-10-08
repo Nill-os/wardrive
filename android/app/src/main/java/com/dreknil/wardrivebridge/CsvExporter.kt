@@ -80,7 +80,9 @@ object CsvExporter {
         val mccN = mcc.toIntOrNull() ?: return null
         val mncN = mnc.toIntOrNull() ?: return null
         if (mccN !in 1..999 || mncN !in 0..999) return null
-        mnc = CellIds.canonicalMnc(mcc, mnc) // older rows stored it as a plain number ("310-4")
+        // Stored ids are canonical already (new scans keep Android's own MNC string, older rows were
+        // rewritten by the 5->6 migration); only ever pad a lone digit.
+        if (mnc.length < 2) mnc = mnc.padStart(2, '0')
         val area = p[3].toLongOrNull() ?: return null
         val cid = p[4].toLongOrNull() ?: return null
         if (area <= 0 || area >= Int.MAX_VALUE) return null

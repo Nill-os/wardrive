@@ -6,7 +6,7 @@ package com.dreknil.wardrivebridge
  * Mexico "334-020"), at least 2 elsewhere (Germany "262-01") - which is how Android reports it
  * (mncString) and what WiGLE's key needs (MCCMNC_AREA_CID). Older app versions stored the MNC as a
  * plain number ("310-4"), so the same tower ended up under two identities; AppDatabase's 5->6
- * migration rewrites those rows with this, and CsvExporter keys every export with it.
+ * migration rewrites those rows with this, and pre-API-28 scans (number-only MNC) use it too.
  */
 object CellIds {
     // MCCs whose networks use 3-digit MNCs (ITU-T E.212 allocations: North America and the

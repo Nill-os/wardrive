@@ -54,10 +54,13 @@ object MeshUploader {
         val (ok, msg) = post(wdgwarsKey, payload)
         // Success = a 2xx whose JSON isn't an error ("ok": false / an "error" key) - a 200 carrying
         // just an error must not mark the run uploaded. meshcore_imported is optional in the answer.
-        val accepted = ok && try {
-            val j = JSONObject(msg.substringAfter(": ", ""))
-            !j.has("error") && j.optBoolean("ok", true) && j.optBoolean("success", true)
-        } catch (_: Exception) { false }
+        val body = msg.substringAfter(": ", "").trim()
+        val accepted = ok && (body.isEmpty() || try {
+            val j = JSONObject(body)
+            val err = j.opt("error")
+            val hasError = err != null && err != JSONObject.NULL && err != false && err.toString().isNotBlank()
+            !hasError && j.optBoolean("ok", true) && j.optBoolean("success", true)
+        } catch (_: Exception) { summarize(body) != null }) // not parseable whole (e.g. cut off) - trust an import count
         return Result(true, accepted, summarize(msg) ?: msg.take(300))
     }
 
@@ -98,7 +101,7 @@ object MeshUploader {
             c.setRequestProperty("X-API-Key", apiKey)
             c.outputStream.use { it.write(body) }
             val code = c.responseCode
-            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }?.take(64_000) ?: ""
+            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }?.take(1_000_000) ?: ""
             val ok = code in 200..299 && !Regex("\"(ok|success)\"\\s*:\\s*false").containsMatchIn(text)
             ok to "HTTP $code: $text"
         } catch (e: Exception) {

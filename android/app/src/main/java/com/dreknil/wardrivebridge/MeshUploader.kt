@@ -29,8 +29,9 @@ object MeshUploader {
         val nodes = AppDatabase.get(context).dao().meshNodesForRun(runId)
         val settings = AppSettings(context)
         val items = JSONArray()
+        val ownNums = settings.meshOwnNodeNums().toSet() // never upload the user's own radios (also purged from the DB)
         for (n in nodes) {
-            if (n.viaMqtt) continue
+            if (n.viaMqtt || n.nodeNum in ownNums) continue
             if (n.longName.endsWith("_nomap", true) || n.longName.endsWith("_optout", true)) continue
             val (lat, lon) = when {
                 n.lat != 0.0 || n.lon != 0.0 -> n.lat to n.lon

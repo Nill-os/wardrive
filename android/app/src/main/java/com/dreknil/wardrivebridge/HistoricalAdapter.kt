@@ -77,7 +77,8 @@ class HistoricalAdapter(
             binding.subtitle.text = buildString {
                 append(point.authType.ifBlank { point.type })
                 if (point.channel > 0) append("  ch${point.channel}")
-                append(if (point.type == "MESH") "  SNR ${point.rssi}dB" else "  ${point.rssi}dBm") // mesh rows carry SNR
+                // Mesh rows carry SNR (0 = never reported - show nothing).
+                if (point.type == "MESH") { if (point.rssi != 0) append("  SNR ${point.rssi}dB") } else append("  ${point.rssi}dBm")
             }
             binding.sourceTag.text = point.type
             binding.sourceTag.setBackgroundColor(historicalTypeColor(point.type))

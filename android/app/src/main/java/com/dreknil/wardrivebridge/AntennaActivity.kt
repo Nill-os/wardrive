@@ -110,7 +110,7 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
         // Don't leave the radios (and the rig) scanning once we're off-screen;
         // a real run, if any, keeps going (stopPreview no-ops while running).
         scanService?.stopPreview()
-        scanService?.listener = null
+        if (scanService?.listener === this) scanService?.listener = null // don't detach a screen that took over
         try { unbindService(connection) } catch (_: Exception) {}
         scanService = null
     }

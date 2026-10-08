@@ -20,6 +20,9 @@ package com.dreknil.wardrivebridge
 object MeshProto {
     /** firmware PhoneAPI.h SPECIAL_NONCE_ONLY_NODES: "send me the node database, skip the config". */
     const val NONCE_ONLY_NODES = 69421
+    /** SPECIAL_NONCE_ONLY_CONFIG: config only (no other nodes) - its stream starts with my_info, the
+     *  radio's own node number, which is how this app knows which node is the user's own radio. */
+    const val NONCE_ONLY_CONFIG = 69420
     private const val PORT_POSITION = 3
     private const val PORT_NODEINFO = 4
 
@@ -85,17 +88,6 @@ object MeshProto {
         "T_IMPULSE_PLUS", 136 to "T_ECHO_CARD", 137 to "SEEED_WIO_TRACKER_L2", 138 to "CROWPANEL_P4", 139 to
         "HELTEC_MESH_TOWER_V2", 140 to "MESHNOLOGY_W10"
     )
-
-    /** The want_config_id of a ToRadio message, or -1 if it isn't one. */
-    fun readWantConfig(toRadio: ByteArray): Long = try {
-        val r = Reader(toRadio)
-        var nonce = -1L
-        while (r.hasMore()) {
-            val (f, w) = r.tag()
-            if (f == 3 && w == 0) nonce = r.varint() else r.skip(w)
-        }
-        nonce
-    } catch (_: Exception) { -1L }
 
     fun wantConfig(nonce: Int): ByteArray = byteArrayOf(0x18) + varint(nonce.toLong() and 0xffffffffL) // field 3, varint
 

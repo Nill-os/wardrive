@@ -508,9 +508,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         if (!startRunRequested) return
         startRunRequested = false
         if (!s.running) {
-            s.startRun(notifyRig = true, reason = "tile/widget/notification START")
-            binding.startStopButton.text = "> STOP"
-            binding.pauseResumeButton.visibility = View.VISIBLE
+            s.startRun(notifyRig = true, reason = "tile/widget/notification START") // onRunStateChanged updates the buttons
         }
     }
 
@@ -531,7 +529,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         // Deliberately does NOT stop the run - the whole point of
         // ScanService is that closing this Activity (screen lock, app
         // switch, task swipe) must not interrupt an active run.
-        scanService?.listener = null
+        // Only if it's still us: a recreated MainActivity binds (and becomes the listener) before
+        // the old instance is destroyed, and clearing it then left the new screen's terminal and
+        // live feeds dead until the next resume.
+        if (scanService?.listener === this) scanService?.listener = null
         unbindService(serviceConnection)
     }
 
@@ -2104,11 +2105,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }
 
         Toast.makeText(this, "Uploading…", Toast.LENGTH_SHORT).show()
+        // Decided now, before anything is built or sent: a run that's still going is never marked
+        // uploaded by this upload (rows logged after it - even if the run stops mid-upload - must
+        // still go up via AutoUploader or a later upload from Logs).
+        val wasLive = runId == scanService?.currentRunId()
         Thread {
             if (dao.observationCount(runId) == 0 && dao.meshNodeCount(runId) > 0) { // mesh nodes only - nothing for the CSV
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
-                // Never mark the run that's still going: rows logged after this upload must still go up.
-                if (((mesh.attempted && mesh.ok) || mesh.nothingToSend) && runId != scanService?.currentRunId()) dao.markUploaded(runId, System.currentTimeMillis())
+                if (((mesh.attempted && mesh.ok) || mesh.nothingToSend) && !wasLive) dao.markUploaded(runId, System.currentTimeMillis())
                 runOnUiThread {
                     Toast.makeText(this, if (mesh.attempted) mesh.message else "mesh: ${mesh.message}", Toast.LENGTH_LONG).show()
                     refreshLogsView()
@@ -2131,7 +2135,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
                     (!mesh.attempted || mesh.ok)
-                if (allOk && runId != scanService?.currentRunId()) dao.markUploaded(runId, System.currentTimeMillis()) // the live run keeps uploading
+                if (allOk && !wasLive) dao.markUploaded(runId, System.currentTimeMillis()) // see wasLive
                 runOnUiThread {
                     val parts = mutableListOf<String>()
                     if (mesh.attempted) parts.add(if (mesh.ok) mesh.message else "mesh: ${mesh.message}")

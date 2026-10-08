@@ -102,12 +102,16 @@ class ScanService : Service(), RigLinkManager.Listener {
     // The user's own radio's node number(s) - never a find. Confirmed numbers (from my_info or
     // the first NodeInfo after a nodes-only request) are remembered per radio across runs.
     private val meshOwnNums = HashSet<Long>()
+    // True once the radio has sent my_info on the current connection: no node is logged before the
+    // radio has said which node it is (MeshtasticRadioLink asks for it first on every connect).
+    private var meshIdentified = false
     private var meshSyncNodes = 0 // NodeInfos in the current node-list read, for the log line
     val meshRadioConnected get() = ::meshLink.isInitialized && meshLink.isConnected
     val meshAppBridged get() = ::meshBridge.isInitialized && meshBridge.hasClient
     private val meshCallbacks = object : MeshtasticRadioLink.Callbacks {
         override fun onMeshConnected() { logRunEvent("mesh radio connected") }
         override fun onMeshDisconnected() {
+            meshIdentified = false
             logRunEvent("mesh radio disconnected")
             meshBridge.dropClient() // the Meshtastic app reconnects and re-reads once the radio is back
         }
@@ -117,6 +121,8 @@ class ScanService : Service(), RigLinkManager.Listener {
                 val own = msg.nodeNum
                 meshSyncNodes = 0
                 if (own == 0L) return
+                if (!meshIdentified) listener?.onRigLogLine("[mesh] radio is !%08x - its own node is never logged as a find".format(own))
+                meshIdentified = true
                 appSettings.setMeshOwnNode(meshLink.radioAddress, own)
                 if (meshOwnNums.add(own)) {
                     if (meshNodesThisRun.remove(own) != null) meshNodeCountThisRun--
@@ -131,7 +137,7 @@ class ScanService : Service(), RigLinkManager.Listener {
                 meshSyncNodes = 0
                 return
             }
-            if (paused) return
+            if (paused || !meshIdentified) return
             val runId = currentRunId ?: return
             when (msg) {
                 // The radio's node list also holds nodes it heard days ago or only over the internet
@@ -401,6 +407,20 @@ class ScanService : Service(), RigLinkManager.Listener {
         (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager).notify(JOIN_NOTIF_ID, n)
     }
 
+    /** A run couldn't start because Location is off for the app - say so (opens the app, which asks). */
+    private fun showLocationNeeded() {
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_IMMUTABLE else 0)
+        val tap = PendingIntent.getActivity(this, 3, Intent(this, MainActivity::class.java), flags)
+        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Can't start a run")
+            .setContentText("Allow Location for Nill OS - Wardriver")
+            .setSmallIcon(R.drawable.ic_radar)
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .build()
+        (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager).notify(JOIN_NOTIF_ID, n)
+    }
+
     /** Tells the rig to upload its SD-card runs now. False if no rig is connected. */
     fun requestRigUpload(): Boolean {
         if (!rigConnected) return false
@@ -489,6 +509,11 @@ class ScanService : Service(), RigLinkManager.Listener {
         androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
+    // What Android requires for a location-type foreground service: fine OR approximate.
+    private fun hasAnyLocationPermission(): Boolean = hasLocationPermission() ||
+        androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
     private fun hasBlePermission(): Boolean {
         if (Build.VERSION.SDK_INT < 31) return hasLocationPermission()
         return androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_SCAN) ==
@@ -512,9 +537,10 @@ class ScanService : Service(), RigLinkManager.Listener {
         // Android 14+ refuses to start a location foreground service while the app is in the
         // background (pocket, screen off). Try it first; if refused, ask the user to tap in
         // rather than crashing - the tap opens the app, which starts the run.
-        if (!hasLocationPermission()) { // the location service type needs it - not a background issue
+        if (!hasAnyLocationPermission()) { // the location service type needs it - not a background issue
             logRunEvent("can't start a run ($reason): Location permission is off")
             listener?.onRigLogLine("[run] allow Location for this app to start runs")
+            showLocationNeeded()
             return
         }
         try {
@@ -574,6 +600,7 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission()) {
             // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
             meshOwnNums.clear()
+            meshIdentified = false
             // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
             // (right on nRF52 radios), plus every own number radios have confirmed on earlier runs.
             ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }

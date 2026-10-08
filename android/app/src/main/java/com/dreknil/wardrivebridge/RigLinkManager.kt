@@ -250,8 +250,7 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            // Before API 33 there's no export flag (and the broadcast is our own explicit PendingIntent).
-            context.registerReceiver(permissionReceiver, filter)
+            registerLegacy(filter)
         }
         receiverRegistered = true
         ble.start()
@@ -328,6 +327,10 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         )
         usbManager.requestPermission(device, permissionIntent)
     }
+
+    // Before API 33 there's no export flag (and the broadcast is our own explicit PendingIntent).
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun registerLegacy(filter: IntentFilter) { context.registerReceiver(permissionReceiver, filter) }
 
     private fun openDevice(device: UsbDevice) {
         val driver = UsbSerialProber.getDefaultProber().probeDevice(device) ?: run {

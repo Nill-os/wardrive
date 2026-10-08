@@ -28,10 +28,14 @@ class RunTileService : TileService() {
                 android.app.PendingIntent.getActivity(this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE),
             )
         } else {
-            @Suppress("DEPRECATION") // the Intent overload is the only one before API 34
-            startActivityAndCollapse(intent)
+            collapseLegacy(intent)
         }
     }
+
+    // The Intent overload is the only one before API 34 (34+ uses the PendingIntent one above).
+    @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
+    @Suppress("DEPRECATION")
+    private fun collapseLegacy(intent: android.content.Intent) = startActivityAndCollapse(intent)
 
     private fun update() {
         val tile = qsTile ?: return

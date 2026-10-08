@@ -153,9 +153,21 @@ class ScanService : Service(), RigLinkManager.Listener {
                 // own radio isn't a find.
                 is MeshProto.Message.NodeInfo -> if (msg.node.num !in meshOwnNums && !msg.node.viaMqtt &&
                     msg.node.lastHeard >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.node.lastHeard)) mergeMeshNode(runId, msg.node.num, msg.node, heardNow = false)
-                is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from !in meshOwnNums && !msg.viaMqtt) mergeMeshNode(runId, msg.from,
-                    MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr, hopsAway = msg.hopsAway),
-                    heardNow = true, direct = msg.hopsAway == 0)
+                is MeshProto.Message.Heard -> if (msg.from != 0L && msg.from !in meshOwnNums && !msg.viaMqtt) {
+                    // The radio queues packets while no app is connected, so a packet can be old:
+                    // judge it by when the radio received it, not when it reached the phone.
+                    val nowSec = System.currentTimeMillis() / 1000
+                    val rxKnown = msg.rxTime > VALID_EPOCH_SEC
+                    val keep = if (rxKnown) msg.rxTime >= runStartMs / 1000 - 60 && !heardWhilePaused(msg.rxTime)
+                               else !msg.backlog // unknown receive time + from the queue: can't place it in time
+                    if (keep) {
+                        val fresh = !msg.backlog || (rxKnown && nowSec - msg.rxTime <= FRESH_PACKET_SEC)
+                        mergeMeshNode(runId, msg.from,
+                            MeshProto.Node(msg.from, user = msg.user, position = msg.position, snr = msg.snr,
+                                lastHeard = if (rxKnown) msg.rxTime else 0, hopsAway = msg.hopsAway),
+                            heardNow = fresh, direct = msg.hopsAway == 0) // the phone's position only for a fresh, direct packet
+                    }
+                }
                 else -> {}
             }
         }
@@ -544,6 +556,39 @@ class ScanService : Service(), RigLinkManager.Listener {
     // start"/"scan stop" so the rig follows along. false when reacting to a
     // state change the rig already reported - echoing a command back for
     // something it already knows would just be redundant traffic.
+    private var meshStarted = false // the mesh link was started for the current run
+
+    /** Starts the Meshtastic link (and bridge) for the run if it's set up and permitted - at run
+     *  start, or later when the Bluetooth permission is granted mid-run. */
+    private fun startMeshIfConfigured() {
+        if (meshStarted || !(appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission())) return
+        meshStarted = true
+        // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
+        meshOwnNums.clear()
+        meshIdentified = false
+        // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
+        // (right on nRF52 radios), plus every own number radios have confirmed on earlier runs.
+        ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }
+        // Every radio the user has linked is theirs (e.g. an old radio kept at home as a base):
+        // none of them is ever a find, and none of their rows stays in the log.
+        for (confirmed in appSettings.meshOwnNodeNums()) {
+            meshOwnNums.add(confirmed)
+            dbExecutor.execute { dao.deleteMeshNodeEverywhere(confirmed) }
+        }
+        meshLink.start(appSettings.meshRadioAddress)
+        if (appSettings.meshBridge) meshBridge.start()
+    }
+
+    /** Permissions granted while a run is going (e.g. Nearby devices / Phone right after Location):
+     *  start whatever they unlock now instead of waiting for the next run. Safe to call repeatedly. */
+    fun applyGrantedPermissions() {
+        if (!running || paused) return
+        if (hasLocationPermission()) { locationTracker.start(); wifiScanner.start() }
+        if (hasBlePermission() && bleScanner.isSupported()) bleScanner.start()
+        if (hasCellPermission()) cellScanner.start()
+        startMeshIfConfigured()
+    }
+
     fun startRun(notifyRig: Boolean, reason: String = "app", fromUi: Boolean = false) {
         if (running) return
         // Android 14+ refuses to start a location foreground service while the app is in the
@@ -610,24 +655,10 @@ class ScanService : Service(), RigLinkManager.Listener {
         if (hasCellPermission()) cellScanner.start()
         meshNodesThisRun.clear()
         meshNodeCountThisRun = 0
-        if (appSettings.meshCollect && appSettings.meshRadioAddress.isNotEmpty() && hasBlePermission()) {
-            // Keeps the user's own radio - and its position, i.e. where they are - out of the finds.
-            meshOwnNums.clear()
-            meshIdentified = false
-            pausedSpans.clear()
-            pausedSinceSec = 0L
-            // Best guess before the radio confirms it: the low 4 bytes of its Bluetooth address
-            // (right on nRF52 radios), plus every own number radios have confirmed on earlier runs.
-            ownMeshNodeNum(appSettings.meshRadioAddress)?.let { meshOwnNums.add(it) }
-            // Every radio the user has linked is theirs (e.g. an old radio kept at home as a base):
-            // none of them is ever a find, and none of their rows stays in the log.
-            for (confirmed in appSettings.meshOwnNodeNums()) {
-                meshOwnNums.add(confirmed)
-                dbExecutor.execute { dao.deleteMeshNodeEverywhere(confirmed) }
-            }
-            meshLink.start(appSettings.meshRadioAddress)
-            if (appSettings.meshBridge) meshBridge.start()
-        }
+        pausedSpans.clear()
+        pausedSinceSec = 0L
+        meshStarted = false
+        startMeshIfConfigured()
         if (notifyRig) rigLink.sendScanStart()
 
         startForeground(NOTIF_ID, buildNotification())
@@ -647,6 +678,9 @@ class ScanService : Service(), RigLinkManager.Listener {
         cellScanner.stop()
         meshBridge.stop()
         meshLink.stop() // frees the radio for the Meshtastic app again
+        meshStarted = false
+        pausedSpans.clear()
+        pausedSinceSec = 0L
         if (meshNodeCountThisRun > 0) logRunEvent("mesh: $meshNodeCountThisRun nodes this run")
         // A run that starts and stops without ever logging anything (a quick
         // rig reconnect glitch, idle auto-stop right after a false start)
@@ -1206,6 +1240,8 @@ class ScanService : Service(), RigLinkManager.Listener {
         // Safety cap so a run that's never stopped can't hold the CPU awake forever; the idle
         // auto-stop normally ends a parked run long before this.
         private const val RUN_WAKELOCK_MAX_MS = 12 * 3600_000L
+        private const val VALID_EPOCH_SEC = 1_600_000_000L // rx_time below this is the radio's uptime, not a date
+        private const val FRESH_PACKET_SEC = 30L
 
         fun start(context: Context) {
             context.startService(Intent(context, ScanService::class.java))

@@ -73,6 +73,9 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
     // logs no finds - so the user's own radio is known by number before any node is considered.
     private var gotMyInfo = false
     private var nodesReadOnce = false // a nodes-only stream completed on this connection
+    // The radio queues every packet it receives - with or without an app connected - and hands the
+    // queue over after a config stream: packets read before the queue first runs empty may be old.
+    private var drainingBacklog = true
     private var myInfoAttempts = 0
     private var opStartFailures = 0
 
@@ -157,6 +160,7 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
         failedReads = 0
         gotMyInfo = false
         nodesReadOnce = false
+        drainingBacklog = true
         handler.removeCallbacks(syncCheck)
         myInfoAttempts = 0
         opStartFailures = 0
@@ -266,11 +270,12 @@ class MeshtasticRadioLink(private val context: Context, private val callbacks: C
             return
         }
         failedReads = 0
-        if (value.isEmpty()) { pump(); return } // radio's queue is drained - run any waiting write
+        if (value.isEmpty()) { drainingBacklog = false; pump(); return } // radio's queue is drained - run any waiting write
         onFromRadioRaw?.invoke(value)
-        val msg = try { MeshProto.parseFromRadio(value) } catch (e: Exception) {
+        var msg = try { MeshProto.parseFromRadio(value) } catch (e: Exception) {
             callbacks.onMeshLog("[mesh] couldn't decode a message (${e.message})"); MeshProto.Message.Other
         }
+        if (drainingBacklog && msg is MeshProto.Message.Heard) msg = msg.copy(backlog = true)
         if (msg is MeshProto.Message.MyInfo && msg.nodeNum != 0L) gotMyInfo = true
         if (msg is MeshProto.Message.ConfigComplete) failures = 0 // a working connection - back to fast retries if it drops
         if (msg is MeshProto.Message.ConfigComplete && msg.id == MeshProto.NONCE_ONLY_NODES.toLong()) {

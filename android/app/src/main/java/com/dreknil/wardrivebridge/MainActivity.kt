@@ -120,13 +120,15 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (result.isEmpty()) return@registerForActivityResult // cancelled (e.g. overlapping request) - not an answer
+        scanService?.applyGrantedPermissions() // a run that's already going picks up whatever was just granted
         if (locationRequestedAtMs > 0 && hasAnyLocation()) {
             locationRequestedAtMs = 0L
             // Granted from the "Can't start a run" notice (or a refused START): start the run now -
             // the app is in front, so the foreground service is allowed - then ask for the rest.
             if (startAfterLocation) {
                 startAfterLocation = false
-                scanService?.let { if (!it.running) it.startRun(notifyRig = true, reason = "Location granted", fromUi = true) }
+                startRunRequested = true // same path as a shortcut start - also waits for the service bind
+                maybeStartRunFromShortcut()
             }
             requestNeededPermissions()
             return@registerForActivityResult

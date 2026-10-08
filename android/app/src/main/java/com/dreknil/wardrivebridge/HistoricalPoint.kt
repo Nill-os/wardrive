@@ -48,7 +48,7 @@ fun HistoricalPoint.formatDetails(): String = buildString {
         appendLine("Name: ${label.ifBlank { "(unnamed)" }}")
         appendLine("Hardware: $authType")
         if (rssi != 0) appendLine("SNR: $rssi dB")
-        if (lat != 0.0 || lon != 0.0) appendLine("Location: %.6f, %.6f".format(lat, lon)) else appendLine("Location: none reported")
+        if (lat != 0.0 || lon != 0.0) appendLine("Location: %.6f, %.6f".format(java.util.Locale.US, lat, lon)) else appendLine("Location: none reported")
         appendLine("Last heard: $firstSeen")
         return@buildString
     }
@@ -61,7 +61,7 @@ fun HistoricalPoint.formatDetails(): String = buildString {
     if (channel > 0 && !isCell) appendLine("Channel: $channel")
     if (frequency > 0) appendLine(if (isCell) "ARFCN: $frequency" else "Frequency: $frequency MHz")
     appendLine("RSSI: $rssi dBm")
-    appendLine("Location: %.6f, %.6f".format(lat, lon))
+    appendLine("Location: %.6f, %.6f".format(java.util.Locale.US, lat, lon))
     if (accuracy > 0) appendLine("GPS accuracy: ±${accuracy.toInt()} m")
     appendLine("First seen: $firstSeen")
 }.trim()
@@ -70,5 +70,6 @@ fun historicalTypeColor(type: String): Int = when {
     type.equals("BLE", ignoreCase = true) -> Color.parseColor("#22C55E")
     type.equals("WIFI", ignoreCase = true) -> Color.parseColor("#F59E0B")
     type.equals("GNSS", ignoreCase = true) -> Color.parseColor("#38BDF8")
+    type.equals("MESH", ignoreCase = true) -> Color.parseColor("#00F0FF") // Meshtastic nodes: the dashboard's MESH cyan
     else -> Color.parseColor("#EC4899") // cell types: GSM/LTE/WCDMA/CDMA
 }

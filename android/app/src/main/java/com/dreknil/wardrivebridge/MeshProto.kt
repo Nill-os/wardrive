@@ -47,7 +47,11 @@ object MeshProto {
         data class ConfigComplete(val id: Long) : Message()
         /** A live packet: a position or node-info broadcast just heard over the radio. */
         data class Heard(val from: Long, val position: Position?, val user: User?, val snr: Float,
-                         val rssi: Int, val viaMqtt: Boolean, val hopsAway: Int = -1) : Message()
+                         val rssi: Int, val viaMqtt: Boolean, val hopsAway: Int = -1,
+                         /** MeshPacket.rx_time: when the radio received it (epoch s; 0/small = radio had no valid time). */
+                         val rxTime: Long = 0,
+                         /** Read from the radio's queue right after connecting (MeshtasticRadioLink) - may be old. */
+                         val backlog: Boolean = false) : Message()
         object Other : Message()
         /** A live mesh packet this app can't read (encrypted for a channel it doesn't hold). */
         object UnreadablePacket : Message()
@@ -175,7 +179,7 @@ object MeshProto {
 
     private fun parsePacket(b: ByteArray): Message.Heard? {
         var from = 0L; var data: ByteArray? = null; var snr = 0f; var rssi = 0; var mqtt = false
-        var hopLimit = 0; var hopStart = 0
+        var hopLimit = 0; var hopStart = 0; var rxTime = 0L
         val r = Reader(b)
         while (r.hasMore()) {
             val (f, w) = r.tag()
@@ -186,6 +190,7 @@ object MeshProto {
                 f == 12 && w == 0 -> rssi = r.varint().toInt()
                 f == 14 && w == 0 -> mqtt = r.varint() != 0L
                 f == 9 && w == 0 -> hopLimit = r.varint().toInt()
+                f == 7 && w == 5 -> rxTime = r.fixed32().toLong() and 0xffffffffL
                 f == 15 && w == 0 -> hopStart = r.varint().toInt()
                 else -> r.skip(w)
             }
@@ -205,9 +210,9 @@ object MeshProto {
         // A hop_limit above hop_start is malformed/forged: unknown, never "heard directly".
         val hops = if (hopStart > 0 && hopLimit <= hopStart) hopStart - hopLimit else -1
         return when (port) {
-            PORT_POSITION -> Message.Heard(from, parsePosition(payload), null, snr, rssi, mqtt, hops)
-            PORT_NODEINFO -> Message.Heard(from, null, parseUser(payload), snr, rssi, mqtt, hops)
-            else -> Message.Heard(from, null, null, snr, rssi, mqtt, hops) // any packet: the node was heard
+            PORT_POSITION -> Message.Heard(from, parsePosition(payload), null, snr, rssi, mqtt, hops, rxTime)
+            PORT_NODEINFO -> Message.Heard(from, null, parseUser(payload), snr, rssi, mqtt, hops, rxTime)
+            else -> Message.Heard(from, null, null, snr, rssi, mqtt, hops, rxTime) // any packet: the node was heard
         }
     }
 

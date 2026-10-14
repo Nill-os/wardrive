@@ -39,8 +39,10 @@ object DeviceSignatureDetection {
         val macUpper = mac.uppercase()
         if (FLOCK_MAC_PREFIXES.any { macUpper.startsWith(it) }) return true
         if (companyId == FLOCK_COMPANY_ID) return true
-        if (name.startsWith("Penguin-", ignoreCase = true)) return true
+        if (name.startsWith("Penguin", ignoreCase = true)) return true   // "Penguin-<serial>" camera, or bare "Penguin"
+        if (name.startsWith("Pigvision", ignoreCase = true)) return true  // Flock's Pigvision camera line (seen in Biscuit Manager)
         if (name.equals("FS Battery", ignoreCase = true)) return true
+        if (name.equals("FS Ext Battery", ignoreCase = true)) return true // Flock external battery pack
         if (name.equals("DfuTarg", ignoreCase = true)) return true
         return false
     }
@@ -84,8 +86,17 @@ object DeviceSignatureDetection {
     // signals above) - Ray-Ban Meta smart glasses at their default
     // advertised name. Expect false negatives if the wearer renamed the
     // device or a future model uses a different naming scheme.
-    fun isGlasses(name: String): Boolean =
-        name.startsWith("Ray-Ban", ignoreCase = true) || name.startsWith("Meta", ignoreCase = true)
+    // Ray-Ban Meta smart glasses, plus Meta Quest / Oculus VR headsets (same
+    // "wearable camera/mic worth knowing is nearby" category; name patterns
+    // from Biscuit Manager's MetaDevice classifier). "rayban" with no hyphen
+    // is a real alternate advertised form.
+    fun isGlasses(name: String): Boolean {
+        val n = name.trim()
+        if (n.startsWith("Ray-Ban", ignoreCase = true) || n.startsWith("rayban", ignoreCase = true)) return true
+        if (n.startsWith("Meta", ignoreCase = true)) return true
+        val lower = n.lowercase()
+        return lower.startsWith("quest") || lower.startsWith("oculus quest") || lower.startsWith("oculus")
+    }
 
     // Same weak-heuristic caveat as isGlasses() - default advertised names
     // for GoPro/Insta360 action cameras, easily changed by the owner.

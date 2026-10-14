@@ -107,9 +107,13 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
         }
     }
 
+    // WiGLE's own capability->type mapping: some APs advertise only the SAE/OWE/Suite-B
+    // tokens without the literal "WPA3" string, so match those too (matches WiGLE 2.111's
+    // NetworkListUtil classification). OWE = "enhanced open" - open but encrypted.
     private fun authFromCapabilities(caps: String): String = when {
-        caps.contains("WPA3") -> "WPA3"
-        caps.contains("WPA2") -> "WPA2"
+        caps.contains("WPA3") || caps.contains("SAE") || caps.contains("EAP_SUITE_B_192") -> "WPA3"
+        caps.contains("OWE") -> "OWE"
+        caps.contains("WPA2") || caps.contains("RSN") -> "WPA2"
         caps.contains("WPA") -> "WPA"
         caps.contains("WEP") -> "WEP"
         else -> "OPEN"
@@ -120,6 +124,7 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
         freqMHz in 2412..2472 -> (freqMHz - 2407) / 5           // 2.4 GHz, channels 1-13
         freqMHz in 5000..5895 -> (freqMHz - 5000) / 5           // 5 GHz
         freqMHz in 5925..7125 -> (freqMHz - 5950) / 5           // 6 GHz (WiFi 6E)
+        freqMHz in 58320..70200 -> (freqMHz - 56160) / 2160     // 60 GHz (802.11ad/ay), channels 1-6
         else -> 0
     }
 

@@ -115,6 +115,7 @@ class LocationTracker(private val context: Context) {
     // four avoids depending on that at all.
     private val listener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
+            if (isGlitch(lastLocation, location)) return // GPS outlier - keep the last good fix
             lastLocation = location
             onNewFix?.invoke(location)
         }
@@ -164,6 +165,22 @@ class LocationTracker(private val context: Context) {
     }
 
     /** A position recent enough to log with - the same rule ScanService uses. */
+    // WiGLE's "Mach 1.3" GPS outlier filter: a fix that implies travel faster than
+    // 445.9 m/s since the last fix is almost always a GPS glitch, not real movement,
+    // so it would tag networks at a wrong spot. Reject it unless its reported accuracy
+    // is clearly better than the last fix (a genuine re-lock after drift). Keeps raw
+    // positions otherwise - wardriving wants true per-network locations, not a
+    // smoothed path, so this does not lerp between fixes the way WiGLE also does.
+    private fun isGlitch(prev: Location?, next: Location): Boolean {
+        if (prev == null) return false
+        val dtSec = (next.time - prev.time) / 1000.0
+        if (dtSec <= 0) return false
+        val speed = prev.distanceTo(next) / dtSec
+        if (speed <= MAX_PLAUSIBLE_SPEED_MPS) return false
+        // Impossible jump: accept only if this fix is much more accurate (real re-lock).
+        return !(next.hasAccuracy() && prev.hasAccuracy() && next.accuracy < prev.accuracy / 2)
+    }
+
     fun hasFix(): Boolean {
         val loc = lastLocation ?: return false
         return android.os.SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos < FRESH_FIX_NS
@@ -171,5 +188,6 @@ class LocationTracker(private val context: Context) {
 
     companion object {
         const val FRESH_FIX_NS = 30_000_000_000L // 30s
+        private const val MAX_PLAUSIBLE_SPEED_MPS = 445.9 // Mach 1.3 - above this a jump is a GPS glitch (WiGLE)
     }
 }

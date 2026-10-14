@@ -142,3 +142,28 @@ What you *can* safely do, and is genuinely useful, is the **defensive mirror**: 
 
 *Evidence: decompiled sources under the session scratchpad; per-app local-LLM reports (`re/<app>/REPORT.md`) and
 deterministic fact dumps (`re/<app>_facts.md`). Baseline APK versions as listed in the table.*
+
+---
+
+## Build status (October 14, 2026)
+
+Shipped (commits 1bcd3ee, 81df38f, e0bfed1, e56810b):
+- WiFi encryption classification: WPA3 from SAE/EAP_SUITE_B_192, WPA2 from RSN, OWE.
+- 60 GHz channel mapping.
+- Flock sub-types (Pigvision, FS Ext Battery, bare Penguin).
+- Meta Quest / Oculus added to the glasses category.
+- GPS outlier filter (WiGLE Mach 1.3 speed cap).
+- Hack-tool / Pwnagotchi detection: new category (DB v7), field-report bucket, KML, alert toggle.
+- Signal-strength labels (excellent/good/fair/weak) in device details.
+
+Not a clean fit for this app (skipped): `times_seen` and the `notable` star conflict with the
+deliberate "log once per run per MAC" model; adding them means per-MAC cross-run state.
+
+Remaining, larger (each its own batch):
+- WiGLE network search / detail lookup + "new vs already-known" indicator.
+- WiGLE map tile overlay (clientTile) and marker clustering (needs osmdroid-bonuspack).
+- WDGWars game client: territories, bounties, leaderboard, teams, chat, push, rabbit alerts,
+  crowd Flock-confirm. This is the single biggest remaining feature set (many new screens + API layer).
+
+Verify before release: install on a device that already has the app to confirm the DB v6->v7
+migration runs cleanly (no device was connected at build time).

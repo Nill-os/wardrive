@@ -72,6 +72,7 @@ data class Observation(
     val isActionCam: Boolean = false,
     val isPoliceCam: Boolean = false,
     val isPineapple: Boolean = false,
+    val isHackTool: Boolean = false,
     // Phone WiFi only - ScanResult.channelWidth was already available via
     // the platform API and simply wasn't being read. 0 if unknown/not
     // applicable (BLE, cell, or rig WiFi - the ESP32 radio is 2.4GHz-only

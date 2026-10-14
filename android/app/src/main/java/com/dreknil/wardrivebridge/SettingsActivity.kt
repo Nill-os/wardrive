@@ -44,6 +44,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.alertGlassesCheck.isChecked = settings.alertGlasses
         binding.alertActionCamCheck.isChecked = settings.alertActionCam
         binding.alertPineappleCheck.isChecked = settings.alertPineapple
+        binding.alertHackToolCheck.isChecked = settings.alertHackTool
         binding.autoUploadCheck.isChecked = settings.autoUploadOnWifi
         binding.tripModeCheck.isChecked = settings.tripMode
         binding.meshCollectCheck.isChecked = settings.meshCollect
@@ -282,6 +283,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.alertGlasses = binding.alertGlassesCheck.isChecked
         settings.alertActionCam = binding.alertActionCamCheck.isChecked
         settings.alertPineapple = binding.alertPineappleCheck.isChecked
+        settings.alertHackTool = binding.alertHackToolCheck.isChecked
         pushRigAlertSettings()
         settings.autoUploadOnWifi = binding.autoUploadCheck.isChecked
         settings.rigLedBrightness = binding.rigLedBrightnessInput.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: settings.rigLedBrightness

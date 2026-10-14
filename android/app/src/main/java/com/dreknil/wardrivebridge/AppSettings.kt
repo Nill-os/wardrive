@@ -148,6 +148,7 @@ class AppSettings(context: Context) {
     var alertGlasses: Boolean get() = alertPref("alert_glasses"); set(v) = setAlertPref("alert_glasses", v)
     var alertActionCam: Boolean get() = alertPref("alert_actioncam"); set(v) = setAlertPref("alert_actioncam", v)
     var alertPineapple: Boolean get() = alertPref("alert_pineapple"); set(v) = setAlertPref("alert_pineapple", v)
+    var alertHackTool: Boolean get() = alertPref("alert_hacktool"); set(v) = setAlertPref("alert_hacktool", v)
 
     /** Upload each run as soon as it stops, if the phone is on WiFi. */
     var autoUploadOnWifi: Boolean

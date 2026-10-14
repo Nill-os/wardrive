@@ -1000,6 +1000,7 @@ class ScanService : Service(), RigLinkManager.Listener {
             if (appSettings.alertGlasses && o.isGlasses) add("smart glasses")
             if (appSettings.alertActionCam && o.isActionCam) add("action camera")
             if (appSettings.alertPineapple && o.isPineapple) add("WiFi Pineapple")
+            if (appSettings.alertHackTool && o.isHackTool) add("hack tool / Pwnagotchi")
         }
         for (what in hits) {
             if (alertedDetections.add("$what|${o.mac}")) {

@@ -110,6 +110,7 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         if (uuids.any { it.equals(RigBleLink.SERVICE_UUID.toString(), ignoreCase = true) }) return
         val drone = DeviceSignatureDetection.isDrone(uuids)
         val meshRadio = DeviceSignatureDetection.isMeshRadio(uuids)
+        val hackTool = DeviceSignatureDetection.isHackTool(name, uuids)
         val glasses = DeviceSignatureDetection.isGlasses(name)
         val actionCam = DeviceSignatureDetection.isActionCam(name)
         val policeCam = DeviceSignatureDetection.isPoliceCam(name)
@@ -131,6 +132,7 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
                 isSkimmer = skimmer,
                 isDrone = drone,
                 isMeshRadio = meshRadio,
+                isHackTool = hackTool,
                 isGlasses = glasses,
                 isActionCam = actionCam,
                 isPoliceCam = policeCam,

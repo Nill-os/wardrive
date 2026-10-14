@@ -465,6 +465,7 @@
         <CheckBox android:id="@+id/alertGlassesCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Smart glasses" />
         <CheckBox android:id="@+id/alertActionCamCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Action cameras" />
         <CheckBox android:id="@+id/alertPineappleCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="WiFi Pineapple (rogue AP)" />
+        <CheckBox android:id="@+id/alertHackToolCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:text="Hack tool / Pwnagotchi (nearby attack gear)" />
 
         <Button
             android:id="@+id/saveSettingsButton"

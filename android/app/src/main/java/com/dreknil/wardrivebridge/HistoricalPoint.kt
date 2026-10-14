@@ -29,6 +29,7 @@ data class HistoricalPoint(
     val isActionCam: Boolean = false,
     val isPoliceCam: Boolean = false,
     val isPineapple: Boolean = false,
+    val isHackTool: Boolean = false,
 )
 
 fun HistoricalPoint.formatDetails(): String = buildString {

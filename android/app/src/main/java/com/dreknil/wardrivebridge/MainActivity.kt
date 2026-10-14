@@ -1819,6 +1819,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             "Skimmers" to mutableListOf(),
             "Drones" to mutableListOf(),
             "Mesh Radios" to mutableListOf(),
+            "Hack Tools" to mutableListOf(),
             "Glasses" to mutableListOf(),
             "Action Cams" to mutableListOf(),
             "Police Cams" to mutableListOf(),
@@ -1836,6 +1837,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             if (p.isSkimmer) buckets.getValue("Skimmers").add(p)
             if (p.isDrone) buckets.getValue("Drones").add(p)
             if (p.isMeshRadio) buckets.getValue("Mesh Radios").add(p)
+            if (p.isHackTool) buckets.getValue("Hack Tools").add(p)
             if (p.isGlasses) buckets.getValue("Glasses").add(p)
             if (p.isActionCam) buckets.getValue("Action Cams").add(p)
             if (p.isPoliceCam) buckets.getValue("Police Cams").add(p)

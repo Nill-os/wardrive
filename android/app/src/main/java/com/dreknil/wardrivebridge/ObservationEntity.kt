@@ -48,6 +48,7 @@ data class ObservationEntity(
     val isActionCam: Boolean = false,
     val isPoliceCam: Boolean = false,
     val isPineapple: Boolean = false,
+    val isHackTool: Boolean = false,
 )
 
 fun ObservationEntity.toHistoricalPoint() = HistoricalPoint(
@@ -57,6 +58,7 @@ fun ObservationEntity.toHistoricalPoint() = HistoricalPoint(
     isTracker = isTracker, isFlipperZero = isFlipperZero, isFlockCamera = isFlockCamera, isSkimmer = isSkimmer,
     isDrone = isDrone, isMeshRadio = isMeshRadio, isAdultToy = isAdultToy, isGlasses = isGlasses,
     isActionCam = isActionCam, isPoliceCam = isPoliceCam, isPineapple = isPineapple,
+    isHackTool = isHackTool,
 )
 
 fun Observation.toEntity(runId: Long): ObservationEntity {
@@ -72,5 +74,6 @@ fun Observation.toEntity(runId: Long): ObservationEntity {
         isTracker = isTracker, isFlipperZero = isFlipperZero, isFlockCamera = isFlockCamera, isSkimmer = isSkimmer,
         isDrone = isDrone, isMeshRadio = isMeshRadio, isAdultToy = isAdultToy, isGlasses = isGlasses,
         isActionCam = isActionCam, isPoliceCam = isPoliceCam, isPineapple = isPineapple,
+    isHackTool = isHackTool,
     )
 }

@@ -82,6 +82,31 @@ object DeviceSignatureDetection {
     fun isMeshRadio(serviceUuids: List<String>): Boolean =
         serviceUuids.any { it.equals(MESHTASTIC_SERVICE_UUID, ignoreCase = true) }
 
+    // Nearby WiFi/BLE attack tools and DIY wardrive gear worth knowing about -
+    // the same "counter-surveillance" category the Biscuit Manager app detects.
+    // Two signals, both low-confidence (easily renamed/spoofed, same caveat as
+    // every heuristic here):
+    //  - Default advertised names of common ESP32/RPi tools.
+    //  - BLE service UUIDs that these boards ship with: the Nordic UART Service
+    //    (used by Pwnagotchi, Flipper, most ESP32/nRF serial tools), the two
+    //    Arduino ESP32 BLE example UUIDs (Marauder/GhostESP/DIY flock+wardrive
+    //    firmware), and the Nordic DFU firmware-update service.
+    private val HACK_TOOL_NAMES = listOf(
+        "pwnagotchi", "marauder", "ghostesp", "ghost esp", "bruce", "minino", "deauther", "esp32marauder",
+    )
+    private val HACK_TOOL_UUIDS = listOf(
+        "6e400001-b5a3-f393-e0a9-e50e24dcca9e", // Nordic UART Service (NUS)
+        "4fafc201-1fb5-459e-8fcc-c5c9c331914b", // ESP32 Arduino BLE example service
+        "beb5483e-36e1-4688-b7f5-ea07361b26a8", // ESP32 Arduino BLE example characteristic/service
+        "00001530-1212-efde-1523-785feabcd123", // Nordic DFU (firmware update mode)
+    )
+
+    fun isHackTool(name: String, serviceUuids: List<String>): Boolean {
+        val lower = name.lowercase()
+        if (HACK_TOOL_NAMES.any { lower.contains(it) }) return true
+        return serviceUuids.any { u -> HACK_TOOL_UUIDS.any { it.equals(u, ignoreCase = true) } }
+    }
+
     // Weak, low-confidence name-based heuristic (unlike the UUID/company-ID
     // signals above) - Ray-Ban Meta smart glasses at their default
     // advertised name. Expect false negatives if the wearer renamed the

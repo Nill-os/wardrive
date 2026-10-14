@@ -57,7 +57,7 @@ object KmlExporter {
 
     private fun isAlert(p: HistoricalPoint) = p.isTracker || p.isFlipperZero || p.isFlockCamera ||
         p.isSkimmer || p.isPineapple || p.isPoliceCam || p.isGlasses || p.isActionCam ||
-        p.isDrone || p.isMeshRadio || p.isAdultToy
+        p.isDrone || p.isMeshRadio || p.isAdultToy || p.isHackTool
 
     private fun isOpen(auth: String): Boolean {
         val a = auth.uppercase()

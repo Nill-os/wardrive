@@ -179,6 +179,7 @@ class MapManager(
             if (obs.source == Source.PHONE_CELL) "ARFCN: ${obs.frequencyMHz}" else "Frequency: ${obs.frequencyMHz} MHz" // cells store the channel number
         )
         appendLine("RSSI: ${obs.rssi} dBm")
+        signalLabel(obs.rssi).takeIf { it.isNotEmpty() }?.let { appendLine("Signal: $it") }
         if (obs.rsrp != 0) appendLine("RSRP: ${obs.rsrp}")
         if (obs.rsrq != 0) appendLine("RSRQ: ${obs.rsrq}")
         if (obs.vendor != null) appendLine("Vendor: ${obs.vendor}")

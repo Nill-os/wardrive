@@ -62,6 +62,7 @@ fun HistoricalPoint.formatDetails(): String = buildString {
     if (channel > 0 && !isCell) appendLine("Channel: $channel")
     if (frequency > 0) appendLine(if (isCell) "ARFCN: $frequency" else "Frequency: $frequency MHz")
     appendLine("RSSI: $rssi dBm")
+    signalLabel(rssi).takeIf { it.isNotEmpty() }?.let { appendLine("Signal: $it") }
     appendLine("Location: %.6f, %.6f".format(java.util.Locale.US, lat, lon))
     if (accuracy > 0) appendLine("GPS accuracy: ±${accuracy.toInt()} m")
     appendLine("First seen: $firstSeen")

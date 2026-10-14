@@ -17,3 +17,13 @@ fun fmtCount(n: Int): String = thousandsFormat.format(n)
 fun fmtStorage(megabytes: Int): String =
     if (megabytes >= 1024) "%.1f GB".format(Locale.US, megabytes / 1024.0)
     else "$megabytes MB"
+
+/** WiGLE / Biscuit Manager signal-strength buckets for a BLE/WiFi RSSI in dBm.
+ *  0 means "no reading". */
+fun signalLabel(rssi: Int): String = when {
+    rssi == 0 -> ""
+    rssi >= -50 -> "excellent"
+    rssi >= -60 -> "good"
+    rssi >= -70 -> "fair"
+    else -> "weak"
+}

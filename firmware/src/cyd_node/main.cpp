@@ -1169,6 +1169,7 @@ static void drawTabLogs(bool redrawAll) {
 // new value, which is applied and saved to config.cfg the same way the phone's
 // "cfg <key> <value>" path does.
 static void applyConfigSetting(const String &key, const String &value); // defined in the wdstream section
+static void rebuildExcludedMacs(); // the user's own devices / blacklist - defined next to cydMacKeyFromString()
 
 bool kbActive = false;       // keyboard overlay up
 bool netCfgActive = false;   // network-config list overlay up
@@ -1664,6 +1665,7 @@ static void sdInitTask(void *) {
 	if (sdOk && SD.cardType() == CARD_NONE) sdOk = false;
 
 	configOk = sdOk && loadWardriveConfig("/config.cfg", config);
+	rebuildExcludedMacs();
 	uploader = new Uploader(config);
 
 	sdTaskDone = true;
@@ -1974,6 +1976,27 @@ static uint64_t cydMacKeyFromString(const String &mac) {
 	}
 	return key;
 }
+
+// The user's own devices (and their blacklist) - never logged, uploaded or mirrored. Rebuilt from
+// config.excludeMacs (pushed by the phone, saved in config.cfg) plus this board's own Bluetooth
+// address, which it advertises for the phone link whenever no phone is connected.
+static std::unordered_set<uint64_t> cydExcludedMacs;
+static void rebuildExcludedMacs() {
+	cydExcludedMacs.clear();
+	String list = config.excludeMacs;
+	int start = 0;
+	while (start < (int)list.length()) {
+		int comma = list.indexOf(',', start);
+		if (comma < 0) comma = list.length();
+		String mac = list.substring(start, comma);
+		mac.trim();
+		if (mac.length() >= 17) cydExcludedMacs.insert(cydMacKeyFromString(mac));
+		start = comma + 1;
+	}
+	uint8_t own[6];
+	if (esp_read_mac(own, ESP_MAC_BT) == ESP_OK) cydExcludedMacs.insert(cydMacToKey(own));
+}
+static bool isExcludedMac(uint64_t key) { return cydExcludedMacs.count(key) > 0; }
 
 // Distance in metres - a flat-earth approximation, plenty for the tens-to-
 // hundreds of metres this is used for.
@@ -2705,6 +2728,7 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "home_lon") config.homeLon = value.toDouble();
 	else if (key == "home_radius_m") config.homeRadiusM = value.toDouble();
 	else if (key == "exclude_radius_m") config.excludeRadiusM = value.toDouble();
+	else if (key == "exclude_macs") { config.excludeMacs = value; rebuildExcludedMacs(); }
 	else if (key == "count_mode") { config.countMode = (uint8_t)value.toInt(); forceFullRedraw = true; }
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
@@ -3349,6 +3373,7 @@ static void handleIncomingLine(const String &line) {
 
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone - never logged, uploaded or mirrored
 		if (isNoMapSsid(ssid)) return; // _nomap opt-out
+		if (isExcludedMac(cydMacKeyFromString(bssid))) return; // the user's own device / blacklist
 
 		// Shared dedup with this board's own sniffer (see cydApDedupState's
 		// own comment) - without this, an AP wifi_node just relayed and an
@@ -3410,6 +3435,7 @@ static void handleIncomingLine(const String &line) {
 		double alt = rest.substring(c6 + 1, c7).toDouble();
 		int c8 = rest.indexOf(',', c7 + 1);
 		double acc = c8 < 0 ? rest.substring(c7 + 1).toDouble() : rest.substring(c7 + 1, c8).toDouble();
+		if (isExcludedMac(cydMacKeyFromString(mac))) return; // the user's own radio / this board / blacklist
 		String mfgHex = c8 < 0 ? "" : rest.substring(c8 + 1); // trailing field - only present now that wifi_node forwards ble_node's raw manufacturer data (see its handleBleLinkLine())
 		diagBleLines++; // counted before the home-zone check: proves the line arrived at all
 		lastBleLineMs = millis();
@@ -3673,17 +3699,19 @@ static const uint32_t SCANSTATE_BROADCAST_MS = 2000;
 uint32_t lastCleanupMs = 0;
 static const uint32_t CLEANUP_INTERVAL_MS = 24UL * 3600UL * 1000UL;
 bool wasTouched = false;
-uint32_t lastTouchDispatchMs = 0;
-// Resistive touch readings can be noisy right at the moment of contact -
-// the raw ADC reading occasionally reads back invalid for a poll or two
-// even while a finger is genuinely still down, which made wasTouched's
-// plain edge-detection see that as a release-then-repress and fire twice
-// for one real physical tap (toggle, then toggle back - net no visible
-// change, even though flashLed() still fired both times, which is exactly
-// what looked like "the LED lights up but nothing happens"). A minimum
-// gap between dispatches closes this without needing to majority-vote
-// several readings before trusting a press.
-static const uint32_t TOUCH_DISPATCH_COOLDOWN_MS = 400;
+// Resistive touch readings occasionally read back invalid ("not touched") for
+// a poll or two mid-press even while a finger is genuinely still down. Plain
+// edge-detection (wasTouched = touch.valid) saw that blip as a release-then-
+// repress and fired the button twice for one physical tap ("the LED lights up
+// but nothing happens"). The old fix - a 400 ms blanket cooldown between
+// dispatches - masked the double-fire but also ate a genuine second tap made
+// within 400 ms, which is what made buttons feel dead ("taps do nothing
+// sometimes"). The correct fix debounces the RELEASE instead: treat the finger
+// as still down until TOUCH_RELEASE_POLLS consecutive not-touched reads, so a
+// mid-press blip is ignored (no double-fire) while a real release re-arms
+// within a few polls (no cooldown, so the next intentional tap fires at once).
+static const uint8_t TOUCH_RELEASE_POLLS = 3; // "a poll or two" of noise < this
+uint8_t notTouchedPolls = TOUCH_RELEASE_POLLS; // start in the released state
 
 void loop() {
 	// Identity line the desktop app's "Detect boards" reads to recognize the
@@ -3707,6 +3735,12 @@ void loop() {
 	// wasTouched gates this to fire once per press rather than once per
 	// poll while held down.
 	TouchPoint touch = readTouch();
+	// Release-debounce bookkeeping (see TOUCH_RELEASE_POLLS): count consecutive
+	// not-touched polls so an isolated mid-press invalid read isn't mistaken for
+	// a finger lift. Updated here, before any early-return path below, so it
+	// stays accurate regardless of which branch handles this poll.
+	if (touch.valid) notTouchedPolls = 0;
+	else if (notTouchedPolls < 255) notTouchedPolls++;
 	if (serviceModeActive && touch.valid && !wasTouched) {
 		// Any touch leaves service mode (and wakes the screen if it was off).
 		wasTouched = true;
@@ -3726,13 +3760,11 @@ void loop() {
 	// stays connected); the normal tab/action dispatch and drawStatus are
 	// skipped so the overlay isn't overwritten.
 	bool overlay = kbActive || netCfgActive;
-	if (overlay && touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
-		lastTouchDispatchMs = millis();
+	if (overlay && touch.valid && !wasTouched) {
 		if (kbActive) kbHandleTap(touch.x, touch.y);
 		else netCfgHandleTap(touch.x, touch.y);
 	}
-	if (!overlay && touch.valid && !wasTouched && millis() - lastTouchDispatchMs > TOUCH_DISPATCH_COOLDOWN_MS) {
-		lastTouchDispatchMs = millis();
+	if (!overlay && touch.valid && !wasTouched) {
 		bool hit = false;
 		for (uint8_t i = 0; i < TAB_COUNT && !hit; i++) {
 			if (inRect(tabRects[i], touch.x, touch.y)) {
@@ -3769,7 +3801,11 @@ void loop() {
 			}
 		}
 	}
-	wasTouched = touch.valid;
+	// Arm on any touch; disarm only after a debounced release (notTouchedPolls
+	// above), so one physical tap fires exactly once and the next intentional
+	// tap registers immediately - no blanket cooldown to eat it.
+	if (touch.valid) wasTouched = true;
+	else if (notTouchedPolls >= TOUCH_RELEASE_POLLS) wasTouched = false;
 
 	if (ledOffAtMs != 0 && millis() >= ledOffAtMs) {
 		setLed(false, false, false);
@@ -3855,7 +3891,7 @@ void loop() {
 		lastStorageCheckMs = millis();
 		if (!sdOk) {
 			sdOk = tryRecoverSd();
-			if (sdOk && !configOk) configOk = loadWardriveConfig("/config.cfg", config);
+			if (sdOk && !configOk) { configOk = loadWardriveConfig("/config.cfg", config); rebuildExcludedMacs(); }
 		} else if (scanningActive && !sdStillWritable()) {
 			// Card pulled or failed mid-run - make it visible (red flash, SD:FAIL,
 			// LED relayed to the other boards) instead of writes silently no-oping.
@@ -3947,7 +3983,8 @@ void loop() {
 			}
 			wdstreamLineBuf = "";
 		} else if (c != '\r') {
-			if (wdstreamLineBuf.length() < 200) wdstreamLineBuf += c; // real commands are short - cap against line noise
+			// Real commands are short, except "cfg exclude_macs" (up to 60 MACs) - cap against line noise.
+			if (wdstreamLineBuf.length() < 1200) wdstreamLineBuf += c;
 		}
 	}
 	checkPhoneLinkTimeout();
@@ -3967,7 +4004,7 @@ void loop() {
 		if (scanningActive) {
 			if (!sdOk) {
 				sdOk = tryRecoverSd();
-				if (sdOk && !configOk) configOk = loadWardriveConfig("/config.cfg", config);
+				if (sdOk && !configOk) { configOk = loadWardriveConfig("/config.cfg", config); rebuildExcludedMacs(); }
 			}
 			bool canSave = startScanning();
 			if (!canSave) {
@@ -4039,6 +4076,7 @@ void loop() {
 			}
 			if (inExclusionZone(pLat, pLon)) continue; // home exclusion zone
 			if (isNoMapSsid(ssid)) continue; // _nomap opt-out
+			if (isExcludedMac(cydMacToKey(obs.bssid))) continue; // the user's own device / blacklist
 			if (!cydShouldLogAp(obs.bssid, pLat, pLon, ssid.length() > 0)) {
 				pushApSighting(bssid, ssid, authMode, obs.rssi, true); // already logged at this spot - just refresh its row
 				continue;

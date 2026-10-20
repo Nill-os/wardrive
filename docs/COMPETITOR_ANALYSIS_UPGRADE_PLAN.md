@@ -166,8 +166,14 @@ Shipped (later batches):
 - Marker clustering for the historical map (osmbonuspack RadiusMarkerClusterer, radius
   120px; commit 768923f). Verified on device: no crash, clusterer default icon loads.
 
-Remaining (decision-gated, not silently buildable):
-- WiGLE density-tile overlay. Endpoint confirmed from WiGLE 2.111:
+Owner decisions:
+- WiGLE density-tile overlay: SKIPPED by owner 2026-10-19. The per-BSSID lookup already
+  delivers the core value, and wigle.net/clientTile is TOS-restricted for third-party apps.
+  Do not add it. Detail below kept for reference only.
+
+Remaining (data-blocked):
+- WiGLE density-tile overlay (NOT building - see owner decision above). Endpoint confirmed
+  from WiGLE 2.111:
   https://wigle.net/clientTile?zoom=%d&x=%d&y=%d&startTransID=%s&endTransID=%s
   (optional &onlymine=1 via PREF_MAP_ONLYMINE_TILE; Basic auth, same token as upload).
   Two reasons it is not built yet: (1) the startTransID/endTransID bounds are formatted

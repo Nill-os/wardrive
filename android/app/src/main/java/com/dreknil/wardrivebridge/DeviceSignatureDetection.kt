@@ -24,15 +24,19 @@ object DeviceSignatureDetection {
         return name.startsWith("Flipper", ignoreCase = true)
     }
 
-    // Flock Safety ALPR cameras: B4:1E:52 is Flock's own registered OUI;
-    // 00:03:7F is Qualcomm Atheros (the QCA9377 radio their hardware uses,
-    // seen on units still carrying the chip vendor's default MAC). Their
-    // battery-pack accessories advertise recognizable names ("Penguin-"
-    // followed by a 10-digit serial, "FS Battery", or "DfuTarg" during a
-    // firmware update), and manufacturer ID 0x09C8 (XUNTONG) shows up in
-    // their BLE advertisements even from units that don't broadcast a name -
-    // the strongest single signal of the group, per public field research.
-    private val FLOCK_MAC_PREFIXES = listOf("B4:1E:52", "00:03:7F")
+    // Flock Safety ALPR cameras: B4:1E:52 is Flock's own registered OUI. Their
+    // accessories advertise recognizable names - "Penguin-" + serial,
+    // "Pigvision", "FS Battery"/"FS Ext Battery", and "DfuTarg" during a
+    // firmware update - all confirmed as literal strings in the decompiled
+    // Biscuit Manager app (com.example.biscuitmanager, v1.0.21.1), whose own
+    // Flock classifier is a user-configurable OUI matcher (FLOCK/META/AXON/
+    // IGNORE categories). Manufacturer ID 0x09C8 also shows up in their BLE
+    // advertisements even from units that don't broadcast a name.
+    //
+    // 00:03:7F (Qualcomm Atheros) was removed 2026-10-19: it was never verified
+    // against any source and is an extremely common WiFi-chip OUI, so matching
+    // it as a prefix mislabeled large numbers of ordinary devices as Flock.
+    private val FLOCK_MAC_PREFIXES = listOf("B4:1E:52")
     private const val FLOCK_COMPANY_ID = 0x09C8
 
     fun isFlockSafety(mac: String, name: String, companyId: Int?): Boolean {

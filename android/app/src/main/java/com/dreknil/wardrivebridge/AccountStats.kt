@@ -140,10 +140,12 @@ object AccountStats {
     // WiGLE 2.111 and Wardrive Go 3.1.20: results[].trilat/trilong/ssid/firsttime/
     // lasttime/encryption. Returns null on a network/auth error, or a WigleLookup
     // with known=false when WiGLE has no record. Call off the main thread.
-    fun lookupWigle(basicAuthToken: String, bssid: String): WigleLookup? {
+    fun lookupWigle(basicAuthToken: String, bssid: String, bluetooth: Boolean = false): WigleLookup? {
         if (basicAuthToken.isBlank() || bssid.isBlank()) return null
         val netid = java.net.URLEncoder.encode(bssid.uppercase(), "UTF-8")
-        val json = getJson("https://api.wigle.net/api/v2/network/search?netid=$netid&resultsPerPage=1",
+        // WiFi and Bluetooth are separate WiGLE databases with separate search endpoints.
+        val path = if (bluetooth) "bluetooth/search" else "network/search"
+        val json = getJson("https://api.wigle.net/api/v2/$path?netid=$netid&resultsPerPage=1",
             mapOf("Authorization" to "Basic $basicAuthToken")) ?: return null
         return try {
             if (!json.optBoolean("success", false)) return null

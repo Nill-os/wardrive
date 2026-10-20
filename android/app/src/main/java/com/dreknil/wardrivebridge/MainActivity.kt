@@ -264,7 +264,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             onHeaderClick = { label -> toggleHistGroup(label) },
             onRowClick = { point ->
                 showDetailDialog(point.label.ifBlank { point.mac }, point.formatDetails(), point.mac,
-                    wifiBssid = point.mac.takeIf { point.type.equals("WIFI", ignoreCase = true) })
+                    wifiBssid = point.mac.takeIf { point.type.equals("WIFI", ignoreCase = true) || point.type.equals("BLE", ignoreCase = true) },
+                    lookupIsBt = point.type.equals("BLE", ignoreCase = true))
             },
         )
         binding.logsList.layoutManager = LinearLayoutManager(this)
@@ -811,7 +812,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     // Shared by the map-marker tap and the Logs-tab historical row tap -
     // same detail dialog either way, now with a one-tap MAC copy.
-    private fun showDetailDialog(title: String, body: String, mac: String, wifiBssid: String? = null) {
+    private fun showDetailDialog(title: String, body: String, mac: String, wifiBssid: String? = null, lookupIsBt: Boolean = false) {
         val builder = AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(body)
@@ -823,17 +824,17 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             }
         // WiGLE lookup, only for WiFi (WiGLE's network DB) and only with a token set.
         if (wifiBssid != null && appSettings.wigleToken.isNotBlank()) {
-            builder.setNegativeButton("WiGLE") { _, _ -> lookupOnWigle(wifiBssid) }
+            builder.setNegativeButton("WiGLE") { _, _ -> lookupOnWigle(wifiBssid, lookupIsBt) }
         }
         builder.show()
     }
 
     // Query WiGLE's global DB for one BSSID off the main thread, then show the result.
-    private fun lookupOnWigle(bssid: String) {
+    private fun lookupOnWigle(bssid: String, bluetooth: Boolean = false) {
         Toast.makeText(this, "Looking up on WiGLE…", Toast.LENGTH_SHORT).show()
         val token = appSettings.wigleToken
         Thread {
-            val r = AccountStats.lookupWigle(token, bssid)
+            val r = AccountStats.lookupWigle(token, bssid, bluetooth)
             runOnUiThread {
                 val msg = when {
                     r == null -> "WiGLE lookup failed (check your WiGLE token and connection)."
@@ -1226,7 +1227,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         }.trim()
 
         showDetailDialog(title, body, obs.mac,
-            wifiBssid = obs.mac.takeIf { obs.source == Source.PHONE_WIFI || obs.source == Source.RIG_WIFI })
+            wifiBssid = obs.mac.takeIf { obs.source != Source.PHONE_CELL },
+            lookupIsBt = obs.source == Source.PHONE_BLE || obs.source == Source.RIG_BLE)
     }
 
     // Same Hot/Warm/Cold buckets a human would eyeball off the number -

@@ -325,6 +325,22 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
+    // Android caches each device's GATT service table and serves that STALE
+    // cache on the next connect - so after the rig is reflashed and its
+    // services/UUIDs change, the phone can keep trying to use a service table
+    // that no longer matches the firmware, and the link silently never works.
+    // BluetoothGatt.refresh() drops that cache but is a hidden API, so it's
+    // called by reflection (the same approach Biscuit Manager uses). Best
+    // effort: if it's ever unavailable we just skip it and fall back to the
+    // cached table. Call it after disconnect() and before close(), while the
+    // BluetoothGatt is still a valid object.
+    private fun refreshGattCache(g: BluetoothGatt) {
+        try {
+            g.javaClass.getMethod("refresh").invoke(g)
+        } catch (_: Exception) {
+        }
+    }
+
     private fun closeGatt() {
         val wasConnected = isConnected
         isConnected = false
@@ -336,6 +352,7 @@ class RigBleLink(private val context: Context, private val callbacks: Callbacks)
         }
         try {
             gatt?.disconnect()
+            gatt?.let { refreshGattCache(it) }
             gatt?.close()
         } catch (_: Exception) {
         }

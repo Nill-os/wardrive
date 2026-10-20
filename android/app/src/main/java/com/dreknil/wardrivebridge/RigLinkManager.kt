@@ -10,6 +10,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
@@ -293,10 +294,26 @@ class RigLinkManager(private val context: Context, private val listener: Listene
      * any real data (including the wdstream handshake) to get through. */
     private var reportedNoUsbDevice = false
 
+    // usb-serial-for-android's default prober recognizes CP210x (10c4), CH34x
+    // (1a86), FTDI (0403) and Prolific, plus a fixed CDC-ACM table - but that
+    // table does NOT include ESP32 native-USB (TinyUSB) devices, VID 0x303a.
+    // A native-USB ESP32 rig (the same way our own BLE node enumerates, and the
+    // way ESP32-S3 GhostESP/Marauder rigs do - Wardrive Go handles exactly
+    // these) would otherwise get no driver and USB connect would silently fail.
+    // Start from the default table and add CdcAcmSerialDriver for the Espressif
+    // native-USB PIDs so those boards connect over USB like the CH340 CYD does.
+    private val rigProber: UsbSerialProber by lazy {
+        val table = UsbSerialProber.getDefaultProbeTable()
+        table.addProduct(0x303a, 0x1001, CdcAcmSerialDriver::class.java) // USB JTAG/serial debug unit (S2/S3/C3/C6)
+        table.addProduct(0x303a, 0x4001, CdcAcmSerialDriver::class.java) // S3 native-USB variant
+        table.addProduct(0x303a, 0x0002, CdcAcmSerialDriver::class.java) // ESP32-S2 native USB
+        UsbSerialProber(table)
+    }
+
     fun findAndConnect() {
         if (port != null) return // already connected - nothing to do
         if (transport == Transport.BLE) return // BLE is primary - USB only fills in while it's down
-        val driver: UsbSerialDriver = UsbSerialProber.getDefaultProber()
+        val driver: UsbSerialDriver = rigProber
             .findAllDrivers(usbManager)
             .firstOrNull() ?: run {
                 // Once per absence, not on every retry - it used to flood the terminal.
@@ -333,7 +350,7 @@ class RigLinkManager(private val context: Context, private val listener: Listene
     private fun registerLegacy(filter: IntentFilter) { context.registerReceiver(permissionReceiver, filter) }
 
     private fun openDevice(device: UsbDevice) {
-        val driver = UsbSerialProber.getDefaultProber().probeDevice(device) ?: run {
+        val driver = rigProber.probeDevice(device) ?: run {
             listener.onRigLog("[rig] device not recognized as a serial device")
             return
         }

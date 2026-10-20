@@ -159,11 +159,29 @@ Shipped (commits 1bcd3ee, 81df38f, e0bfed1, e56810b):
 Not a clean fit for this app (skipped): `times_seen` and the `notable` star conflict with the
 deliberate "log once per run per MAC" model; adding them means per-MAC cross-run state.
 
-Remaining, larger (each its own batch):
-- WiGLE network search / detail lookup + "new vs already-known" indicator.
-- WiGLE map tile overlay (clientTile) and marker clustering (needs osmdroid-bonuspack).
-- WDGWars game client: territories, bounties, leaderboard, teams, chat, push, rabbit alerts,
-  crowd Flock-confirm. This is the single biggest remaining feature set (many new screens + API layer).
+Shipped (later batches):
+- WiGLE network search / detail lookup + "new vs already-known" indicator
+  (AccountStats.lookupWigle -> network/search + bluetooth/search; WiGLE button in the
+  detail dialog; known=false means WiGLE has no record = "new").
+- Marker clustering for the historical map (osmbonuspack RadiusMarkerClusterer, radius
+  120px; commit 768923f). Verified on device: no crash, clusterer default icon loads.
+
+Remaining (decision-gated, not silently buildable):
+- WiGLE density-tile overlay. Endpoint confirmed from WiGLE 2.111:
+  https://wigle.net/clientTile?zoom=%d&x=%d&y=%d&startTransID=%s&endTransID=%s
+  (optional &onlymine=1 via PREF_MAP_ONLYMINE_TILE; Basic auth, same token as upload).
+  Two reasons it is not built yet: (1) the startTransID/endTransID bounds are formatted
+  in code ("%d0000-00000"), not a flat constant, so the exact "all time" defaults need one
+  more decompile pass to use faithfully rather than guess; (2) wigle.net/clientTile is
+  WiGLE's own-app tile service and their TOS restricts third-party programmatic tile use,
+  so this is an owner decision, not an automatic add. The per-BSSID lookup above already
+  delivers the core "does WiGLE know this network / where" value without the tile scrape.
+- WDGWars game client: territories, bounties, leaderboard, teams, chat, push, rabbit
+  alerts, crowd Flock-confirm. BLOCKED: the client's JSON data models are obfuscated
+  (single-letter classes), so exact field names cannot be mapped without live endpoint
+  responses from a real account. Building on guessed field names would violate
+  "never make anything up." Needs the owner to capture real /api/* responses first.
 
 Verify before release: install on a device that already has the app to confirm the DB v6->v7
-migration runs cleanly (no device was connected at build time).
+migration runs cleanly. DONE 2026-10-19 on 55141FDAS0034X: observations table gained
+isHackTool INTEGER NOT NULL DEFAULT 0, app launched clean, no crash.

@@ -359,6 +359,10 @@ class ScanService : Service(), RigLinkManager.Listener {
         super.onCreate()
         instance = this
         appSettings = AppSettings(this)
+        // Load any user-added Flock / Police(Axon) OUIs from Settings into the
+        // detector. Re-read on each run start too (startRun), so edits apply to
+        // the next run without restarting the service.
+        DeviceSignatureDetection.setUserOuis(appSettings.customFlockOuisRaw, appSettings.customPoliceOuisRaw)
         dao = AppDatabase.get(this).dao()
         rigLink = RigLinkManager(applicationContext, this)
         meshLink = MeshtasticRadioLink(applicationContext, meshCallbacks)
@@ -630,6 +634,8 @@ class ScanService : Service(), RigLinkManager.Listener {
 
     fun startRun(notifyRig: Boolean, reason: String = "app", fromUi: Boolean = false) {
         if (running) return
+        // Pick up any OUI edits made since the service started (see onCreate).
+        DeviceSignatureDetection.setUserOuis(appSettings.customFlockOuisRaw, appSettings.customPoliceOuisRaw)
         // Android 14+ refuses to start a location foreground service while the app is in the
         // background (pocket, screen off). Try it first; if refused, ask the user to tap in
         // rather than crashing - the tap opens the app, which starts the run.

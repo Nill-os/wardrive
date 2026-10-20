@@ -113,7 +113,7 @@ class PhoneBleScanner(context: Context, private val listener: (Observation) -> U
         val hackTool = DeviceSignatureDetection.isHackTool(name, uuids)
         val glasses = DeviceSignatureDetection.isGlasses(name)
         val actionCam = DeviceSignatureDetection.isActionCam(name)
-        val policeCam = DeviceSignatureDetection.isPoliceCam(name)
+        val policeCam = DeviceSignatureDetection.isPoliceCam(mac, name)
         listener(
             Observation(
                 source = Source.PHONE_BLE,

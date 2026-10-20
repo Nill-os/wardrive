@@ -632,7 +632,7 @@ class RigLinkManager(private val context: Context, private val listener: Listene
         // just a name.
         val glasses = DeviceSignatureDetection.isGlasses(name)
         val actionCam = DeviceSignatureDetection.isActionCam(name)
-        val policeCam = DeviceSignatureDetection.isPoliceCam(name)
+        val policeCam = DeviceSignatureDetection.isPoliceCam(mac, name)
 
         listener.onRigObservation(
             Observation(

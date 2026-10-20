@@ -36,6 +36,19 @@ class AppSettings(context: Context) {
         get() = prefs.getString("ssid_blacklist", "") ?: ""
         set(value) = prefs.edit().putString("ssid_blacklist", value).apply()
 
+    // User-added MAC prefixes (OUIs) to flag as Flock / Police(Axon) cameras, on
+    // top of the built-in signatures - the same user-editable model Biscuit
+    // Manager uses, so new OUIs can be added without a code change. Stored as the
+    // raw text the user typed (comma/newline/space separated); normalization and
+    // matching live in DeviceSignatureDetection.setUserOuis().
+    var customFlockOuisRaw: String
+        get() = prefs.getString("custom_flock_ouis", "") ?: ""
+        set(value) = prefs.edit().putString("custom_flock_ouis", value).apply()
+
+    var customPoliceOuisRaw: String
+        get() = prefs.getString("custom_police_ouis", "") ?: ""
+        set(value) = prefs.edit().putString("custom_police_ouis", value).apply()
+
     // Watchlist: specific WiFi/BLE devices to be notified about when they come
     // into range or leave, each with its own enter/leave toggles. `key` matches a
     // MAC (if it contains ':') or an SSID/device-name substring; `label` is just

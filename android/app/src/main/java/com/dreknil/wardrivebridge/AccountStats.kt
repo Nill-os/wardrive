@@ -131,6 +131,42 @@ object AccountStats {
         }
     }
 
+    data class WigleLookup(val known: Boolean, val ssid: String, val trilat: Double, val trilon: Double,
+                           val firstSeen: String, val lastSeen: String, val encryption: String)
+
+    // Look one BSSID up in WiGLE's global database: "does WiGLE already know this
+    // network, and where does it think it is?". WiGLE v2 network search is a public,
+    // documented API (unlike the obfuscated game clients) - fields confirmed from
+    // WiGLE 2.111 and Wardrive Go 3.1.20: results[].trilat/trilong/ssid/firsttime/
+    // lasttime/encryption. Returns null on a network/auth error, or a WigleLookup
+    // with known=false when WiGLE has no record. Call off the main thread.
+    fun lookupWigle(basicAuthToken: String, bssid: String): WigleLookup? {
+        if (basicAuthToken.isBlank() || bssid.isBlank()) return null
+        val netid = java.net.URLEncoder.encode(bssid.uppercase(), "UTF-8")
+        val json = getJson("https://api.wigle.net/api/v2/network/search?netid=$netid&resultsPerPage=1",
+            mapOf("Authorization" to "Basic $basicAuthToken")) ?: return null
+        return try {
+            if (!json.optBoolean("success", false)) return null
+            val results = json.optJSONArray("results")
+            if (results == null || results.length() == 0) {
+                WigleLookup(false, "", 0.0, 0.0, "", "", "")
+            } else {
+                val r = results.getJSONObject(0)
+                WigleLookup(
+                    known = true,
+                    ssid = r.optString("ssid", ""),
+                    trilat = r.optDouble("trilat", 0.0),
+                    trilon = r.optDouble("trilong", 0.0),
+                    firstSeen = r.optString("firsttime", ""),
+                    lastSeen = r.optString("lasttime", ""),
+                    encryption = r.optString("encryption", ""),
+                )
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // Same class of thing UploadManager.post() had: Android's OkHttp-backed HttpURLConnection
     // throws FileNotFoundException straight out of getResponseCode() for any non-2xx response,
     // so a rejected/rate-limited/expired-token request already ends up here in the catch block

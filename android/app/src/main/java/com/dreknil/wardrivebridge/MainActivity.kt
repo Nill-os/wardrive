@@ -263,7 +263,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
         historicalAdapter = HistoricalAdapter(
             onHeaderClick = { label -> toggleHistGroup(label) },
             onRowClick = { point ->
-                showDetailDialog(point.label.ifBlank { point.mac }, point.formatDetails(), point.mac)
+                showDetailDialog(point.label.ifBlank { point.mac }, point.formatDetails(), point.mac,
+                    wifiBssid = point.mac.takeIf { point.type.equals("WIFI", ignoreCase = true) })
             },
         )
         binding.logsList.layoutManager = LinearLayoutManager(this)
@@ -810,8 +811,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
 
     // Shared by the map-marker tap and the Logs-tab historical row tap -
     // same detail dialog either way, now with a one-tap MAC copy.
-    private fun showDetailDialog(title: String, body: String, mac: String) {
-        AlertDialog.Builder(this)
+    private fun showDetailDialog(title: String, body: String, mac: String, wifiBssid: String? = null) {
+        val builder = AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(body)
             .setPositiveButton("Close", null)
@@ -820,7 +821,35 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MAC", mac))
                 Toast.makeText(this, "Copied $mac", Toast.LENGTH_SHORT).show()
             }
-            .show()
+        // WiGLE lookup, only for WiFi (WiGLE's network DB) and only with a token set.
+        if (wifiBssid != null && appSettings.wigleToken.isNotBlank()) {
+            builder.setNegativeButton("WiGLE") { _, _ -> lookupOnWigle(wifiBssid) }
+        }
+        builder.show()
+    }
+
+    // Query WiGLE's global DB for one BSSID off the main thread, then show the result.
+    private fun lookupOnWigle(bssid: String) {
+        Toast.makeText(this, "Looking up on WiGLE…", Toast.LENGTH_SHORT).show()
+        val token = appSettings.wigleToken
+        Thread {
+            val r = AccountStats.lookupWigle(token, bssid)
+            runOnUiThread {
+                val msg = when {
+                    r == null -> "WiGLE lookup failed (check your WiGLE token and connection)."
+                    !r.known -> "New to WiGLE: no record of $bssid yet."
+                    else -> buildString {
+                        appendLine("WiGLE already knows this network.")
+                        if (r.ssid.isNotBlank()) appendLine("SSID: ${r.ssid}")
+                        if (r.encryption.isNotBlank()) appendLine("Encryption: ${r.encryption}")
+                        if (r.trilat != 0.0 || r.trilon != 0.0) appendLine("Location: %.6f, %.6f".format(r.trilat, r.trilon))
+                        if (r.firstSeen.isNotBlank()) appendLine("First seen: ${r.firstSeen}")
+                        if (r.lastSeen.isNotBlank()) appendLine("Last seen: ${r.lastSeen}")
+                    }.trim()
+                }
+                AlertDialog.Builder(this).setTitle("WiGLE: $bssid").setMessage(msg).setPositiveButton("Close", null).show()
+            }
+        }.start()
     }
 
     // "This run" only - no cross-session lookups (new-vs-previously-seen,
@@ -1196,7 +1225,8 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             }
         }.trim()
 
-        showDetailDialog(title, body, obs.mac)
+        showDetailDialog(title, body, obs.mac,
+            wifiBssid = obs.mac.takeIf { obs.source == Source.PHONE_WIFI || obs.source == Source.RIG_WIFI })
     }
 
     // Same Hot/Warm/Cold buckets a human would eyeball off the number -

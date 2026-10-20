@@ -1201,6 +1201,19 @@ class ScanService : Service(), RigLinkManager.Listener {
         mainHandler.post { onObservation(obs) }
     }
 
+    override fun onRigUploadRequest() {
+        // The rig's own Upload button was tapped and relayed here (WD:UPLOADREQ),
+        // so upload the phone's data too - the mirror of the phone's Upload button
+        // asking the rig to upload. Forced: honor the explicit tap even if
+        // auto-upload-on-WiFi is off or we're on cellular. currentRunId() is an
+        // in-memory field; the mostRecentRunId() fallback hits the DB, so the whole
+        // lookup runs on dbExecutor (never the caller's thread).
+        dbExecutor.execute {
+            val runId = currentRunId() ?: dao.mostRecentRunId() ?: return@execute
+            AutoUploader.maybeUpload(this, runId, force = true)
+        }
+    }
+
     override fun onRigStatus(rawLine: String) {
         // Only WD:STATUS carries "ch=" (BEGIN/END don't) - e.g.
         // "WD:STATUS aps=0 bles=0 ch=9 uptime=2m20s". Telemetry-only, the

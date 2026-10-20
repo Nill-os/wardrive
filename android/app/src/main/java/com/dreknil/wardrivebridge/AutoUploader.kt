@@ -11,11 +11,15 @@ import android.widget.Toast
  *  unmetered network) - so a drive home that ends in the driveway uploads by itself. Same rule
  *  as the manual button: a run only counts as uploaded once every configured service took it. */
 object AutoUploader {
-    fun maybeUpload(context: Context, runId: Long) {
+    /** [force] bypasses the auto-upload-on-WiFi preference and the unmetered-network
+     *  check - used when the user explicitly asks for an upload (e.g. the rig's own
+     *  Upload button, relayed to the phone), where their intent overrides both. A
+     *  token is still required; nothing can be uploaded without one. */
+    fun maybeUpload(context: Context, runId: Long, force: Boolean = false) {
         val settings = AppSettings(context)
-        if (!settings.autoUploadOnWifi) return
+        if (!force && !settings.autoUploadOnWifi) return
         if (settings.wigleToken.isBlank() && settings.wdgwarsKey.isBlank()) return
-        if (!onUnmeteredNetwork(context)) return
+        if (!force && !onUnmeteredNetwork(context)) return
 
         val app = context.applicationContext
         Thread {

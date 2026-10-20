@@ -2096,6 +2096,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     }
 
     private fun uploadCsv() {
+        // One Upload button covers both sides: also tell the rig to upload its
+        // own SD data, so the phone's button and the rig's button do the same
+        // thing. The rig briefly drops the BLE link to join its home WiFi, then
+        // reconnects by itself (same path as the rig-health "upload" action).
+        // Harmless no-op with a clear toast when no rig is linked.
+        if (scanService?.requestRigUpload() == true) {
+            Toast.makeText(this, "Rig uploading its data too…", Toast.LENGTH_SHORT).show()
+        }
         // currentRunId() is a cheap in-memory field, safe on the main thread - but the
         // dao.mostRecentRunId() fallback (used once there's no active run, e.g. it already
         // stopped) hits the database and must not run here. This used to call it directly on

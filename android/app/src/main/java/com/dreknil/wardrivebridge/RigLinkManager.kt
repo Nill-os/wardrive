@@ -47,6 +47,10 @@ class RigLinkManager(private val context: Context, private val listener: Listene
 
         /** Every WD: line, for the upload relay (WD:PEND/FBEGIN/FROW/FEND). Return true if consumed. */
         fun onRigRelayLine(line: String): Boolean
+        /** The rig's own Upload button was pressed - mirror it on the phone by
+         *  uploading the phone's current/most-recent run too, so the two Upload
+         *  buttons do the same thing in both directions. */
+        fun onRigUploadRequest()
         /** cyd_node's own mesh link to wifi_node changed - this is a THIRD link, distinct from
          * both onRigConnected/Disconnected (this phone's USB link to cyd_node) and
          * onRigScanStateChanged (whether the rig is actively scanning). The phone being
@@ -571,6 +575,7 @@ class RigLinkManager(private val context: Context, private val listener: Listene
                 val state = ordinal?.let { MeshLinkState.entries.getOrNull(it) }
                 if (state != null) listener.onMeshLinkStateChanged(state)
             }
+            line.startsWith("WD:UPLOADREQ") -> listener.onRigUploadRequest()
             line.startsWith("WD:STATUS") || line.startsWith("WD:BEGIN") || line.startsWith("WD:END") ->
                 listener.onRigStatus(line)
         }

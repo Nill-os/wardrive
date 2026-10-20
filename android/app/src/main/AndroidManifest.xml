@@ -60,7 +60,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:screenOrientation="fullUser">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -76,16 +77,19 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
+            android:screenOrientation="fullUser"
             android:label="Settings" />
 
         <activity
             android:name=".AnalyticsActivity"
             android:exported="false"
+            android:screenOrientation="fullUser"
             android:label="Analytics" />
 
         <activity
             android:name=".AntennaActivity"
             android:exported="false"
+            android:screenOrientation="fullUser"
             android:label="Antenna check" />
 
         <service

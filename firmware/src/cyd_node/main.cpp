@@ -3755,7 +3755,11 @@ void loop() {
 			switch (currentTab) {
 				case Tab::Main:
 					if (i == 0) onSingleClickHandler();
-					else if (i == 1) onDoubleClickHandler();
+					// Mirror a physical UPLOAD tap to the phone (WD:UPLOADREQ) so its Upload
+					// button and this one do the same thing. Sent ONLY here, on a real tap -
+					// NOT inside onDoubleClickHandler(), which the phone's own "rig upload"
+					// command also calls; echoing it back would loop the two sides forever.
+					else if (i == 1) { onDoubleClickHandler(); phonePrintf("WD:UPLOADREQ"); }
 					else if (i == 2) onReconnectHandler();
 					break;
 				case Tab::Targets:

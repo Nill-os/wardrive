@@ -1169,7 +1169,6 @@ static void drawTabLogs(bool redrawAll) {
 // new value, which is applied and saved to config.cfg the same way the phone's
 // "cfg <key> <value>" path does.
 static void applyConfigSetting(const String &key, const String &value); // defined in the wdstream section
-static void rebuildExcludedMacs(); // the user's own devices / blacklist - defined next to cydMacKeyFromString()
 
 bool kbActive = false;       // keyboard overlay up
 bool netCfgActive = false;   // network-config list overlay up
@@ -1665,7 +1664,6 @@ static void sdInitTask(void *) {
 	if (sdOk && SD.cardType() == CARD_NONE) sdOk = false;
 
 	configOk = sdOk && loadWardriveConfig("/config.cfg", config);
-	rebuildExcludedMacs();
 	uploader = new Uploader(config);
 
 	sdTaskDone = true;
@@ -1976,27 +1974,6 @@ static uint64_t cydMacKeyFromString(const String &mac) {
 	}
 	return key;
 }
-
-// The user's own devices (and their blacklist) - never logged, uploaded or mirrored. Rebuilt from
-// config.excludeMacs (pushed by the phone, saved in config.cfg) plus this board's own Bluetooth
-// address, which it advertises for the phone link whenever no phone is connected.
-static std::unordered_set<uint64_t> cydExcludedMacs;
-static void rebuildExcludedMacs() {
-	cydExcludedMacs.clear();
-	String list = config.excludeMacs;
-	int start = 0;
-	while (start < (int)list.length()) {
-		int comma = list.indexOf(',', start);
-		if (comma < 0) comma = list.length();
-		String mac = list.substring(start, comma);
-		mac.trim();
-		if (mac.length() >= 17) cydExcludedMacs.insert(cydMacKeyFromString(mac));
-		start = comma + 1;
-	}
-	uint8_t own[6];
-	if (esp_read_mac(own, ESP_MAC_BT) == ESP_OK) cydExcludedMacs.insert(cydMacToKey(own));
-}
-static bool isExcludedMac(uint64_t key) { return cydExcludedMacs.count(key) > 0; }
 
 // Distance in metres - a flat-earth approximation, plenty for the tens-to-
 // hundreds of metres this is used for.
@@ -2728,7 +2705,6 @@ static void applyConfigSetting(const String &key, const String &value) {
 	else if (key == "home_lon") config.homeLon = value.toDouble();
 	else if (key == "home_radius_m") config.homeRadiusM = value.toDouble();
 	else if (key == "exclude_radius_m") config.excludeRadiusM = value.toDouble();
-	else if (key == "exclude_macs") { config.excludeMacs = value; rebuildExcludedMacs(); }
 	else if (key == "count_mode") { config.countMode = (uint8_t)value.toInt(); forceFullRedraw = true; }
 	else return; // unknown key - don't persist
 	persistConfigKey(key, value);
@@ -3373,7 +3349,6 @@ static void handleIncomingLine(const String &line) {
 
 		if (inExclusionZone(lat, lon)) return; // home exclusion zone - never logged, uploaded or mirrored
 		if (isNoMapSsid(ssid)) return; // _nomap opt-out
-		if (isExcludedMac(cydMacKeyFromString(bssid))) return; // the user's own device / blacklist
 
 		// Shared dedup with this board's own sniffer (see cydApDedupState's
 		// own comment) - without this, an AP wifi_node just relayed and an
@@ -3435,7 +3410,6 @@ static void handleIncomingLine(const String &line) {
 		double alt = rest.substring(c6 + 1, c7).toDouble();
 		int c8 = rest.indexOf(',', c7 + 1);
 		double acc = c8 < 0 ? rest.substring(c7 + 1).toDouble() : rest.substring(c7 + 1, c8).toDouble();
-		if (isExcludedMac(cydMacKeyFromString(mac))) return; // the user's own radio / this board / blacklist
 		String mfgHex = c8 < 0 ? "" : rest.substring(c8 + 1); // trailing field - only present now that wifi_node forwards ble_node's raw manufacturer data (see its handleBleLinkLine())
 		diagBleLines++; // counted before the home-zone check: proves the line arrived at all
 		lastBleLineMs = millis();
@@ -3891,7 +3865,7 @@ void loop() {
 		lastStorageCheckMs = millis();
 		if (!sdOk) {
 			sdOk = tryRecoverSd();
-			if (sdOk && !configOk) { configOk = loadWardriveConfig("/config.cfg", config); rebuildExcludedMacs(); }
+			if (sdOk && !configOk) configOk = loadWardriveConfig("/config.cfg", config);
 		} else if (scanningActive && !sdStillWritable()) {
 			// Card pulled or failed mid-run - make it visible (red flash, SD:FAIL,
 			// LED relayed to the other boards) instead of writes silently no-oping.
@@ -3983,8 +3957,7 @@ void loop() {
 			}
 			wdstreamLineBuf = "";
 		} else if (c != '\r') {
-			// Real commands are short, except "cfg exclude_macs" (up to 60 MACs) - cap against line noise.
-			if (wdstreamLineBuf.length() < 1200) wdstreamLineBuf += c;
+			if (wdstreamLineBuf.length() < 200) wdstreamLineBuf += c; // real commands are short - cap against line noise
 		}
 	}
 	checkPhoneLinkTimeout();
@@ -4004,7 +3977,7 @@ void loop() {
 		if (scanningActive) {
 			if (!sdOk) {
 				sdOk = tryRecoverSd();
-				if (sdOk && !configOk) { configOk = loadWardriveConfig("/config.cfg", config); rebuildExcludedMacs(); }
+				if (sdOk && !configOk) configOk = loadWardriveConfig("/config.cfg", config);
 			}
 			bool canSave = startScanning();
 			if (!canSave) {
@@ -4076,7 +4049,6 @@ void loop() {
 			}
 			if (inExclusionZone(pLat, pLon)) continue; // home exclusion zone
 			if (isNoMapSsid(ssid)) continue; // _nomap opt-out
-			if (isExcludedMac(cydMacToKey(obs.bssid))) continue; // the user's own device / blacklist
 			if (!cydShouldLogAp(obs.bssid, pLat, pLon, ssid.length() > 0)) {
 				pushApSighting(bssid, ssid, authMode, obs.rssi, true); // already logged at this spot - just refresh its row
 				continue;

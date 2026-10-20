@@ -3681,11 +3681,18 @@ bool wasTouched = false;
 // dispatches - masked the double-fire but also ate a genuine second tap made
 // within 400 ms, which is what made buttons feel dead ("taps do nothing
 // sometimes"). The correct fix debounces the RELEASE instead: treat the finger
-// as still down until TOUCH_RELEASE_POLLS consecutive not-touched reads, so a
-// mid-press blip is ignored (no double-fire) while a real release re-arms
-// within a few polls (no cooldown, so the next intentional tap fires at once).
-static const uint8_t TOUCH_RELEASE_POLLS = 3; // "a poll or two" of noise < this
-uint8_t notTouchedPolls = TOUCH_RELEASE_POLLS; // start in the released state
+// as still down for a debounce window after the last valid read.
+//
+// That window is measured in TIME, not poll count: loop() runs fast when idle
+// but much slower during a run (WiFi/BLE/SD work), so a poll-count window is a
+// different wall-clock length each time - short enough when idle to let a
+// bounce re-fire the toggle (start->stop->start, so it "still says STOP" after
+// you stop), and long enough mid-run to eat the next tap (the "lag"). A fixed
+// ~120 ms window is immune to loop speed: it's longer than any mid-press blip
+// or mechanical bounce (so one tap fires once) yet far shorter than a
+// deliberate second tap (so the next press still registers at once).
+static const uint32_t TOUCH_RELEASE_MS = 120;
+uint32_t lastTouchSeenMs = 0; // millis() of the last valid touch; 0 = released
 
 void loop() {
 	// Identity line the desktop app's "Detect boards" reads to recognize the
@@ -3709,12 +3716,11 @@ void loop() {
 	// wasTouched gates this to fire once per press rather than once per
 	// poll while held down.
 	TouchPoint touch = readTouch();
-	// Release-debounce bookkeeping (see TOUCH_RELEASE_POLLS): count consecutive
-	// not-touched polls so an isolated mid-press invalid read isn't mistaken for
-	// a finger lift. Updated here, before any early-return path below, so it
-	// stays accurate regardless of which branch handles this poll.
-	if (touch.valid) notTouchedPolls = 0;
-	else if (notTouchedPolls < 255) notTouchedPolls++;
+	// Release-debounce bookkeeping (see TOUCH_RELEASE_MS): remember when the
+	// panel was last actually touched. Updated here, before any early-return
+	// path below, so it stays accurate regardless of which branch handles this
+	// poll.
+	if (touch.valid) lastTouchSeenMs = millis();
 	if (serviceModeActive && touch.valid && !wasTouched) {
 		// Any touch leaves service mode (and wakes the screen if it was off).
 		wasTouched = true;
@@ -3779,11 +3785,12 @@ void loop() {
 			}
 		}
 	}
-	// Arm on any touch; disarm only after a debounced release (notTouchedPolls
-	// above), so one physical tap fires exactly once and the next intentional
-	// tap registers immediately - no blanket cooldown to eat it.
+	// Arm on any touch; disarm only once the panel has been not-touched for the
+	// full debounce window (TOUCH_RELEASE_MS), so one physical tap - blips and
+	// bounce included - fires exactly once, and the next intentional tap still
+	// registers immediately. Time-based, so loop speed doesn't change the feel.
 	if (touch.valid) wasTouched = true;
-	else if (notTouchedPolls >= TOUCH_RELEASE_POLLS) wasTouched = false;
+	else if (millis() - lastTouchSeenMs >= TOUCH_RELEASE_MS) wasTouched = false;
 
 	if (ledOffAtMs != 0 && millis() >= ledOffAtMs) {
 		setLed(false, false, false);

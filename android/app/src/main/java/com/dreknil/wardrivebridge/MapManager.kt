@@ -142,8 +142,16 @@ class MapManager(
         hasCentered = true
     }
 
+    // Historical networks go into a RadiusMarkerClusterer, not one overlay per
+    // marker: a dense log has thousands of points, and adding each as its own
+    // overlay makes the map crawl. The clusterer groups nearby markers into a
+    // single numbered bubble that splits as you zoom in.
+    private var cluster: org.osmdroid.bonuspack.clustering.RadiusMarkerClusterer? = null
+
     fun showHistorical(points: List<HistoricalPoint>) {
         clearHistorical()
+        val c = org.osmdroid.bonuspack.clustering.RadiusMarkerClusterer(mapView.context)
+        c.setRadius(120) // px: nearby markers merge into one bubble
         for (p in points) {
             val marker = Marker(mapView)
             marker.position = GeoPoint(p.lat, p.lon)
@@ -156,14 +164,18 @@ class MapManager(
                 true
             }
             historicalMarkers.add(marker)
-            mapView.overlays.add(marker)
+            c.add(marker)
         }
+        cluster = c
+        mapView.overlays.add(c)
         points.firstOrNull()?.let { mapView.controller.setCenter(GeoPoint(it.lat, it.lon)) }
         refreshHeatmap()
+        mapView.invalidate()
     }
 
     fun clearHistorical() {
-        historicalMarkers.forEach { mapView.overlays.remove(it) }
+        cluster?.let { mapView.overlays.remove(it); it.items.clear() }
+        cluster = null
         historicalMarkers.clear()
         refreshHeatmap()
     }

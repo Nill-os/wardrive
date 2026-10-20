@@ -47,6 +47,7 @@ dependencies {
     implementation("com.github.mik3y:usb-serial-for-android:3.7.0")
     // No API key needed (unlike Google Maps) - fetches OpenStreetMap tiles directly.
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("com.github.MKergall:osmbonuspack:6.9.0") // RadiusMarkerClusterer for the historical map
     implementation("androidx.room:room-runtime:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
     // Android Auto: the only way an app can put UI on the car's own screen -

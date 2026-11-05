@@ -23,6 +23,7 @@ Open a GitHub issue with:
 - Keep changes focused; one topic per PR.
 - Match the surrounding style. The firmware and app both lean on thorough comments that explain *why* a non-obvious thing is the way it is - keep that up for anything subtle.
 - Test on real hardware where you can, and say what you tested in the PR.
+- For any new `cfg` command handled by the firmware, wire up the phone-side push in the same PR — the feature is not complete until both sides are connected.
 - Don't commit build output (`.pio/`, `android/app/build/`), API keys, or anything from a real drive.
 
 ## Scope and responsible use

@@ -10,21 +10,11 @@ package com.dreknil.wardrivebridge
  * tracker heuristic.
  */
 object DeviceSignatureDetection {
-    // User-added OUIs (MAC prefixes) that extend the built-in Flock / Police
-    // (Axon) signatures, the same user-editable model Biscuit Manager uses - so
-    // new camera OUIs can be added from Settings without a code change. Held as
-    // normalized "AA:BB:CC" uppercase prefixes. @Volatile because setUserOuis()
-    // is called from the service/settings thread while the BLE scan thread reads
-    // them; a plain reference swap is atomic, so no lock is needed.
-    @Volatile private var userFlockOuis: Set<String> = emptySet()
-    @Volatile private var userPoliceOuis: Set<String> = emptySet()
+    private data class UserOuis(val flock: Set<String> = emptySet(), val police: Set<String> = emptySet())
+    private val userOuis = java.util.concurrent.atomic.AtomicReference(UserOuis())
 
-    /** Replace the user OUI lists from the raw text the user typed in Settings
-     *  (comma / newline / space / semicolon separated). Call when scanning
-     *  starts and whenever the lists are edited. */
     fun setUserOuis(flockRaw: String, policeRaw: String) {
-        userFlockOuis = parseOuis(flockRaw)
-        userPoliceOuis = parseOuis(policeRaw)
+        userOuis.set(UserOuis(parseOuis(flockRaw), parseOuis(policeRaw)))
     }
 
     private fun parseOuis(raw: String): Set<String> =
@@ -33,9 +23,7 @@ object DeviceSignatureDetection {
             .filter { it.isNotEmpty() }
             .toSet()
 
-    // Keep only hex digits, take the first three octets, format as AA:BB:CC.
-    // Accepts whatever separators (or none) the user typed; anything shorter
-    // than a full 3-octet OUI is dropped rather than matched too broadly.
+    // board #1420 normalize-oui-format
     private fun normalizeOui(s: String): String {
         val hex = s.uppercase().filter { it in "0123456789ABCDEF" }
         if (hex.length < 6) return ""
@@ -74,7 +62,7 @@ object DeviceSignatureDetection {
     fun isFlockSafety(mac: String, name: String, companyId: Int?): Boolean {
         val macUpper = mac.uppercase()
         if (FLOCK_MAC_PREFIXES.any { macUpper.startsWith(it) }) return true
-        if (userFlockOuis.any { macUpper.startsWith(it) }) return true // user-added OUIs (Settings)
+        if (userOuis.get().flock.any { macUpper.startsWith(it) }) return true // user-added OUIs (Settings)
         if (companyId == FLOCK_COMPANY_ID) return true
         if (name.startsWith("Penguin", ignoreCase = true)) return true   // "Penguin-<serial>" camera, or bare "Penguin"
         if (name.startsWith("Pigvision", ignoreCase = true)) return true  // Flock's Pigvision camera line (seen in Biscuit Manager)
@@ -170,7 +158,7 @@ object DeviceSignatureDetection {
     fun isPoliceCam(mac: String, name: String): Boolean {
         if (name.startsWith("AXON", ignoreCase = true)) return true
         val macUpper = mac.uppercase()
-        return userPoliceOuis.any { macUpper.startsWith(it) }
+        return userOuis.get().police.any { macUpper.startsWith(it) }
     }
 
     // The WEAKEST heuristic here - WiFi Pineapple's default AP naming

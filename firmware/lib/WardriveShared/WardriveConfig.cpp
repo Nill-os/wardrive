@@ -37,6 +37,7 @@ bool loadWardriveConfig(const char *path, WardriveConfig &outCfg) {
 		else if (key == "home_lon") outCfg.homeLon = value.toDouble();
 		else if (key == "home_radius_m") outCfg.homeRadiusM = value.toDouble();
 		else if (key == "exclude_radius_m") outCfg.excludeRadiusM = value.toDouble();
+		else if (key == "exclude_macs") outCfg.excludeMacs = value;
 		else if (key == "led_brightness") { int v = value.toInt(); outCfg.ledBrightness = v < 0 ? 0 : v > 100 ? 100 : v; }
 		else if (key == "screen_brightness") { int v = value.toInt(); outCfg.screenBrightness = v < 0 ? 0 : v > 100 ? 100 : v; }
 		else if (key == "screen_timeout_sec") outCfg.screenTimeoutSec = (uint32_t)value.toInt();

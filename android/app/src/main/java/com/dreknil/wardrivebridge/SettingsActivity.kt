@@ -217,6 +217,15 @@ class SettingsActivity : AppCompatActivity() {
         link.sendRaw("cfg exclude_radius_m ${settings.homeRadiusM}")
     }
 
+    private fun pushRigExcludeMacs() {
+        val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
+        if (link == null || ScanService.instance?.rigConnected != true) return
+        val macs = (settings.macBlacklist() + settings.meshOwnRadioAddresses())
+            .filter { it.length == 17 }
+            .joinToString(",")
+        link.sendRaw("cfg exclude_macs $macs")
+    }
+
     private fun pushRigAlertSettings() {
         val link = try { ScanService.instance?.rigLink } catch (_: UninitializedPropertyAccessException) { null }
         if (link == null || ScanService.instance?.rigConnected != true) return
@@ -271,6 +280,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.homeRadiusM = binding.homeRadiusInput.text.toString().toDoubleOrNull() ?: 0.0
         pushRigExclusionZone() // keep the rig's exclusion zone in sync with the app's
         settings.macBlacklistRaw = binding.macBlacklistInput.text.toString()
+        pushRigExcludeMacs()
         settings.ssidBlacklistRaw = binding.ssidBlacklistInput.text.toString()
         settings.customFlockOuisRaw = binding.customFlockOuisInput.text.toString()
         settings.customPoliceOuisRaw = binding.customPoliceOuisInput.text.toString()

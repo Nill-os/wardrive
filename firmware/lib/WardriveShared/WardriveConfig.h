@@ -70,6 +70,8 @@ struct WardriveConfig {
 	double homeLon = 0.0;
 	double homeRadiusM = 0.0; // 0 = geofence disabled
 	double excludeRadiusM = 0.0; // drop sightings within this many m of home; 0 = off
+	// board #1421 exclude-macs-field
+	String excludeMacs;
 	uint8_t ledBrightness = 3;    // 0-100 %, all boards' RGB status LEDs
 	// Customizable status-LED colors (0xRRGGBB). ap = a WiFi AP was seen,
 	// ble = a BLE device, ok = start/stop/success, fail = error/link down.

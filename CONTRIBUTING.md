@@ -25,6 +25,8 @@ Open a GitHub issue with:
 - Test on real hardware where you can, and say what you tested in the PR.
 - For any new `cfg` command handled by the firmware, wire up the phone-side push in the same PR — the feature is not complete until both sides are connected.
 - Don't commit build output (`.pio/`, `android/app/build/`), API keys, or anything from a real drive.
+- Run `./gradlew assembleDebug` and confirm it passes before committing or handing off Android changes — a commit with a latent compile error is harder to debug across a context gap than a build failure caught immediately.
+- When adding a method to `ScanService.SessionListener`, grep for all implementors (`grep -r "SessionListener"`) and add the method to every class in the same commit — the Kotlin compiler will catch gaps, but a simultaneous multi-class update is cleaner than a follow-up fix commit.
 
 ## Scope and responsible use
 

@@ -24,7 +24,7 @@ It links to the rig's CYD display board, adds the phone's own WiFi, Bluetooth an
 - **Detections:** trackers (AirTag/SmartTag), Flipper Zero, Flock cameras, skimmers, Remote ID drones, Meshtastic radios, and a few name-based heuristics. Every one is a best-effort pattern match on public signatures, not proof.
 - **Logs:** per-run history, a field report grouped by category or maker, a map with heatmap, and CSV (WigleWifi-1.6) or GPX export.
 - **Uploads:** WiGLE and wdgwars. A run only counts as uploaded once every configured service accepts it.
-- **Privacy:** a home exclusion zone, MAC/SSID blacklists, and `_nomap` SSIDs are always dropped. Sightings are only logged with a current GPS fix, never at 0,0. API keys are masked in Settings.
+- **Privacy:** a home exclusion zone, MAC/SSID blacklists (MAC blacklist also syncs to the rig as `exclude_macs`), and `_nomap` SSIDs are always dropped. Sightings are only logged with a current GPS fix, never at 0,0. API keys are masked in Settings.
 - **Android Auto:** a status screen for the car, including rig health.
 - **Shortcuts:** a quick-settings tile and a home-screen widget to start and stop runs, plus a live notification with counts and a STOP button.
 - **Rig health and control:** the dashboard shows the rig's GPS fix, satellites, SD card and runs waiting to upload. Tap it to make the rig upload now.
@@ -55,7 +55,7 @@ Needs JDK 17 and the Android SDK (minSdk 26 / Android 8.0, targetSdk 34). Androi
 2. In **Settings**:
    - Enter your WiGLE "Encoded for use" token and your wdgwars API key.
    - Set a home exclusion zone (**USE CURRENT GPS FIX AS HOME** plus a radius).
-   - Add any MACs or SSIDs you never want logged.
+   - Add any MACs or SSIDs you never want logged. Optionally add OUI prefixes under **Flock** and **Police camera** to extend detection.
 3. **Pair with your rig (once):** on the rig's CFG tab tap **PAIR PHONE**, then type the 6-digit code it shows when Android asks. After that the app only ever connects to that rig, and the rig only accepts paired phones. If Bluetooth isn't available, plug into the CYD's USB port with an OTG adapter.
 4. Tap **START**.
 5. **Android Auto:** sideloaded apps are hidden until you enable Android Auto developer settings → **Unknown sources**.

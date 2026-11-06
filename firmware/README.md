@@ -12,7 +12,7 @@ Flash all three from the same commit, because the boards share a wire protocol. 
 
 ## Desktop app
 
-[`tools/`](tools/) holds the desktop app - the go-to tool for the rig. It pulls logs off the SD card, over USB, or over WiFi and builds an interactive field report; **detects** what board is on each port and its node number; **flashes** any board (including bulk "flash all" and the Seeed XIAO BLE variants) over USB or the CYD over the air; and gives a serial console to manage the rig. Run `tools/install-desktop.sh` for a launcher with an icon. See [Scaling the rig](../docs/SCALING.md) for the multi-node workflow.
+[`tools/`](tools/) holds the desktop app - the go-to tool for the rig. It pulls logs off the SD card, over USB, or over WiFi and builds an interactive field report; **detects** what board is on each port and its node number; **flashes** any board (including bulk "flash all" and the Seeed XIAO BLE variants) over USB; and gives a serial console to manage the rig. Run `tools/install-desktop.sh` for a launcher with an icon. See [Scaling the rig](../docs/SCALING.md) for the multi-node workflow.
 
 <p align="center">
   <img src="../docs/screenshots/desktop-uploader.png" width="330" alt="Desktop tool - logs & report">

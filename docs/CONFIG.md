@@ -45,13 +45,14 @@ channel_hop_ms=150
 | `count_mode` | no | CYD headline counters: `0` = WiGLE (WiFi) / WDGW (WiFi+BLE) (default), `1` = found APs / BT / ALL. Every counter is **unique devices this run** (an AP re-logged after you move 40 m is a new CSV row, not a new count). Also toggleable from the phone app's Settings, where the one **Counters show found APs / BT / ALL** setting switches the app's dashboard, the rig screen and the Organic Maps overlay together. |
 | `service_password` | no | Password for [service mode](USING_THE_RIG.md#service-mode-download-logs)'s log web server. The web page and downloads always require a password (HTTP basic auth, user `wardrive`). Leave this blank and the rig shows a fresh random 6-digit code on its screen and in the phone app each time service mode starts; set it for a fixed one. |
 | `alert_flock` / `alert_police` / `alert_skimmer` / `alert_flipper` / `alert_glasses` / `alert_actioncam` / `alert_pineapple` | no | Rig-side detection alerts: a red banner + LED flash on the CYD the first time each is seen in a run. `1`=on, `0`=off (default off). The phone app's DETECTION ALERTS toggles push these, so you normally set them there. |
+| `exclude_macs` | no | Comma-separated MAC addresses the rig skips when logging and emitting sightings. Managed automatically by the phone app (Settings → Blacklists); editing by hand is rarely needed. |
 
 ## Changing these without the SD card
 
-You don't have to pull the card to edit the WiFi networks or `service_password`:
+You don't have to pull the card to edit the WiFi networks, `service_password`, home geofence, or device blacklists:
 
 - **On the rig:** CFG tab → **NETWORK & DEBUG** → tap a field to type a new value on the on-screen keyboard.
-- **From the phone app:** Settings → **RIG NETWORK & DEBUG**.
+- **From the phone app:** Settings → **RIG NETWORK & DEBUG** (network + password), **Home exclusion zone** (`home_lat` / `home_lon` / `exclude_radius_m`), and **Blacklists** (`exclude_macs`). See [PHONE_APP.md](PHONE_APP.md) for the full list of pushable settings.
 
 Both apply the change live and save it back to `config.cfg`. Everything else is edited in the file.
 

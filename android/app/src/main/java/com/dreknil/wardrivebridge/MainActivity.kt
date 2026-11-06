@@ -2255,6 +2255,9 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
                     (!result.wardriftAttempted || result.wardriftOk) && (!mesh.attempted || mesh.ok)
+                if (result.wigleOk) dao.markRunUploadedWigle(runId)
+                if (result.wdgwarsOk) dao.markRunUploadedWdgwars(runId)
+                if (result.wardriftOk) dao.markRunUploadedWardrift(runId)
                 if (allOk && !wasLive) dao.markUploaded(runId, System.currentTimeMillis()) // see wasLive
                 runOnUiThread {
                     val parts = mutableListOf<String>()

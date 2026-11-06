@@ -40,6 +40,9 @@ object AutoUploader {
                 val mesh = MeshUploader.uploadRun(app, runId, settings.wdgwarsKey) // mesh nodes: WDGWars JSON upload
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
                     (!result.wardriftAttempted || result.wardriftOk) && (!mesh.attempted || mesh.ok)
+                if (result.wigleOk) dao.markRunUploadedWigle(runId)
+                if (result.wdgwarsOk) dao.markRunUploadedWdgwars(runId)
+                if (result.wardriftOk) dao.markRunUploadedWardrift(runId)
                 if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
                 Handler(Looper.getMainLooper()).post {
                     val meshNote = if (mesh.attempted) " (${mesh.message})" else ""

@@ -30,6 +30,7 @@ data class HistoricalPoint(
     val isPoliceCam: Boolean = false,
     val isPineapple: Boolean = false,
     val isHackTool: Boolean = false,
+    val wifiStandard: String = "",
 )
 
 fun HistoricalPoint.formatDetails(): String = buildString {
@@ -57,6 +58,7 @@ fun HistoricalPoint.formatDetails(): String = buildString {
     appendLine("Label: ${label.ifBlank { "(hidden)" }}")
     appendLine("Type: $type")
     if (authType.isNotBlank()) appendLine("Auth: $authType")
+    if (wifiStandard.isNotEmpty()) appendLine("Standard: $wifiStandard")
     // Cell rows keep the radio channel number (EARFCN/ARFCN/NR-ARFCN) in channel and frequency, not MHz.
     val isCell = type in setOf("GSM", "WCDMA", "LTE", "NR", "CDMA")
     if (channel > 0 && !isCell) appendLine("Channel: $channel")

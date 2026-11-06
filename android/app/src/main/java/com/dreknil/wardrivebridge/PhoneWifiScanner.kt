@@ -114,6 +114,7 @@ class PhoneWifiScanner(
                     channelWidthMHz = channelWidthMHz(r.channelWidth),
                     hidden = r.SSID.isNullOrEmpty(),
                     isPineapple = DeviceSignatureDetection.isPineapple(r.SSID ?: ""),
+                    wifiStandard = if (Build.VERSION.SDK_INT >= 30) wifiStandardLabel(r.wifiStandard) else "",
                 )
             )
         }
@@ -150,6 +151,17 @@ class PhoneWifiScanner(
         freqMHz in 5925..7125 -> (freqMHz - 5950) / 5           // 6 GHz (WiFi 6E)
         freqMHz in 58320..70200 -> (freqMHz - 56160) / 2160     // 60 GHz (802.11ad/ay), channels 1-6
         else -> 0
+    }
+
+    @androidx.annotation.RequiresApi(30)
+    private fun wifiStandardLabel(standard: Int): String = when (standard) {
+        android.net.wifi.ScanResult.WIFI_STANDARD_LEGACY -> "802.11a/b/g"
+        android.net.wifi.ScanResult.WIFI_STANDARD_11N    -> "802.11n"
+        android.net.wifi.ScanResult.WIFI_STANDARD_11AC   -> "802.11ac"
+        android.net.wifi.ScanResult.WIFI_STANDARD_11AX   -> "802.11ax"
+        android.net.wifi.ScanResult.WIFI_STANDARD_11AD   -> "802.11ad"
+        android.net.wifi.ScanResult.WIFI_STANDARD_11BE   -> "802.11be"
+        else -> ""
     }
 
     private fun channelWidthMHz(width: Int): Int = when (width) {

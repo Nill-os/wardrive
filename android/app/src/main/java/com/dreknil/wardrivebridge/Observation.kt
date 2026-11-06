@@ -100,6 +100,9 @@ data class Observation(
     // in the beacon/probe response). False (not just "unknown") for every
     // non-WiFi source.
     val hidden: Boolean = false,
+    // Phone WiFi only (API 30+) - the 802.11 generation reported by Android's
+    // ScanResult.wifiStandard. Empty string on older APIs or non-WiFi sources.
+    val wifiStandard: String = "",
     // BLE only - the 2-byte company ID from the advertisement's
     // manufacturer-specific data AD structure, or null if the advertisement
     // carried none. Bluetooth SIG-assigned, e.g. 0x004C is Apple.

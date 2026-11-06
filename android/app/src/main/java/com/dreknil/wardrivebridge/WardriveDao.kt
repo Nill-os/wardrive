@@ -37,6 +37,15 @@ interface WardriveDao {
     @Query("UPDATE runs SET uploadedAt = :atMs WHERE id = :runId")
     fun markUploaded(runId: Long, atMs: Long)
 
+    @Query("UPDATE observations SET inWigle = 1 WHERE runId = :runId")
+    fun markRunUploadedWigle(runId: Long)
+
+    @Query("UPDATE observations SET inWdgwars = 1 WHERE runId = :runId")
+    fun markRunUploadedWdgwars(runId: Long)
+
+    @Query("UPDATE observations SET inWardrift = 1 WHERE runId = :runId")
+    fun markRunUploadedWardrift(runId: Long)
+
     @Query("SELECT * FROM observations WHERE runId = :runId")
     fun observationsForRun(runId: Long): List<ObservationEntity>
 

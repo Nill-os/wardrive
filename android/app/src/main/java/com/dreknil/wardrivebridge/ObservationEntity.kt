@@ -55,6 +55,14 @@ data class ObservationEntity(
     // BLE service UUIDs advertised by the device, as a comma-separated lowercase list,
     // or empty string.  Stored for future UUID-based filtering.
     val service: String = "",
+    // 802.11 generation label from ScanResult.wifiStandard (API 30+), e.g. "802.11ac".
+    // Empty string on older APIs, BLE, or cell sources.
+    val wifiStandard: String = "",
+    // Per-destination upload status: true once this observation's run CSV was
+    // successfully sent to that target.  Set in bulk per run after a successful upload.
+    val inWigle: Boolean = false,
+    val inWdgwars: Boolean = false,
+    val inWardrift: Boolean = false,
 )
 
 fun ObservationEntity.toHistoricalPoint() = HistoricalPoint(
@@ -65,6 +73,7 @@ fun ObservationEntity.toHistoricalPoint() = HistoricalPoint(
     isDrone = isDrone, isMeshRadio = isMeshRadio, isAdultToy = isAdultToy, isGlasses = isGlasses,
     isActionCam = isActionCam, isPoliceCam = isPoliceCam, isPineapple = isPineapple,
     isHackTool = isHackTool,
+    wifiStandard = wifiStandard,
 )
 
 fun Observation.toEntity(runId: Long): ObservationEntity {
@@ -83,5 +92,6 @@ fun Observation.toEntity(runId: Long): ObservationEntity {
         isHackTool = isHackTool,
         mfgrid = companyId?.let { "%04X".format(it) } ?: "",
         service = serviceUuids.joinToString(","),
+        wifiStandard = wifiStandard,
     )
 }

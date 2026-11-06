@@ -19,7 +19,11 @@ class UploadManager(private val appContext: Context) {
     private val executor = Executors.newSingleThreadExecutor()
     private val boundary = "----WardriveBridgeBoundary9f3c2a"
 
-    data class Result(val wdgwarsAttempted: Boolean, val wdgwarsOk: Boolean, val wdgwarsMessage: String, val wigleAttempted: Boolean, val wigleOk: Boolean, val wigleMessage: String)
+    data class Result(
+        val wdgwarsAttempted: Boolean, val wdgwarsOk: Boolean, val wdgwarsMessage: String,
+        val wigleAttempted: Boolean, val wigleOk: Boolean, val wigleMessage: String,
+        val wardriftAttempted: Boolean, val wardriftOk: Boolean, val wardriftMessage: String,
+    )
 
     // Debug only: if a file <filesDir>/debug_upload_host.txt exists, both uploads go there instead
     // of WiGLE/wdgwars. Used by the bench test so the relay can be exercised without touching real
@@ -32,7 +36,7 @@ class UploadManager(private val appContext: Context) {
         } catch (_: Exception) { null }
     }
 
-    fun upload(file: File, wigleToken: String, wdgwarsKey: String, callback: (Result) -> Unit) {
+    fun upload(file: File, wigleToken: String, wdgwarsKey: String, wardriftKey: String = "", callback: (Result) -> Unit) {
         executor.execute {
             val body = buildMultipartBody(file)
             val dbg = debugHost()
@@ -57,7 +61,17 @@ class UploadManager(private val appContext: Context) {
                 wigleMsg = msg
             }
 
-            callback(Result(wdgwarsAttempted, wdgOk, wdgMsg, wigleAttempted, wigleOk, wigleMsg))
+            var wardriftAttempted = false
+            var wardriftOk = false
+            var wardriftMsg = "skipped (no key set)"
+            if (wardriftKey.isNotBlank()) {
+                wardriftAttempted = true
+                val (ok, msg) = post("https://api.wardrive.info/api/v1/uploads/csv", body, mapOf("X-API-Key" to wardriftKey))
+                wardriftOk = ok
+                wardriftMsg = msg
+            }
+
+            callback(Result(wdgwarsAttempted, wdgOk, wdgMsg, wigleAttempted, wigleOk, wigleMsg, wardriftAttempted, wardriftOk, wardriftMsg))
         }
     }
 

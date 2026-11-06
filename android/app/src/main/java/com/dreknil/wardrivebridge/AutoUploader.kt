@@ -18,7 +18,7 @@ object AutoUploader {
     fun maybeUpload(context: Context, runId: Long, force: Boolean = false) {
         val settings = AppSettings(context)
         if (!force && !settings.autoUploadOnWifi) return
-        if (settings.wigleToken.isBlank() && settings.wdgwarsKey.isBlank()) return
+        if (settings.wigleToken.isBlank() && settings.wdgwarsKey.isBlank() && settings.wardriftKey.isBlank()) return
         if (!force && !onUnmeteredNetwork(context)) return
 
         val app = context.applicationContext
@@ -36,10 +36,10 @@ object AutoUploader {
                 return@Thread
             }
             val file = CsvExporter.materialize(app, dao, runId) ?: return@Thread
-            UploadManager(app).upload(file, settings.wigleToken, settings.wdgwarsKey) { result ->
+            UploadManager(app).upload(file, settings.wigleToken, settings.wdgwarsKey, settings.wardriftKey) { result ->
                 val mesh = MeshUploader.uploadRun(app, runId, settings.wdgwarsKey) // mesh nodes: WDGWars JSON upload
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
-                    (!mesh.attempted || mesh.ok)
+                    (!result.wardriftAttempted || result.wardriftOk) && (!mesh.attempted || mesh.ok)
                 if (allOk) dao.markUploaded(runId, System.currentTimeMillis())
                 Handler(Looper.getMainLooper()).post {
                     val meshNote = if (mesh.attempted) " (${mesh.message})" else ""

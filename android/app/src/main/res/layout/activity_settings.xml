@@ -89,6 +89,17 @@
             android:singleLine="true"
             android:layout_marginTop="8dp" />
 
+        <EditText
+            android:id="@+id/wardriftKeyInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="wardrive.info API key"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="textPassword"
+            android:singleLine="true"
+            android:layout_marginTop="8dp" />
+
         <Button
             android:id="@+id/showKeysButton"
             android:layout_width="wrap_content"

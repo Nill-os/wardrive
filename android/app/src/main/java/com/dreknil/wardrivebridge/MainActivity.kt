@@ -618,7 +618,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun refreshAccountStats() {
         val wigleToken = appSettings.wigleToken
         val wdgwarsKey = appSettings.wdgwarsKey
-        if (wigleToken.isBlank() && wdgwarsKey.isBlank()) {
+        if (wigleToken.isBlank() && wdgwarsKey.isBlank() && appSettings.wardriftKey.isBlank()) {
             binding.accountStatsStatus.visibility = View.GONE
             return
         }
@@ -2207,8 +2207,9 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private fun uploadRun(runId: Long) {
         val wigleToken = appSettings.wigleToken
         val wdgwarsKey = appSettings.wdgwarsKey
-        if (wigleToken.isBlank() && wdgwarsKey.isBlank()) {
-            Toast.makeText(this, "Add a WiGLE token or wdgwars key in Settings first", Toast.LENGTH_LONG).show()
+        val wardriftKey = appSettings.wardriftKey
+        if (wigleToken.isBlank() && wdgwarsKey.isBlank() && wardriftKey.isBlank()) {
+            Toast.makeText(this, "Add a WiGLE token, wdgwars key, or wardrive.info key in Settings first", Toast.LENGTH_LONG).show()
             return
         }
 
@@ -2234,7 +2235,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 runOnUiThread { Toast.makeText(this, "No CSV to upload yet", Toast.LENGTH_SHORT).show() }
                 return@Thread
             }
-            uploadManager.upload(file, wigleToken, wdgwarsKey) { result ->
+            uploadManager.upload(file, wigleToken, wdgwarsKey, wardriftKey) { result ->
                 // Only counts as fully uploaded (hides the retry button) once every
                 // target the user actually has configured succeeded - previously this
                 // used OR, so with both a WiGLE token and a wdgwars key set, one
@@ -2243,13 +2244,14 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
                 // Mesh nodes ride in WDGWars' JSON upload, not the CSV (see MeshUploader).
                 val mesh = MeshUploader.uploadRun(this, runId, wdgwarsKey)
                 val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) &&
-                    (!mesh.attempted || mesh.ok)
+                    (!result.wardriftAttempted || result.wardriftOk) && (!mesh.attempted || mesh.ok)
                 if (allOk && !wasLive) dao.markUploaded(runId, System.currentTimeMillis()) // see wasLive
                 runOnUiThread {
                     val parts = mutableListOf<String>()
                     if (mesh.attempted) parts.add(if (mesh.ok) mesh.message else "mesh: ${mesh.message}")
                     if (result.wdgwarsAttempted) parts.add("wdgwars: ${if (result.wdgwarsOk) "ok" + (uploadManager.summarizeWdgwars(result.wdgwarsMessage)?.let { " ($it)" } ?: "") else result.wdgwarsMessage}")
                     if (result.wigleAttempted) parts.add("WiGLE: ${if (result.wigleOk) "ok" else result.wigleMessage}")
+                    if (result.wardriftAttempted) parts.add("wardrive.info: ${if (result.wardriftOk) "ok" else result.wardriftMessage}")
                     Toast.makeText(this, parts.joinToString("  ·  "), Toast.LENGTH_LONG).show()
                     if (result.wdgwarsOk || result.wigleOk) {
                         refreshAccountStats()

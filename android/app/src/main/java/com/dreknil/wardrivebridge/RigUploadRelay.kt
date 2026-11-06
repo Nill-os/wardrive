@@ -182,8 +182,8 @@ class RigUploadRelay(
         }
         state = State.UPLOADING
         log("[relay] uploading $name ($rowsWritten rows) via phone")
-        UploadManager(context).upload(f, settings.wigleToken, settings.wdgwarsKey) { result ->
-            val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk)
+        UploadManager(context).upload(f, settings.wigleToken, settings.wdgwarsKey, settings.wardriftKey) { result ->
+            val allOk = (!result.wdgwarsAttempted || result.wdgwarsOk) && (!result.wigleAttempted || result.wigleOk) && (!result.wardriftAttempted || result.wardriftOk)
             handler.post {
                 if (allOk) {
                     // Include the phone's wall-clock epoch (seconds) so the rig can
@@ -225,7 +225,7 @@ class RigUploadRelay(
 
     private fun enabled(): Boolean {
         if (!settings.tripMode) return false
-        if (settings.wigleToken.isBlank() && settings.wdgwarsKey.isBlank()) return false
+        if (settings.wigleToken.isBlank() && settings.wdgwarsKey.isBlank() && settings.wardriftKey.isBlank()) return false
         // Any working internet (cell or WiFi) - the whole point is not needing the rig on WiFi.
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false

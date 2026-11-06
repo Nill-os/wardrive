@@ -171,6 +171,11 @@ Owner decisions:
   delivers the core value, and wigle.net/clientTile is TOS-restricted for third-party apps.
   Do not add it. Detail below kept for reference only.
 
+Shipped (later):
+- Wardrift/wardrive.info as a third CSV upload target: `https://api.wardrive.info/api/v1/uploads/csv`,
+  `X-API-Key` auth. Key field added to Settings. AllOk logic requires all configured targets to
+  succeed before marking a run uploaded.
+
 Remaining (data-blocked):
 - WiGLE density-tile overlay (NOT building - see owner decision above). Endpoint confirmed
   from WiGLE 2.111:

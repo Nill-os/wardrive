@@ -16,6 +16,10 @@ class AppSettings(context: Context) {
         get() = prefs.getString("wdgwars_key", "") ?: ""
         set(value) = prefs.edit().putString("wdgwars_key", value).apply()
 
+    var wardriftKey: String
+        get() = prefs.getString("wardrift_key", "") ?: ""
+        set(value) = prefs.edit().putString("wardrift_key", value).apply()
+
     var homeLat: Double
         get() = prefs.getString("home_lat", "0")?.toDoubleOrNull() ?: 0.0
         set(value) = prefs.edit().putString("home_lat", value.toString()).apply()

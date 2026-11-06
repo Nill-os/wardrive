@@ -24,6 +24,7 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.wigleTokenInput.setText(settings.wigleToken)
         binding.wdgwarsKeyInput.setText(settings.wdgwarsKey)
+        binding.wardriftKeyInput.setText(settings.wardriftKey)
         if (settings.homeLat != 0.0 || settings.homeLon != 0.0) {
             binding.homeLatInput.setText(settings.homeLat.toString())
             binding.homeLonInput.setText(settings.homeLon.toString())
@@ -61,6 +62,7 @@ class SettingsActivity : AppCompatActivity() {
                 if (masked) android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             binding.wigleTokenInput.inputType = type
             binding.wdgwarsKeyInput.inputType = type
+            binding.wardriftKeyInput.inputType = type
             binding.showKeysButton.text = if (masked) "> HIDE KEYS" else "> SHOW KEYS"
         }
         // App theme accents
@@ -275,6 +277,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun save() {
         settings.wigleToken = binding.wigleTokenInput.text.toString().trim()
         settings.wdgwarsKey = binding.wdgwarsKeyInput.text.toString().trim()
+        settings.wardriftKey = binding.wardriftKeyInput.text.toString().trim()
         settings.homeLat = binding.homeLatInput.text.toString().toDoubleOrNull() ?: 0.0
         settings.homeLon = binding.homeLonInput.text.toString().toDoubleOrNull() ?: 0.0
         settings.homeRadiusM = binding.homeRadiusInput.text.toString().toDoubleOrNull() ?: 0.0

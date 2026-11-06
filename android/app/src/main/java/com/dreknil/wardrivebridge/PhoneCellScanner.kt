@@ -71,17 +71,17 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
                 cell is CellInfoGsm -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading(canonId("GSM-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.arfcn))
+                    CellReading(canonId("GSM-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), dbmOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.arfcn))
                 }
                 cell is CellInfoWcdma -> {
                     val ci = cell.cellIdentity
                     if (ci.cid == CellInfo.UNAVAILABLE) continue
-                    CellReading(canonId("WCDMA-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), vOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.uarfcn))
+                    CellReading(canonId("WCDMA-${mcc({ ci.mccString }, ci.mcc)}-${mnc({ ci.mncString }, ci.mnc)}-${v(ci.lac)}-${ci.cid}"), dbmOrZero(cell.cellSignalStrength.dbm), 0, 0, vOrZero(ci.uarfcn))
                 }
                 cell is CellInfoCdma -> {
                     val ci = cell.cellIdentity
                     if (ci.basestationId == CellInfo.UNAVAILABLE) continue
-                    CellReading("CDMA-${v(ci.systemId)}-${v(ci.networkId)}-${ci.basestationId}", vOrZero(cell.cellSignalStrength.dbm), 0, 0)
+                    CellReading("CDMA-${v(ci.systemId)}-${v(ci.networkId)}-${ci.basestationId}", dbmOrZero(cell.cellSignalStrength.dbm), 0, 0)
                 }
                 Build.VERSION.SDK_INT >= 29 && cell is CellInfoNr -> {
                     val ci = cell.cellIdentity as CellIdentityNr
@@ -121,6 +121,17 @@ class PhoneCellScanner(private val context: Context, private val listener: (Obse
     // metrics - 0 stands in for "not reported" rather than leaking
     // Integer.MAX_VALUE into a dBm-shaped field.
     private fun vOrZero(value: Int): Int = if (value == CellInfo.UNAVAILABLE) 0 else value
+
+    // dBm-specific variant: also guards against clearly invalid positive values.
+    // On GSM, Android computes dbm = -113 + 2 * asu.  When the modem reports
+    // asu = 99 ("unknown / undetectable"), that evaluates to +85 dBm - a
+    // physically impossible cell signal.  WiGLE maps this to CELL_MIN_STRENGTH
+    // (-113 dBm); we map it to 0 (same "not reported" convention as vOrZero).
+    private fun dbmOrZero(value: Int): Int = when {
+        value == CellInfo.UNAVAILABLE -> 0
+        value > 0 -> 0
+        else -> value
+    }
 
     // CellIdentity fields report Integer.MAX_VALUE (CellInfo.UNAVAILABLE) when
     // the modem didn't supply that particular value for this reading (common

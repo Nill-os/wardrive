@@ -70,6 +70,9 @@ class ScanService : Service(), RigLinkManager.Listener {
          * app sends) - purely for the Terminal tab's live log, no other
          * behavior depends on it. */
         fun onRigLogLine(line: String)
+        /** WiFi scan drought: AP count collapsed from a healthy baseline to
+         * zero, suggesting a nearby deauth flood or jammer. */
+        fun onJamAlert(message: String)
     }
     var listener: SessionListener? = null
 
@@ -407,7 +410,11 @@ class ScanService : Service(), RigLinkManager.Listener {
                 dbExecutor.execute { dao.upsertGnssSatellites(entities) }
             }
         }
-        wifiScanner = PhoneWifiScanner(applicationContext) { obs -> mainHandler.post { onObservation(obs) } }
+        wifiScanner = PhoneWifiScanner(
+            applicationContext,
+            listener = { obs -> mainHandler.post { onObservation(obs) } },
+            onJamAlert = { msg -> mainHandler.post { listener?.onJamAlert(msg) } },
+        )
         bleScanner = PhoneBleScanner(applicationContext) { obs -> mainHandler.post { onObservation(obs) } }
         cellScanner = PhoneCellScanner(applicationContext) { obs -> mainHandler.post { onObservation(obs) } }
         createNotificationChannel()

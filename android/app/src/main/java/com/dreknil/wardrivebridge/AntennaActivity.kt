@@ -312,6 +312,7 @@ class AntennaActivity : AppCompatActivity(), ScanService.SessionListener {
     override fun onLocationChanged(location: android.location.Location) {}
     override fun onPersistentTrackerAlert(tagged: Observation, previousSighting: HistoricalPoint) {}
     override fun onRigLogLine(line: String) {}
+    override fun onJamAlert(message: String) {}
 
     companion object {
         const val EXTRA_TARGET_MAC = "target_mac"

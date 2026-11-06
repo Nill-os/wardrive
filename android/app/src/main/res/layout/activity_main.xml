@@ -1008,7 +1008,16 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="bottom|start"
                         android:layout_margin="16dp"
+                        android:layout_marginBottom="68dp"
                         android:text="HEATMAP: [OFF]" />
+
+                    <Button
+                        android:id="@+id/coverageToggleButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="bottom|start"
+                        android:layout_margin="16dp"
+                        android:text="GRID: [OFF]" />
 
                     <Button
                         android:id="@+id/recenterMapButton"

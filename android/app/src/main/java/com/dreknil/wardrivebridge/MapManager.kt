@@ -10,6 +10,10 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 /**
  * Owns the osmdroid MapView shown in the Map tab. Live markers track the
@@ -38,11 +42,16 @@ class MapManager(
         outlinePaint.color = Color.parseColor("#9900F0FF")
         outlinePaint.strokeWidth = 9f
     }
+    // Mirror of the trail's points; lets us run Douglas-Peucker without
+    // reading back from the Polyline object.
+    private val trailPoints = mutableListOf<GeoPoint>()
 
     // Also added once up front (right after the trail, before any dot
     // markers) so it stays under every marker in draw order - it's a
     // density backdrop, not something that should occlude the dots.
     private val heatmapOverlay = HeatmapOverlay()
+    private val coverageOverlay = CoverageGridOverlay()
+    private var coverageEnabled = false
 
     init {
         Configuration.getInstance().userAgentValue = context.packageName
@@ -51,12 +60,18 @@ class MapManager(
         mapView.setMultiTouchControls(true)
         mapView.controller.setZoom(16.0)
         mapView.overlays.add(trail)
+        mapView.overlays.add(coverageOverlay)
         mapView.overlays.add(heatmapOverlay)
     }
 
     fun setHeatmapEnabled(enabled: Boolean) {
         heatmapEnabled = enabled
         refreshHeatmap()
+    }
+
+    fun setCoverageEnabled(enabled: Boolean) {
+        coverageEnabled = enabled
+        refreshCoverage()
     }
 
     private fun refreshHeatmap() {
@@ -72,14 +87,80 @@ class MapManager(
         mapView.invalidate()
     }
 
+    private fun refreshCoverage() {
+        if (!coverageEnabled) {
+            coverageOverlay.setPoints(emptyList())
+        } else {
+            val points = mutableListOf<GeoPoint>()
+            liveData.values.filterNot { it.lat == 0.0 && it.lon == 0.0 }
+                .forEach { points.add(GeoPoint(it.lat, it.lon)) }
+            historicalMarkers.forEach { points.add(it.position) }
+            coverageOverlay.setPoints(points)
+        }
+        mapView.invalidate()
+    }
+
     fun addTrailPoint(lat: Double, lon: Double) {
         val point = GeoPoint(lat, lon)
-        trail.addPoint(point)
+        trailPoints.add(point)
+        when {
+            trailPoints.size > TRAIL_HARD_CAP -> {
+                simplifyTrail(TRAIL_COARSE_EPS_M)
+                trail.setPoints(trailPoints)
+            }
+            trailPoints.size == TRAIL_FINE_THRESHOLD + 1 -> {
+                simplifyTrail(TRAIL_FINE_EPS_M)
+                trail.setPoints(trailPoints)
+            }
+            else -> trail.addPoint(point)
+        }
         if (!hasCentered) {
             mapView.controller.setCenter(point)
             hasCentered = true
         }
         mapView.invalidate()
+    }
+
+    // Ramer-Douglas-Peucker in-place simplification on trailPoints.
+    // Epsilon in metres; uses a planar approximation accurate to <1% at city scale.
+    private fun simplifyTrail(epsilonM: Double) {
+        if (trailPoints.size < 3) return
+        val kept = rdp(trailPoints, 0, trailPoints.size - 1, epsilonM)
+        kept.add(0, 0); kept.add(trailPoints.size - 1)
+        val simplified = kept.toSortedSet().map { trailPoints[it] }
+        trailPoints.clear()
+        trailPoints.addAll(simplified)
+    }
+
+    // Returns the indices (exclusive of start/end) that survive the RDP pass.
+    private fun rdp(pts: List<GeoPoint>, start: Int, end: Int, eps: Double): MutableList<Int> {
+        if (end - start < 2) return mutableListOf()
+        var dmax = 0.0; var imax = start
+        for (i in start + 1 until end) {
+            val d = ptLineDistM(pts[i], pts[start], pts[end])
+            if (d > dmax) { dmax = d; imax = i }
+        }
+        if (dmax <= eps) return mutableListOf()
+        val left = rdp(pts, start, imax, eps)
+        val right = rdp(pts, imax, end, eps)
+        left.add(imax); left.addAll(right)
+        return left
+    }
+
+    // Perpendicular distance from point P to the line through A and B, in metres.
+    // Planar approximation; accurate enough for city-scale route simplification.
+    private fun ptLineDistM(p: GeoPoint, a: GeoPoint, b: GeoPoint): Double {
+        val latScale = 111320.0
+        val lonScale = 111320.0 * cos(Math.toRadians((a.latitude + b.latitude) / 2.0))
+        val ax = a.longitude * lonScale; val ay = a.latitude * latScale
+        val bx = b.longitude * lonScale; val by = b.latitude * latScale
+        val px = p.longitude * lonScale; val py = p.latitude * latScale
+        val dx = bx - ax; val dy = by - ay
+        val len2 = dx * dx + dy * dy
+        if (len2 < 1e-6) return sqrt((px - ax).pow(2) + (py - ay).pow(2))
+        val t = ((px - ax) * dx + (py - ay) * dy) / len2
+        val tc = t.coerceIn(0.0, 1.0)
+        return sqrt((px - ax - tc * dx).pow(2) + (py - ay - tc * dy).pow(2))
     }
 
     fun upsertLive(obs: Observation) {
@@ -108,15 +189,18 @@ class MapManager(
             hasCentered = true
         }
         refreshHeatmap()
+        refreshCoverage()
     }
 
     fun clearLive() {
         liveMarkers.values.forEach { mapView.overlays.remove(it) }
         liveMarkers.clear()
         liveData.clear()
+        trailPoints.clear()
         trail.setPoints(emptyList())
         hasCentered = false
         refreshHeatmap()
+        refreshCoverage()
     }
 
     fun recenterOnLive() {
@@ -170,6 +254,7 @@ class MapManager(
         mapView.overlays.add(c)
         points.firstOrNull()?.let { mapView.controller.setCenter(GeoPoint(it.lat, it.lon)) }
         refreshHeatmap()
+        refreshCoverage()
         mapView.invalidate()
     }
 
@@ -178,6 +263,7 @@ class MapManager(
         cluster = null
         historicalMarkers.clear()
         refreshHeatmap()
+        refreshCoverage()
     }
 
     private fun formatLive(obs: Observation): String = buildString {
@@ -225,5 +311,14 @@ class MapManager(
         d.setSize(36, 36)
         d.setBounds(0, 0, 36, 36)
         d
+    }
+
+    companion object {
+        // Douglas-Peucker trail simplification thresholds matching WiGLE's own values:
+        // above FINE_THRESHOLD apply gentle ε=20m; above HARD_CAP apply aggressive ε=50m.
+        private const val TRAIL_FINE_THRESHOLD = 5000
+        private const val TRAIL_HARD_CAP = 15000
+        private const val TRAIL_FINE_EPS_M = 20.0
+        private const val TRAIL_COARSE_EPS_M = 50.0
     }
 }

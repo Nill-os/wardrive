@@ -24,11 +24,20 @@ import java.util.Locale
  * and just accepting the OS's own rate limit is the standard approach; no
  * crash risk from calling "too often", just fewer scans actually happen.
  */
-class PhoneWifiScanner(private val context: Context, private val listener: (Observation) -> Unit) {
+class PhoneWifiScanner(
+    private val context: Context,
+    private val listener: (Observation) -> Unit,
+    private val onJamAlert: ((String) -> Unit)? = null,
+) {
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val handler = Handler(Looper.getMainLooper())
     private val isoFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
     private var running = false
+
+    // Scan-drought jam detection: track recent AP counts per scan tick.
+    // A sudden drop from a healthy baseline to zero suggests a deauth/jam.
+    private val recentScanCounts = ArrayDeque<Int>(JAM_WINDOW)
+    private var jamAlertFired = false
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -73,6 +82,8 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
         if (!running) return
         running = false
         handler.removeCallbacks(scanTrigger)
+        recentScanCounts.clear()
+        jamAlertFired = false
         try {
             context.unregisterReceiver(receiver)
         } catch (_: Exception) {
@@ -86,6 +97,7 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
         } catch (e: SecurityException) {
             return
         }
+        checkForJam(results.size)
         for (r in results) {
             listener(
                 Observation(
@@ -104,6 +116,18 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
                     isPineapple = DeviceSignatureDetection.isPineapple(r.SSID ?: ""),
                 )
             )
+        }
+    }
+
+    private fun checkForJam(currentCount: Int) {
+        if (recentScanCounts.size >= JAM_WINDOW) recentScanCounts.removeFirst()
+        recentScanCounts.addLast(currentCount)
+        if (currentCount > 0) { jamAlertFired = false; return }
+        if (recentScanCounts.size < JAM_WINDOW) return
+        val baseline = recentScanCounts.dropLast(1).average()
+        if (baseline >= JAM_BASELINE_MIN && !jamAlertFired) {
+            jamAlertFired = true
+            onJamAlert?.invoke("WiFi scan drought detected — ${"%.0f".format(baseline)} APs/scan → 0. Possible deauth/jammer nearby.")
         }
     }
 
@@ -142,5 +166,10 @@ class PhoneWifiScanner(private val context: Context, private val listener: (Obse
         // Android (~4/2min), but reading cached results is free, so a short
         // interval keeps the list fresh and self-heals a momentarily-empty cache.
         private const val SCAN_INTERVAL_MS = 5000L
+        // Jam/deauth detection: how many consecutive scans to hold in the window,
+        // and minimum average APs that counts as "we were seeing networks" before
+        // the drought.  3 APs avg over 5 scans = "normal city/suburb environment".
+        private const val JAM_WINDOW = 5
+        private const val JAM_BASELINE_MIN = 3.0
     }
 }

@@ -140,7 +140,11 @@ object DeviceSignatureDetection {
     // "wearable camera/mic worth knowing is nearby" category; name patterns
     // from Biscuit Manager's MetaDevice classifier). "rayban" with no hyphen
     // is a real alternate advertised form.
-    fun isGlasses(name: String): Boolean {
+    fun isGlasses(name: String, companyId: Int? = null): Boolean {
+        // Meta's registered BLE company ID (Bluetooth SIG assigned 0xFEB8 to Facebook/Meta).
+        // A device advertising only manufacturer data under this ID, with no recognisable
+        // name, is still almost certainly a Meta device worth flagging.
+        if (companyId == 0xFEB8) return true
         val n = name.trim()
         if (n.startsWith("Ray-Ban", ignoreCase = true) || n.startsWith("rayban", ignoreCase = true)) return true
         if (n.startsWith("Meta", ignoreCase = true)) return true

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [RunEntity::class, ObservationEntity::class, GnssSatelliteEntity::class, MeshNodeEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -110,10 +110,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Adds mfgrid (BLE manufacturer company ID, 4-char hex) and service
+        // (BLE service UUIDs, comma-separated) for future OUI/UUID filtering.
+        // Existing rows default to empty string - honest (never captured).
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE observations ADD COLUMN mfgrid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE observations ADD COLUMN service TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "wardrive.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build().also { instance = it }
             }
     }

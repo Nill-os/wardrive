@@ -101,6 +101,7 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
     private var selectionMode = false
     private val selectedRunIds = mutableSetOf<Long>()
     private var heatmapEnabled = false
+    private var coverageEnabled = false
     // Battery level/charging state, cached between updateStatusText() calls
     // - that function runs on every single observation while driving (a
     // dedicated per-run column even before this comment already said so, see
@@ -248,6 +249,11 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             heatmapEnabled = !heatmapEnabled
             mapManager.setHeatmapEnabled(heatmapEnabled)
             binding.heatmapToggleButton.text = if (heatmapEnabled) "HEATMAP: [ON]" else "HEATMAP: [OFF]"
+        }
+        binding.coverageToggleButton.setOnClickListener {
+            coverageEnabled = !coverageEnabled
+            mapManager.setCoverageEnabled(coverageEnabled)
+            binding.coverageToggleButton.text = if (coverageEnabled) "GRID: [ON]" else "GRID: [OFF]"
         }
 
         logsAdapter = LogsAdapter(
@@ -770,6 +776,10 @@ class MainActivity : AppCompatActivity(), ScanService.SessionListener {
             val why = line.substringAfter("error=").trim()
             Toast.makeText(this, "Service mode failed: ${if (why == "nowifi") "no WiFi in the rig's config.cfg" else "couldn't join WiFi"}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    override fun onJamAlert(message: String) {
+        Toast.makeText(this, "⚠ $message", Toast.LENGTH_LONG).show()
     }
 
     private var serviceModeDialog: AlertDialog? = null

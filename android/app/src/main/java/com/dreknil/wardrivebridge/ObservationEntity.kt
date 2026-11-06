@@ -49,6 +49,12 @@ data class ObservationEntity(
     val isPoliceCam: Boolean = false,
     val isPineapple: Boolean = false,
     val isHackTool: Boolean = false,
+    // BLE manufacturer company ID as a 4-hex-digit uppercase string (e.g. "004C" for Apple),
+    // or empty string if none was advertised. Stored for future OUI/mfg filtering.
+    val mfgrid: String = "",
+    // BLE service UUIDs advertised by the device, as a comma-separated lowercase list,
+    // or empty string.  Stored for future UUID-based filtering.
+    val service: String = "",
 )
 
 fun ObservationEntity.toHistoricalPoint() = HistoricalPoint(
@@ -74,6 +80,8 @@ fun Observation.toEntity(runId: Long): ObservationEntity {
         isTracker = isTracker, isFlipperZero = isFlipperZero, isFlockCamera = isFlockCamera, isSkimmer = isSkimmer,
         isDrone = isDrone, isMeshRadio = isMeshRadio, isAdultToy = isAdultToy, isGlasses = isGlasses,
         isActionCam = isActionCam, isPoliceCam = isPoliceCam, isPineapple = isPineapple,
-    isHackTool = isHackTool,
+        isHackTool = isHackTool,
+        mfgrid = companyId?.let { "%04X".format(it) } ?: "",
+        service = serviceUuids.joinToString(","),
     )
 }
